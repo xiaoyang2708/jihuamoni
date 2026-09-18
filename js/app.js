@@ -798,8 +798,10 @@
       var m2 = MODULE_BY_ID[extraDraft.moduleId || g];
       var per = window.YT.unitMinutesFor(m2, state.days[todayKey()].stage, state.profile);
       sub += '<div class="ef-qty"><label>做几组</label>' +
-        '<input type="number" min="0.5" step="0.5" value="1" data-act="extra-qty" data-per="' + per + '" data-size="' + (m2.setSize || 20) + '">' +
+        '<input type="number" min="1" step="1" value="1" data-act="extra-qty" data-per="' + per + '" data-size="' + (m2.setSize || 20) + '">' +
         '<span>组 · 约 <b id="ef-min">' + Math.round((m2.setSize || 20) * per) + '</b> 分钟</span></div>';
+      sub += '<div class="param-note" style="margin-top:8px">一组 ' + (m2.setSize || 20) + ' 题。' +
+        '想高强度刷专题就直接填大一点——填 10 就是 ' + (10 * (m2.setSize || 20)) + ' 题，系统不拦着。</div>';
     }
 
     var canAdd = g && (g === 'slw' || extraDraft.moduleId || g !== 'pd');
@@ -1266,8 +1268,8 @@
                '当天复盘再长也不会超过这个数。') +
            row('moodWeight', '感受调整幅度', 100, '%', '8',
                '选一次"太轻松"或"太难了"，任务量变动多少。') +
-           row('maxPracticePerModule', '单科每日上限', 1, '分钟', '120',
-               '同一科超过这个时长就拆成"第 1 组 / 第 2 组"。') +
+           row('maxPracticePerModule', '单条任务最长', 1, '分钟', '120',
+               '一条刷题任务最多这么长，超了就切成几条。这是单条的长度，不是一天能刷多少的上限——想高强度刷题，系统会多切几条出来。') +
            row('maxLessonUnitsPerDay', '单日听课上限', 1, '节', '3', '一天最多听几节课。') +
            moduleParamRows() +
            '<button class="btn ghost block" style="margin-top:12px" data-act="reset-tuning">全部恢复推荐值</button>';

@@ -468,8 +468,10 @@ window.YT = window.YT || {};
     var setMinutes = setSize * perQ;
     var sets = minutes / setMinutes;
     /* 只排整组，不排半组——真实备考是按组做的。
-     * 装不下一整组就留白，不硬凑。 */
-    sets = Math.min(Math.floor(sets), T(profile, 'maxSetsPerModule'));
+     * 装不下一整组就留白，不硬凑。
+     * 不设组数上限：高强度刷专题的人一天可能刷十几组、几百道题，
+     * 那是正常的，不该被系统卡住。 */
+    sets = Math.floor(sets);
     if (sets < 1) return null;
     var qty = Math.max(1, Math.round(setSize * sets));
     return {
@@ -483,7 +485,10 @@ window.YT = window.YT || {};
 
   function setLabel(plan) {
     if (plan.sets === 1) return plan.qty + ' 题';
-    return plan.sets + ' 组 · ' + plan.qty + ' 题';
+    /* 组数少的时候带上组数（"3 组 · 30 题"有信息量）；
+     * 组数一大，"11 组"这种说法反而没人这么讲，直接说题数。 */
+    if (plan.sets <= 4) return plan.sets + ' 组 · ' + plan.qty + ' 题';
+    return plan.qty + ' 题';
   }
 
   /* ---------------------------------------------------------------------
@@ -664,21 +669,26 @@ window.YT = window.YT || {};
       alloc.forEach(function (a) {
         var plan = planSets(a.minutes, a.module, stageKey, profile);
         if (!plan) return;
-        /* 一条任务最长不超过单科上限，超了就拆成两条 */
-        var chunks = Math.max(1, Math.ceil(plan.minutes / T(profile, 'maxPracticePerModule')));
-        var setsPerChunk = plan.sets / chunks;
-        var qtyPerChunk = Math.round(plan.qty / chunks);
-        for (var gi = 0; gi < chunks; gi++) {
-          var thisSets = (gi === chunks - 1) ? (plan.sets - setsPerChunk * gi) : setsPerChunk;
-          var thisQty = (gi === chunks - 1) ? (plan.qty - qtyPerChunk * gi) : qtyPerChunk;
-          if (thisQty < 1) continue;
+        /* 一条任务别长得离谱，按整组切成几条。
+         * 注意这是"单条任务的长度"，不是一天的总量上限——
+         * 想高强度刷题就多切几条，总量不受影响。 */
+        var setMinutes = plan.setSize * plan.perQ;
+        var maxSetsPerTask = Math.max(1, Math.floor(T(profile, 'maxPracticePerModule') / setMinutes));
+        var totalChunks = Math.ceil(plan.sets / maxSetsPerTask);
+        var left = plan.sets;
+        var gi = 0;
+        while (left > 0) {
+          gi++;
+          var thisSets = Math.min(maxSetsPerTask, left);
+          var thisQty = thisSets * plan.setSize;
+          left -= thisSets;
           var sub = { sets: thisSets, qty: thisQty, perQ: plan.perQ, setSize: plan.setSize };
           practiceTasks.push({
             id: nextId(dateKey),
             moduleId: a.module.id,
             moduleName: a.module.name,
             kind: 'practice',
-            title: a.module.short + ' · 刷题' + (chunks > 1 ? '（' + (gi + 1) + '/' + chunks + '）' : ''),
+            title: a.module.short + ' · 刷题' + (totalChunks > 1 ? '（' + gi + '/' + totalChunks + '）' : ''),
             detail: setLabel(sub),
             amount: thisQty,
             sets: thisSets,
