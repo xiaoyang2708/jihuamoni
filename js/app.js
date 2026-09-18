@@ -187,6 +187,161 @@
   }
 
   /* ---------------------------------------------------------------------
+   * 批量排：一次排好几周的固定安排
+   *
+   * 想"每天刷资料 2 组、连着排 4 周"的人，不该一天一天点 30 次。
+   * 窗口就是提前排的窗口（今天起 30 天），排完告诉你哪几天超载。
+   * ------------------------------------------------------------------- */
+
+  var batchDraft = null;
+
+  function openBatch() {
+    batchDraft = {
+      group: null,
+      moduleId: null,
+      weekdays: [1, 2, 3, 4, 5],
+      units: 1,
+      weeks: 4,
+      essayBig: false,
+    };
+    renderBatch();
+  }
+
+  function renderBatch() {
+    if (!batchDraft) return;
+    var d = batchDraft;
+    var groups = EXTRA_GROUPS.map(function (x) {
+      return '<button class="chip ' + (d.group === x.id ? 'on' : '') + '" data-act="batch-group" data-v="' + x.id + '">' + x.name + '</button>';
+    }).join('');
+
+    var sub = '';
+    if (d.group === 'pd') {
+      sub = '<div class="chips" style="margin-top:8px">' +
+        ['pdlj', 'pdtx', 'pddl'].map(function (id) {
+          var m = MODULE_BY_ID[id];
+          return '<button class="chip ' + (d.moduleId === id ? 'on' : '') + '" data-act="batch-module" data-v="' + id + '">' +
+                 esc(m.short.replace('判推', '')) + '</button>';
+        }).join('') + '</div>';
+    }
+    if (d.group === 'slw') {
+      sub = '<div class="chips" style="margin-top:8px">' +
+        '<button class="chip ' + (!d.essayBig ? 'on' : '') + '" data-act="batch-essay" data-v="small">小题</button>' +
+        '<button class="chip ' + (d.essayBig ? 'on' : '') + '" data-act="batch-essay" data-v="big">大作文</button>' +
+        '</div>';
+    }
+
+    var wdBtns = [1, 2, 3, 4, 5, 6, 0].map(function (w) {
+      var on = d.weekdays.indexOf(w) !== -1;
+      return '<button class="chip ' + (on ? 'on' : '') + '" data-act="batch-wd" data-v="' + w + '">' +
+             window.YT.WEEKDAY_NAMES[w] + '</button>';
+    }).join('');
+
+    var endKey = E.toKey(E.addDays(E.parseKey(todayKey()), Math.min(d.weeks * 7, PLAN_WINDOW_DAYS) - 1));
+
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal arch-modal" style="max-width:430px">' +
+        '<div class="modal-title">批量排</div>' +
+        '<div class="modal-msg">一次排好几周，省得每天点。</div>' +
+
+        '<div class="arch-block"><div class="arch-h">科目</div>' +
+          '<div class="chips">' + groups + '</div>' + sub + '</div>' +
+
+        '<div class="arch-block"><div class="arch-h">每周哪几天</div>' +
+          '<div class="chips">' + wdBtns + '</div></div>' +
+
+        '<div class="arch-block"><div class="numlist">' +
+          '<div class="item"><label>' + (d.group === 'slw' ? '每天几' + (d.essayBig ? '篇' : '道') : '每天几组') + '</label>' +
+            '<input type="number" min="0.5" step="0.5" data-act="batch-num" data-k="units" value="' + d.units + '"></div>' +
+          '<div class="item"><label>持续几周</label>' +
+            '<input type="number" min="1" max="26" step="1" data-act="batch-num" data-k="weeks" value="' + d.weeks + '"></div>' +
+        '</div>' +
+        '<div class="footnote">会排到 ' + fmtDate(endKey, false) + '（提前排最多 ' + PLAN_WINDOW_DAYS + ' 天）。' +
+        '休息日自动跳过。</div></div>' +
+
+        '<div class="row" style="gap:10px;margin-top:16px">' +
+          '<button class="btn grow" data-act="batch-cancel">取消</button>' +
+          '<button class="btn primary grow" data-act="batch-ok">排进去</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* 执行批量排。返回 { made, over } —— over 是排完超载的天数。 */
+  function applyBatch() {
+    var d = batchDraft;
+    if (!d || !d.group) return null;
+    if (d.group === 'pd' && !d.moduleId) return null;
+
+    var p = state.profile;
+    var tk = todayKey();
+    /* 先把窗口内的天都排出来，免得往还不存在的日子上加 */
+    E.ensureAhead(state, tk, PLAN_WINDOW_DAYS);
+
+    var modules = [];
+    if (d.group === 'pd') modules = [MODULE_BY_ID[d.moduleId]];
+    else if (d.group === 'slw') modules = [MODULE_BY_ID.slw];
+    else modules = [MODULE_BY_ID[d.group]];
+    var m = modules[0];
+    if (!m) return null;
+
+    var startD = E.parseKey(tk);
+    var limit = Math.min(Math.max(1, Number(d.weeks) || 1) * 7, PLAN_WINDOW_DAYS);
+    var made = 0;
+
+    for (var i = 0; i < limit; i++) {
+      var day = E.addDays(startD, i);
+      var k = E.toKey(day);
+      if (d.weekdays.indexOf(day.getDay()) === -1) continue;
+      if (E.isRest(day, p)) continue;              // 休息日不排
+      var rec = state.days[k];
+      if (!rec) continue;
+
+      var stage = rec.stage || 'base';
+      var task;
+      if (m.essay) {
+        var big = !!d.essayBig;
+        task = {
+          moduleId: 'slw', moduleName: '申论', kind: 'essay',
+          title: '申论 · ' + (big ? '大作文' : '小题') + '（自己排的）',
+          detail: big ? '完整写一篇，写完自己对答案改' : '认真写完，对照参考答案改',
+          amounts: 1, amountText: big ? '1 篇' : '1 道',
+          minutes: big ? window.YT.ESSAY.bigMinutes : window.YT.ESSAY.smallMinutes,
+        };
+      } else {
+        var per = window.YT.unitMinutesFor(m, stage, p);
+        var setSize = window.YT.moduleParam(m, p, 'setSize') || 20;
+        var sets = Math.max(0.5, Math.round((Number(d.units) || 1) * 2) / 2);
+        var q = Math.round(sets * setSize);
+        task = {
+          moduleId: m.id, moduleName: m.name, kind: 'practice',
+          title: m.short + ' · 刷题（自己排的）',
+          detail: sets + ' 组 · ' + q + ' 题',
+          amount: q, sets: sets, amountText: q + ' 题',
+          minutes: Math.round(q * per),
+        };
+      }
+      task.id = uid('batch-');
+      task.status = 'todo';
+      task.actualMinutes = null;
+      task.userAdded = true;
+      rec.tasks.push(task);
+      made++;
+    }
+
+    /* 排完看一眼哪几天被塞爆了。只是提示，不拦——那天你可能就是想拼一把。 */
+    var over = 0;
+    for (var j = 0; j < limit; j++) {
+      var kk = E.toKey(E.addDays(startD, j));
+      var rec2 = state.days[kk];
+      if (!rec2 || rec2.isRest) continue;
+      var cap = E.budgetFor(E.parseKey(kk), p, rec2.stage).total;
+      var total = (rec2.tasks || []).reduce(function (a, t) { return a + (t.skip ? 0 : t.minutes); }, 0);
+      if (total > cap) over++;
+    }
+    return { made: made, over: over };
+  }
+
+  /* ---------------------------------------------------------------------
    * C2 三个动作：今天不做 / 多做点 / 换成别的科目
    *
    * 跟"设置里调强度"的分工不一样：
@@ -208,6 +363,22 @@
   function usageMode() {
     var m = state.profile && state.profile.mode;
     return (m === 'auto' || m === 'manual') ? m : 'semi';
+  }
+
+  /* 自己排模式：系统不排复盘，但可以按他今天自己排的量算一个建议时长，
+   * 设不设置由他自己决定。算法跟系统排复盘时用的是同一套。 */
+  function manualReviewHint(day) {
+    if (usageMode() !== 'manual' || !day) return null;
+    if (day.reviewAsked === 'no') return null;
+    if ((day.tasks || []).some(function (t) { return t.kind === 'review'; })) return null;
+    var practiceMin = 0;
+    (day.tasks || []).forEach(function (t) {
+      if (t.kind === 'practice' || t.kind === 'essay') practiceMin += t.minutes;
+    });
+    if (practiceMin < 40) return null;   // 排得太少就别啰嗦了
+    var suggest = Math.max(15, Math.min(CFG.maxReviewMinutes,
+      Math.round(practiceMin * E.errorRateFor(state) * CFG.reviewRatio)));
+    return { minutes: suggest, practiceMin: practiceMin };
   }
 
   function openTaskMenu(dateKey, taskId) {
@@ -1645,7 +1816,7 @@
       body += '<button class="opt ' + (draft.mode === 'semi' ? 'on' : '') + '" data-act="pick-mode" data-v="semi">' +
               '<div class="t">半自动（推荐）</div><div class="d">系统排，但每天可以自己换、跳过、加练。适合大多数在职备考的人。</div></button>';
       body += '<button class="opt ' + (draft.mode === 'manual' ? 'on' : '') + '" data-act="pick-mode" data-v="manual">' +
-              '<div class="t">自己排</div><div class="d">系统只排听课和复盘，刷题全由你自己加。适合已经知道自己缺什么、有自己的节奏的人。</div></button>';
+              '<div class="t">自己排</div><div class="d">系统只排听课，刷题和复盘都由你自己安排。适合已经知道自己缺什么、有自己的节奏的人。</div></button>';
 
     } else if (step === 6) {
       body = '<h2>每个模块你打算听多少节课？</h2>' +
@@ -1884,8 +2055,21 @@
       '</div>' +
 
       (usageMode() === 'manual'
-        ? '<div class="section"><div class="free-note">刷题由你自己安排：点上面的「加一项」或「今天主攻一科」，' +
-          '系统只保留了该听哪节课。</div></div>'
+        ? (function () {
+            var rh = manualReviewHint(day);
+            return '<div class="section"><div class="free-note">刷题由你自己安排：点上面的「加一项」或「今天主攻一科」，' +
+              '系统只保留了该听哪节课。</div>' +
+              (rh
+                ? '<div class="review-hint">今天排了 <b>' + fmtMinutes(rh.practiceMin) +
+                  '</b> 刷题，建议留 <b>' + fmtMinutes(rh.minutes) + '</b> 复盘：把做错的题重做一遍、记下错因。' +
+                  '<div class="row" style="gap:8px;margin-top:8px">' +
+                    '<button class="btn sm primary" data-act="add-review" data-v="' + rh.minutes + '">加上复盘</button>' +
+                    '<button class="btn sm ghost" data-act="no-review">今天不用</button>' +
+                  '</div></div>'
+                : '') +
+              '</div>'
+            ;
+          })()
         : '') +
 
       '<div class="section"><p class="section-title">今天感觉</p>' +
@@ -2149,9 +2333,12 @@
     var rangeBar = '<div class="segmented">' +
       segBtn('week',  '本周', rangeMode) +
       segBtn('two',   '两周', rangeMode) +
-      segBtn('month', '本月', rangeMode) +
+      segBtn('month', '30 天', rangeMode) +
     '</div>' +
-    '<div class="range-note">' + fmtDate(rng.startKey, false) + ' – ' + fmtDate(rng.endKey, false) + '</div>';
+    '<div class="row between" style="margin-top:10px;align-items:center">' +
+      '<span class="range-note" style="margin:0">' + fmtDate(rng.startKey, false) + ' – ' + fmtDate(rng.endKey, false) + '</span>' +
+      '<button class="btn sm ghost" data-act="batch-open">批量排</button>' +
+    '</div>';
 
     var curD = E.parseKey(rng.startKey);
     var endD = E.parseKey(rng.endKey);
@@ -2225,11 +2412,15 @@
       start = t;
       end = E.addDays(t, 13);
     } else {
+      /* 30 天是**滚动**的：永远是"今天起 30 天"。
+       * 用自然月的话，9 月 30 号那天你只能排当天——那不是自由，是坑。 */
       start = t;
-      end = new Date(t.getFullYear(), t.getMonth() + 1, 0);  // 本月最后一天
+      end = E.addDays(t, PLAN_WINDOW_DAYS - 1);
     }
     return { startKey: E.toKey(start), endKey: E.toKey(end) };
   }
+
+  var PLAN_WINDOW_DAYS = 30;   // 提前排的窗口：今天起 30 天
 
   function segBtn(v, label, cur) {
     return '<button class="' + (v === cur ? 'on' : '') + '" data-act="plan-range" data-v="' + v + '">' + label + '</button>';
@@ -2526,9 +2717,9 @@
           (usageMode() === 'auto'
             ? '全自动：系统排什么做什么，今日页只留打卡。'
             : usageMode() === 'manual'
-              ? '自己排：系统只排听课和复盘，刷题你自己加。'
+              ? '自己排：系统只排听课，刷题和复盘你自己安排。'
               : '半自动：系统排，每天可以换、跳过、加练。') +
-          '　改完记得点最下面重排一次。</div>' +
+          '</div>' +
       '</div></div>' +
 
       '<div class="section"><p class="section-title">考试与时间</p><div class="card">' +
@@ -3230,7 +3421,10 @@
     if (act === 'set-mode') {
       state.profile.mode = el.getAttribute('data-v');
       save();
-      return reRender();
+      /* 换模式等于换一套排法，直接重排一次，别让用户自己记得去点 */
+      var modeName = { auto: '全自动', semi: '半自动', manual: '自己排' }[state.profile.mode] || '';
+      generateWithOverlay(function () { toast('已切到' + modeName + '，后面的安排重排好了'); });
+      return;
     }
     if (act === 'regen') {
       generateWithOverlay(function () {
@@ -3388,6 +3582,72 @@
 
     /* ---- 今天主攻一科 ---- */
     if (act === 'focus-open') return openFocus();
+
+    /* ---- 自己排模式：复盘建议，加不加他说了算 ---- */
+    /* ---- 批量排 ---- */
+    if (act === 'batch-open') return openBatch();
+    if (act === 'batch-cancel') { batchDraft = null; return closeModal(); }
+    if (act === 'batch-group') {
+      if (!batchDraft) return;
+      batchDraft.group = el.getAttribute('data-v');
+      batchDraft.moduleId = null;
+      return renderBatch();
+    }
+    if (act === 'batch-module') {
+      if (!batchDraft) return;
+      batchDraft.moduleId = el.getAttribute('data-v');
+      return renderBatch();
+    }
+    if (act === 'batch-essay') {
+      if (!batchDraft) return;
+      batchDraft.essayBig = el.getAttribute('data-v') === 'big';
+      return renderBatch();
+    }
+    if (act === 'batch-wd') {
+      if (!batchDraft) return;
+      var bw = Number(el.getAttribute('data-v'));
+      var bi = batchDraft.weekdays.indexOf(bw);
+      if (bi === -1) batchDraft.weekdays.push(bw); else batchDraft.weekdays.splice(bi, 1);
+      return renderBatch();
+    }
+    if (act === 'batch-ok') {
+      if (!batchDraft) return closeModal();
+      if (!batchDraft.group) return toast('先选一个科目');
+      if (batchDraft.group === 'pd' && !batchDraft.moduleId) return toast('判断推理要再选具体哪一块');
+      if (!batchDraft.weekdays.length) return toast('至少选一天');
+      var bres = applyBatch();
+      batchDraft = null;
+      closeModal();
+      if (!bres || !bres.made) { reRender(); return toast('这几天里没有可排的日子'); }
+      save();
+      render();
+      toast('排了 ' + bres.made + ' 条' + (bres.over ? '，其中 ' + bres.over + ' 天超过了每天可用时间' : ''));
+      return;
+    }
+
+    if (act === 'add-review') {
+      var rDay = state.days[tk];
+      if (!rDay) return;
+      var rMin = Number(el.getAttribute('data-v')) || 30;
+      rDay.tasks.push({
+        id: uid('review-'),
+        moduleId: 'review', moduleName: '复盘', kind: 'review',
+        title: '错题复盘',
+        detail: '把今天做错的题重做一遍，记下错因',
+        minutes: rMin, amountText: rMin + ' 分钟',
+        status: 'todo', actualMinutes: null, userAdded: true, review: true,
+      });
+      save();
+      reRender();
+      toast('加上了一条 ' + rMin + ' 分钟的复盘');
+      return;
+    }
+    if (act === 'no-review') {
+      var nDay = state.days[tk];
+      if (nDay) nDay.reviewAsked = 'no';
+      save();
+      return reRender();
+    }
 
     /* ---- 任务卡的三个动作：今天不做 / 换一科 / 删掉 ---- */
     if (act === 'task-menu') {
@@ -3633,6 +3893,11 @@
     if (act === 'switch-name' && switchDraft) { switchDraft.name = el.value; }
     if (act === 'switch-wd' && switchDraft) { switchDraft.weekdayMinutes = Number(el.value); }
     if (act === 'switch-we' && switchDraft) { switchDraft.weekendMinutes = Number(el.value); }
+    if (act === 'batch-num' && batchDraft) {
+      var bk = el.getAttribute('data-k');
+      batchDraft[bk] = Number(el.value) || 1;
+      return renderBatch();          // 重画一次，好让"会排到哪天"跟着变
+    }
     /* 自己填的实际用时：输入完按回车或者点到别处就提交 */
     if (act === 'actual-custom') {
       var v = Number(el.value);

@@ -735,13 +735,13 @@ window.YT = window.YT || {};
     var remaining = Math.max(0, total - spent);
 
     /* 自己排模式：系统只排"有顺序、没法自己安排"的听课，
-     * 刷题和申论交给用户自己加。阶段推进照旧，用户加的题也算数。 */
+     * 刷题、申论、复盘全交给用户自己加。
+     * （复盘系统会在今日页算一个建议时长摆着，加不加他决定。）
+     * 阶段推进照旧，用户加的题也算数。 */
     if (profile.mode === 'manual') {
-      var revM = Math.max(0, Math.min(C.maxReviewMinutes, Math.round(total * 0.08)));
-      if (revM >= 15 && tasks.length) {
-        tasks.push(makeReview(dateKey, revM, false));
-      }
-      return tasks;
+      /* 只留"听哪节课"。申论那条线里的小题/大作文也是练题，一并去掉——
+       * 这个模式的意思就是：课我给你排好，其余你说了算。 */
+      return tasks.filter(function (t) { return t.kind === 'course'; });
     }
 
     /* 冲刺期：周末按模考日排，工作日按模块专练排 */

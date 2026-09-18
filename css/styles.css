@@ -1072,3 +1072,9 @@ html, body {
 .task.is-skipped .task-title { color: var(--ink-3); text-decoration: line-through; }
 .task.is-skipped .tick { border-style: dashed; }
 .task.is-skipped .task-min { opacity: .5; }
+.review-hint {
+  margin-top: 10px; padding: 12px 14px;
+  background: var(--card); border-radius: var(--radius);
+  font-size: 13px; line-height: 1.6; color: var(--ink-2);
+}
+.review-hint b { color: var(--ink); }
