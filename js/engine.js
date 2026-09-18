@@ -506,17 +506,59 @@ window.YT = window.YT || {};
     return dateKey + '#' + uid;
   }
 
+  /* 感受调整算两遍：一遍不调、一遍按系数调，然后逐类合并。
+   * 合并规则是单调的——减量的日子任何一类任务都不能变多，
+   * 加量的日子任何一类都不能变少。这样才不会出现
+   * "选了太难了刷题反而变多"那种反向信号。 */
   function buildTasks(date, dateKey, state, roadmap, opts) {
+    var moodF = (opts && opts.moodFactor) || 1;
+    var shared = { progress: opts && opts.progress, factor: opts && opts.factor };
+    if (moodF === 1) {
+      return buildTasksInner(date, dateKey, state, roadmap,
+        { progress: shared.progress, factor: shared.factor, moodF: 1 });
+    }
+    var base = buildTasksInner(date, dateKey, state, roadmap,
+      { progress: shared.progress, factor: shared.factor, moodF: 1 });
+    var adj = buildTasksInner(date, dateKey, state, roadmap,
+      { progress: shared.progress, factor: shared.factor, moodF: moodF });
+    return mergeMonotone(base, adj, moodF > 1);
+  }
+
+  function taskKey(t) { return t.moduleId + '|' + t.kind; }
+
+  function sumBy(list) {
+    var m = {};
+    list.forEach(function (t) { m[taskKey(t)] = (m[taskKey(t)] || 0) + t.minutes; });
+    return m;
+  }
+
+  function mergeMonotone(base, adj, up) {
+    var baseBy = sumBy(base), adjBy = sumBy(adj);
+    var keys = [];
+    base.concat(adj).forEach(function (t) {
+      var k = taskKey(t);
+      if (keys.indexOf(k) === -1) keys.push(k);
+    });
+    var out = [];
+    keys.forEach(function (k) {
+      var b = baseBy[k] || 0, a = adjBy[k] || 0;
+      var useAdj = up ? (a >= b) : (a <= b);
+      (useAdj ? adj : base).forEach(function (t) {
+        if (taskKey(t) === k) out.push(t);
+      });
+    });
+    return out;
+  }
+
+  function buildTasksInner(date, dateKey, state, roadmap, opts) {
     var profile = state.profile;
     var stageKey = stageOf(dateKey, roadmap);
     var budget = budgetFor(date, profile, stageKey);
     var factor = (opts && opts.factor) || 1;
-    var moodF = (opts && opts.moodFactor) || 1;
-    /* 注意：moodF 不作用于 total，只作用于后面的"弹性部分"。
-     * 直接缩总量会导致分级分配重新洗牌——申论少排一项，
-     * 腾出的时间回流到刷题上，反而变成"选了太难了刷题更多"。
-     * 听课是刚性的（半节为单位），本来也缩不动。 */
-    var total = Math.max(0, Math.round(budget.total * factor));
+    var moodF = (opts && opts.moodF) || 1;
+    /* 感受作用在当天总预算上——听课占了大头，只调刷题复盘的话
+     * 用户根本感觉不到。变多/变少由外面的 mergeMonotone 保证。 */
+    var total = Math.max(0, Math.round(budget.total * factor * moodF));
     var tasks = [];
     var dayIndex = dayDiff(roadmap.startKey || dateKey, dateKey);
     var progress = opts && opts.progress ? opts.progress : courseProgress(state);
@@ -606,10 +648,6 @@ window.YT = window.YT || {};
 
     /* ---- 剩下的时间：刷题 与 复盘 ---- */
     var remaining = Math.max(0, total - spent);
-    /* 感受只调整刷题和复盘这一块——它们是弹性的，少做一点没影响；
-     * 听课是刚性的（按半节走），缩了会打乱课程进度。
-     * 配合题量步长改成 1，这里的增减能直接反映到题目数上，用户看得见。 */
-    remaining = Math.round(remaining * moodF);
 
     /* 冲刺期：周末按模考日排，工作日按模块专练排 */
     if (stageKey === 'sprint') {

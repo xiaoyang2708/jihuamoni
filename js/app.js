@@ -197,6 +197,13 @@
         '<button class="chip" data-act="sim-run" data-v="60">60 天</button>' +
         '<button class="chip" data-act="sim-run" data-v="120">120 天</button>' +
       '</div>' +
+      '<div class="param-note" style="margin-top:12px">' +
+        '想自己每天点一遍的话用下面这个——它只把日期往后拨一天，不帮你打卡，' +
+        '然后你就像平常一样勾任务、选感受，再拨下一天。这样验证到的就是你真实的操作路径。</div>' +
+      '<div class="chips" style="margin-top:6px">' +
+        '<button class="chip" data-act="sim-next">过一天 →</button>' +
+        (state.simDate ? '<button class="chip" data-act="sim-today">回到真实今天</button>' : '') +
+      '</div>' +
       '<div class="param-note" style="margin-top:12px">当前日期：<b>' + todayKey() + '</b>' +
         (state.simDate ? '（真实今天是 ' + realTodayKey() + '）' : '') + '</div>' +
       (state.devBackup
@@ -660,7 +667,15 @@
     }
 
     var st = S.streak(state, tk);
-    var head = '<div class="today-head">' +
+    var STAGE_SUB = {
+      base: '打基础，把方法学明白',
+      strengthen: '分模块刷题，开始提速',
+      sprint: '限时套卷，查漏补缺',
+    };
+    var band = '<div class="stage-band">' + stageLabel(day.stage) +
+      '<span>' + (STAGE_SUB[day.stage] || '') + '</span></div>';
+
+    var head = band + '<div class="today-head">' +
       '<div class="date">' + fmtDate(tk, true) + ' · ' + weekdayName(tk) + '</div>' +
       '<h1>' + (day.isRest ? '今天休息' : stageLabel(day.stage)) + '</h1>' +
       (st > 0 ? '<div class="date" style="margin-top:6px">连续 ' + st + ' 天</div>' : '') +
@@ -690,7 +705,19 @@
         '</b>，你可以自己安排</div>'
       : '';
 
+    /* 太久没练到的模块提醒一下。8 天没出现就提示。 */
+    var stale = staleModules(tk, 8);
+    var staleHtml = stale.length
+      ? '<div class="stale-note">' +
+          '<b>' + esc(stale[0].module.short) + '</b> 已经 ' + stale[0].gap + ' 天没练到了' +
+          (stale.length > 1 ? '（还有 ' + (stale.length - 1) + ' 个模块也是）' : '') +
+          '，要不要今天补一组？' +
+          '<button class="btn sm ghost" style="margin-top:8px" data-act="extra-quick" data-m="' + stale[0].module.id + '">加一组</button>' +
+        '</div>'
+      : '';
+
     app.innerHTML = '<div class="screen">' + head +
+      (staleHtml ? '<div class="section">' + staleHtml + '</div>' : '') +
       '<div class="section">' +
         '<div class="card">' +
           '<div class="row between" style="margin-bottom:2px">' +
@@ -761,6 +788,28 @@
     return '<button class="mood ' + (cur === id ? 'on' : '') + '" data-act="mood" data-v="' + id + '">' + label + '</button>';
   }
 
+  /* 某个模块多久没出现在刷题任务里了。从来没练过的，从计划开始那天算。 */
+  function staleModules(tk, days) {
+    var last = {};
+    Object.keys(state.days || {}).sort().forEach(function (k) {
+      if (k > tk) return;
+      (state.days[k].tasks || []).forEach(function (t) {
+        if (t.kind === 'practice' && !t.userAdded) last[t.moduleId] = k;
+      });
+    });
+    var start = (state.roadmap && state.roadmap.startKey) || tk;
+    var out = [];
+    MODULES.forEach(function (m) {
+      if (m.essay) return;
+      var st = (state.profile.strength && state.profile.strength[m.id]) || 'normal';
+      if (st === 'skip') return;
+      var lk = last[m.id] || start;
+      var gap = E.dayDiff(lk, tk);
+      if (gap >= days) out.push({ module: m, gap: gap, last: lk });
+    });
+    return out.sort(function (a, b) { return b.gap - a.gap; });
+  }
+
   /* ---------------------------------------------------------------------
    * 自己加任务
    * 系统排的是"基础任务"，装不下一整组的时间留白，用户想加什么自己加。
@@ -777,7 +826,7 @@
     { id: 'slw',  name: '申论' },
   ];
 
-  var extraDraft = { group: null, moduleId: null, essayKind: 'small' };
+  var extraDraft = { group: null, moduleId: null, essayKind: 'small', type: 'practice' };
 
   /* 往哪一天加。今日页默认今天，计划页点某天的"＋"就指向那一天。 */
   function extraTargetDay() { return state.ui.extraDate || todayKey(); }
@@ -805,18 +854,38 @@
       '</div>';
     } else if (g && (g !== 'pd' || extraDraft.moduleId)) {
       var m2 = MODULE_BY_ID[extraDraft.moduleId || g];
-      var per = window.YT.unitMinutesFor(m2, state.days[todayKey()].stage, state.profile);
-      sub += '<div class="ef-qty"><label>做几组</label>' +
-        '<input type="number" min="1" step="1" value="1" data-act="extra-qty" data-per="' + per + '" data-size="' + (m2.setSize || 20) + '">' +
-        '<span>组 · 约 <b id="ef-min">' + Math.round((m2.setSize || 20) * per) + '</b> 分钟</span></div>';
-      sub += '<div class="param-note" style="margin-top:8px">一组 ' + (m2.setSize || 20) + ' 题。' +
-        '想高强度刷专题就直接填大一点——填 10 就是 ' + (10 * (m2.setSize || 20)) + ' 题，系统不拦着。</div>';
+      var dstage = (state.days[extraTargetDay()] || {}).stage || 'base';
+      var per = window.YT.unitMinutesFor(m2, dstage, state.profile);
+      var eff = window.YT.engine.effectiveLesson(state.profile);
+      var isCourse = extraDraft.type === 'course';
+      if (isCourse) {
+        sub += '<div class="ef-qty"><label>听几节</label>' +
+          '<input type="number" min="0.5" step="0.5" value="1" data-act="extra-qty" data-per="' + eff + '" data-size="1">' +
+          '<span>节 · 约 <b id="ef-min">' + Math.round(eff) + '</b> 分钟</span></div>';
+        sub += '<div class="param-note" style="margin-top:8px">听课时长按你的倍速算过，一节约 ' +
+          Math.round(eff) + ' 分钟。自己加的听课会算进课程进度。</div>';
+      } else {
+        sub += '<div class="ef-qty"><label>做几组</label>' +
+          '<input type="number" min="1" step="1" value="1" data-act="extra-qty" data-per="' + per + '" data-size="' + (m2.setSize || 20) + '">' +
+          '<span>组 · 约 <b id="ef-min">' + Math.round((m2.setSize || 20) * per) + '</b> 分钟</span></div>';
+        sub += '<div class="param-note" style="margin-top:8px">一组 ' + (m2.setSize || 20) + ' 题。' +
+          '想高强度刷专题就直接填大一点——填 10 就是 ' + (10 * (m2.setSize || 20)) + ' 题，系统不拦着。</div>';
+      }
     }
+
+    /* 刷题 / 听课 二选一（申论没有这个切换） */
+    var typeRow = (g && g !== 'slw')
+      ? '<div class="chips" style="margin-top:10px">' +
+          '<button class="chip ' + (extraDraft.type === 'practice' ? 'on' : '') + '" data-act="extra-type" data-v="practice">刷题</button>' +
+          '<button class="chip ' + (extraDraft.type === 'course' ? 'on' : '') + '" data-act="extra-type" data-v="course">听课</button>' +
+        '</div>'
+      : '';
 
     var canAdd = g && (g === 'slw' || extraDraft.moduleId || g !== 'pd');
     return '<div class="extra-form">' +
       '<div class="ef-title">我想加一项</div>' +
       '<div class="chips">' + chips + '</div>' +
+      typeRow +
       sub +
       '<div class="row" style="gap:8px;margin-top:12px">' +
         '<button class="btn sm ghost" data-act="extra-cancel">取消</button>' +
@@ -1362,7 +1431,10 @@
    * ------------------------------------------------------------------- */
 
   function render() {
-    if (!state.profile) { renderOnboarding(); return; }
+    if (!state.profile) { app.className = ''; renderOnboarding(); return; }
+    var rtk = todayKey();
+    var rstage = (state.days[rtk] || {}).stage || 'base';
+    app.className = 'stage-' + rstage;
     var s = state.ui.screen || 'today';
     if (s === 'today') return renderToday();
     if (s === 'plan') return renderPlan();
@@ -1491,27 +1563,33 @@
       (dday.tasks || []).forEach(function (t, i) { if (t.id === dtid) di = i; });
       if (di < 0) return;
       var removed = dday.tasks[di];
-
-      if (removed.kind === 'course') {
-        /* 删了课，同一天同一模块的课全一起去掉——不然"下半节"会挂在
-         * "上半节"已经删掉的情况下，顺序就断了。后面的天重排，课自然往后延。 */
-        dday.tasks = dday.tasks.filter(function (t) {
-          return !(t.kind === 'course' && t.moduleId === removed.moduleId);
+      /* 删之前问一句，避免误触 */
+      return askConfirm('删掉这一项？',
+        '「' + removed.title + '」' +
+        (removed.kind === 'course' ? '——这节课会顺延到后面。' : '——不影响后面的安排。'),
+        function () {
+          var dd2 = state.days[ddk];
+          if (!dd2) return;
+          if (removed.kind === 'course') {
+            /* 同一天同一模块的课全一起去掉，不然"下半节"会挂在上半节没了的情况下 */
+            dd2.tasks = dd2.tasks.filter(function (t) {
+              return !(t.kind === 'course' && t.moduleId === removed.moduleId);
+            });
+            Object.keys(state.days).forEach(function (k) {
+              if (k <= ddk) return;
+              var dd = state.days[k];
+              var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+              if (!touched) delete state.days[k];
+            });
+            E.ensureAhead(state, todayKey(), 14);
+            toast('已删掉，这节课顺延到后面');
+          } else {
+            dd2.tasks = dd2.tasks.filter(function (t) { return t.id !== dtid; });
+            toast('已删掉');
+          }
+          save();
+          render();
         });
-        Object.keys(state.days).forEach(function (k) {
-          if (k <= ddk) return;
-          var dd = state.days[k];
-          var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
-          if (!touched) delete state.days[k];
-        });
-        E.ensureAhead(state, todayKey(), 14);
-        toast('已删掉，这节课顺延到后面');
-      } else {
-        dday.tasks.splice(di, 1);
-        toast('已删掉');
-      }
-      save();
-      return reRender();
     }
     if (act === 'extra-open') {
       state.ui.addingExtra = true;
@@ -1552,6 +1630,19 @@
       extraDraft.essayKind = el.getAttribute('data-v');
       return reRender();
     }
+    if (act === 'extra-type') {
+      extraDraft.type = el.getAttribute('data-v');
+      return reRender();
+    }
+    /* 提醒里那个"加一组"，直接开表单并锁定模块 */
+    if (act === 'extra-quick') {
+      var qm = el.getAttribute('data-m');
+      state.ui.addingExtra = true;
+      state.ui.extraDate = tk;
+      extraDraft = { group: qm, moduleId: qm, essayKind: 'small', type: 'practice' };
+      window.scrollTo(0, document.body.scrollHeight);
+      return reRender();
+    }
     if (act === 'extra-add') {
       var targetKey = extraTargetDay();
       var dayX = state.days[targetKey];
@@ -1579,20 +1670,36 @@
       } else if (extraDraft.moduleId) {
         var m3 = MODULE_BY_ID[extraDraft.moduleId];
         var qtyEl = document.querySelector('[data-act="extra-qty"]');
-        var sets = qtyEl ? Number(qtyEl.value) : 1;
-        if (!sets || sets <= 0) sets = 1;
-        var per3 = window.YT.unitMinutesFor(m3, dayX.stage, state.profile);
-        var q3 = Math.max(1, Math.round((m3.setSize || 20) * sets));
-        task = {
-          id: 'extra-' + Date.now(),
-          moduleId: m3.id, moduleName: m3.name, kind: 'practice',
-          title: m3.short + ' · 加练',
-          detail: q3 + ' 题 · 自己加的',
-          amount: q3, sets: sets,
-          amountText: q3 + ' 题',
-          minutes: Math.round(q3 * per3),
-          status: 'todo', actualMinutes: null, userAdded: true,
-        };
+        var qv = qtyEl ? Number(qtyEl.value) : 1;
+        if (!qv || qv <= 0) qv = 1;
+
+        if (extraDraft.type === 'course') {
+          var eff2 = window.YT.engine.effectiveLesson(state.profile);
+          var units = Math.round(qv * 2) / 2;
+          task = {
+            id: 'extra-' + Date.now(),
+            moduleId: m3.id, moduleName: m3.name, kind: 'course',
+            title: m3.short + ' · 听课（自己加的）',
+            detail: units + ' 节',
+            amounts: units, units: units,
+            amountText: units + ' 节',
+            minutes: Math.round(units * eff2),
+            status: 'todo', actualMinutes: null, userAdded: true,
+          };
+        } else {
+          var per3 = window.YT.unitMinutesFor(m3, dayX.stage, state.profile);
+          var q3 = Math.max(1, Math.round((m3.setSize || 20) * qv));
+          task = {
+            id: 'extra-' + Date.now(),
+            moduleId: m3.id, moduleName: m3.name, kind: 'practice',
+            title: m3.short + ' · 加练',
+            detail: q3 + ' 题 · 自己加的',
+            amount: q3, sets: qv,
+            amountText: q3 + ' 题',
+            minutes: Math.round(q3 * per3),
+            status: 'todo', actualMinutes: null, userAdded: true,
+          };
+        }
       }
       if (!task) return;
       dayX.tasks.push(task);
@@ -1696,6 +1803,24 @@
       save();
       render();
       toast('已重置，可以重新走问卷');
+      return;
+    }
+    /* 只拨日期，不自动打卡。让用户像平常一样自己点一遍，验证真实的操作路径。 */
+    if (act === 'sim-next') {
+      var nd = E.addDays(E.parseKey(todayKey()), 1);
+      state.simDate = E.toKey(nd);
+      dailyRoll();
+      save();
+      go('today');
+      toast('现在是 ' + state.simDate + '（模拟）');
+      return;
+    }
+    if (act === 'sim-today') {
+      state.simDate = null;
+      dailyRoll();
+      save();
+      go('today');
+      toast('已回到真实今天');
       return;
     }
 
@@ -1825,6 +1950,15 @@
         if (!isNaN(mv)) state.profile.moduleParams[mm][mk] = mv;
       }
       save();
+      return;
+    }
+    /* 改组数/节数时实时更新"约多少分钟" */
+    if (act === 'extra-qty') {
+      var qper = Number(el.getAttribute('data-per')) || 0;
+      var qsize = Number(el.getAttribute('data-size')) || 1;
+      var qv2 = Number(el.value) || 0;
+      var mn2 = document.getElementById('ef-min');
+      if (mn2) mn2.textContent = Math.round(qper * qsize * qv2);
       return;
     }
     if (act === 'set-lesson') {

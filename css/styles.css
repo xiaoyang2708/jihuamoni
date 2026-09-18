@@ -316,6 +316,16 @@ html, body {
 }
 .free-note b { color: var(--ink); font-variant-numeric: tabular-nums; }
 
+/* 太久没练到的模块提醒 */
+.stale-note {
+  font-size: 12.5px; color: var(--ink-2);
+  background: var(--accent-s);
+  border-radius: var(--radius-s);
+  padding: 12px 14px;
+  line-height: 1.6;
+}
+.stale-note b { color: var(--accent); }
+
 .extra-form {
   background: var(--card);
   border-radius: var(--radius);
@@ -357,7 +367,31 @@ html, body {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 13px 14px 11px;
+  animation: popIn .28s cubic-bezier(.2, .8, .3, 1);
 }
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 阶段配色：换了阶段，界面颜色跟着换，让用户有"进入下一个阶段"的实感 */
+#app.stage-base       { --stage-tint: #e7f0ed; --stage-ink: #2f6b5e; }
+#app.stage-strengthen { --stage-tint: #fdf0e2; --stage-ink: #b3702a; }
+#app.stage-sprint     { --stage-tint: #f9e9e6; --stage-ink: #a8473c; }
+
+.stage-band {
+  background: var(--stage-tint, var(--primary-s));
+  color: var(--stage-ink, var(--primary));
+  margin: 0 0 2px;
+  padding: 8px 20px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.stage-band span { font-weight: 400; opacity: .8; }
 .mp-head { font-size: 14px; font-weight: 650; color: var(--primary); }
 .mp-head.up { color: var(--accent); }
 .mp-sub {
