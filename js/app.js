@@ -1449,6 +1449,20 @@
   function renderSettings() {
     var p = state.profile;
 
+    var curStyle = state.ui.style || 'classic';
+    var STYLES = [
+      { id: 'classic',  name: '经典',     desc: '暖纸背景 · 深青绿', c: '#2f6b5e', bg: '#f7f5f1' },
+      { id: 'ios',      name: 'Apple 浅色', desc: '系统蓝 · 毛玻璃',   c: '#007aff', bg: '#f2f2f7' },
+      { id: 'iosdark',  name: 'Apple 深色', desc: '纯黑 · 夜用',       c: '#0a84ff', bg: '#1c1c1e' },
+    ];
+    var styleRow = '<div class="style-picker">' + STYLES.map(function (s) {
+      return '<button class="style-opt ' + (curStyle === s.id ? 'on' : '') + '" data-act="set-style" data-v="' + s.id + '">' +
+        '<span class="sw" style="background:' + s.bg + '"><i style="background:' + s.c + '"></i></span>' +
+        '<span class="nm">' + s.name + '</span>' +
+        '<span class="ds">' + s.desc + '</span>' +
+      '</button>';
+    }).join('') + '</div>';
+
     var restPicker = '<div class="daypicker">';
     for (var i = 0; i < 7; i++) {
       var on = p.restDays.indexOf(i) !== -1;
@@ -1476,6 +1490,12 @@
 
     app.innerHTML = '<div class="screen">' +
       '<div class="top"><h1>设置</h1><div class="sub">改完以后，点最下面那个按钮重排后面的计划</div></div>' +
+
+      '<div class="section"><p class="section-title">外观</p><div class="card">' +
+        styleRow +
+        '<div class="footnote" style="margin-top:12px">三套外观随时能换，只影响长相，不影响数据和计划。' +
+        'Apple 那两套用了系统蓝和毛玻璃，动画是弹性的。</div>' +
+      '</div></div>' +
 
       '<div class="section"><p class="section-title">考试与时间</p><div class="card">' +
         '<div class="field"><label>考试日期</label>' +
@@ -1661,7 +1681,8 @@
     if (!state.profile) { app.className = ''; renderOnboarding(); return; }
     var rtk = todayKey();
     var rstage = (state.days[rtk] || {}).stage || 'base';
-    app.className = 'stage-' + rstage;
+    var rstyle = state.ui.style || 'classic';
+    app.className = (rstyle === 'classic' ? '' : 'style-' + rstyle + ' ') + 'stage-' + rstage;
     rebuildCourseLabels();
     var s = state.ui.screen || 'today';
     if (s === 'today') return renderToday();
@@ -2022,6 +2043,11 @@
     if (act === 'set-essay-start') {
       state.profile.tuning = state.profile.tuning || {};
       state.profile.tuning.essayStartStage = el.getAttribute('data-v');
+      save();
+      return reRender();
+    }
+    if (act === 'set-style') {
+      state.ui.style = el.getAttribute('data-v');
       save();
       return reRender();
     }
