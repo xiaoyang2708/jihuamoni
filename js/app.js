@@ -1864,6 +1864,7 @@
       restDays: draft.restDays.slice().sort(),
       lessonMinutes: Number(draft.lessonMinutes) || 150,
       speed: Number(draft.speed) || 1.5,
+      mode: draft.mode || 'semi',
       courseUnits: draft.courseUnits,
       benchmarks: draft.benchmarks || {},
       strength: {},
