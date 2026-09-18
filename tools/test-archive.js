@@ -307,6 +307,13 @@ console.log('\n【10】连续几天自己加同一科，系统该开口问一句
   check('系统排的不算进去', !hits.some(h => h.moduleId === 'zlfx'), JSON.stringify(hits));
   check('只出现一次（按模块聚合）', hits.filter(h => h.moduleId === 'pdlj').length === 1, hits.length);
 
+  /* 主动"换成"这一科，也该算成"我想多练它" */
+  s.swapLog = [{ date: '2026-09-07', from: 'yy', to: 'zzll' }];
+  const hits2 = A.selfAddedByModule(s, '2026-09-10', 5);
+  check('换成这一科也算数',
+    (hits2.find(h => h.moduleId === 'zzll') || {}).days === 1,
+    JSON.stringify(hits2));
+
   /* 权重加成：只影响刷题分配，不动听课节数 */
   const before = profile.examDate;
   check('加成不影响听课节数',

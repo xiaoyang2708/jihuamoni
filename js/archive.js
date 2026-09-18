@@ -269,6 +269,10 @@ window.YT = window.YT || {};
         if (!t.userAdded || t.review || t.focus) return;
         seen[t.moduleId] = true;
       });
+      /* 主动"换成这一科"也算——那是明确的"我想多练它" */
+      (state.swapLog || []).forEach(function (x) {
+        if (x.date === k) seen[x.to] = true;
+      });
       Object.keys(seen).forEach(function (id) {
         hits[id] = hits[id] || { moduleId: id, days: 0, lastKey: null };
         hits[id].days++;

@@ -187,6 +187,134 @@
   }
 
   /* ---------------------------------------------------------------------
+   * C2 三个动作：今天不做 / 多做点 / 换成别的科目
+   *
+   * 跟"设置里调强度"的分工不一样：
+   *   设置里调强度 = 整个备考期的结论
+   *   这里的三个动作 = 今天的决定，不改后面的计划
+   * "今天不做"不进完成率，但会被记下来；连着几天对同一科这么干，
+   * 系统才开口问一句"要不要干脆把它调成减少"。
+   * ------------------------------------------------------------------- */
+
+  var taskMenu = null;   // { dateKey, taskId } —— 正打开的那一项
+
+  function findTask(dateKey, taskId) {
+    var day = state.days[dateKey];
+    if (!day) return null;
+    return (day.tasks || []).filter(function (x) { return x.id === taskId; })[0] || null;
+  }
+
+  /* 使用模式。老数据里没有这个字段的，按半自动算。 */
+  function usageMode() {
+    var m = state.profile && state.profile.mode;
+    return (m === 'auto' || m === 'manual') ? m : 'semi';
+  }
+
+  function openTaskMenu(dateKey, taskId) {
+    var t = findTask(dateKey, taskId);
+    if (!t) return;
+    taskMenu = { dateKey: dateKey, taskId: taskId };
+
+    /* 有顺序的课不给"换"——换掉它，后面的节次编号全乱。
+     * 套卷也不给换，那本来就是整套。 */
+    var canSwap = (t.kind === 'practice' || t.kind === 'essay');
+    var mode = usageMode();
+
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:400px">' +
+        '<div class="modal-title">' + esc(t.title) + '</div>' +
+        (taskDetail(t) ? '<div class="modal-msg">' + esc(taskDetail(t)) + '</div>' : '') +
+        '<div class="menu-list">' +
+          (mode === 'auto' ? '' : (t.skip
+            ? '<button class="menu-item" data-act="task-unskip">取消跳过，今天还是做</button>'
+            : '<button class="menu-item" data-act="task-skip">今天不做这一项<small>不算你没完成，也不往后顺延</small></button>')) +
+          (canSwap && mode !== 'auto'
+            ? '<button class="menu-item" data-act="task-swap">换成别的科目<small>只换今天，后面的安排会跟着偏一点</small></button>'
+            : '') +
+          '<button class="menu-item danger" data-act="del-task" data-date="' + dateKey + '" data-task="' + esc(t.id) + '">' +
+            '删除这一项<small>' + (t.kind === 'course' ? '这节课会顺延到后面' : '不影响后面的安排') + '</small></button>' +
+        '</div>' +
+        '<button class="btn block ghost" style="margin-top:12px" data-act="menu-cancel">取消</button>' +
+      '</div>';
+  }
+
+  /* 换成别的科目：今天这条换成目标模块的同类任务，时长尽量保持。 */
+  function openSwap() {
+    if (!taskMenu) return;
+    var t = findTask(taskMenu.dateKey, taskMenu.taskId);
+    if (!t) return;
+    var chips = MODULES.filter(function (m) {
+      if (m.id === t.moduleId) return false;
+      if (t.kind === 'essay') return !!m.essay;   // 申论只能换申论
+      return !m.essay;                             // 行测只能换行测
+    }).map(function (m) {
+      return '<button class="chip" data-act="swap-pick" data-m="' + m.id + '">' + esc(m.short) + '</button>';
+    }).join('');
+
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:400px">' +
+        '<div class="modal-title">换成哪一科？</div>' +
+        '<div class="modal-msg">换的是今天这一条，时长不变，题量按新科目的单价折算。</div>' +
+        '<div class="chips" style="margin-top:14px">' + chips + '</div>' +
+        '<button class="btn block ghost" style="margin-top:16px" data-act="menu-cancel">取消</button>' +
+      '</div>';
+  }
+
+  /* 真正换掉。返回换成的模块 id（失败返回 null）。 */
+  function applySwap(newModuleId) {
+    if (!taskMenu) return null;
+    var day = state.days[taskMenu.dateKey];
+    var t = findTask(taskMenu.dateKey, taskMenu.taskId);
+    var m = MODULE_BY_ID[newModuleId];
+    if (!day || !t || !m) return null;
+    var from = t.moduleId;
+
+    if (t.kind === 'essay') {
+      var big = (t.amountText || '').indexOf('篇') >= 0;
+      t.moduleId = 'slw';
+      t.moduleName = '申论';
+      t.title = '申论 · ' + (big ? '大作文' : '小题');
+      t.detail = big ? '完整写一篇，写完自己对答案改' : '认真写完，对照参考答案改';
+    } else {
+      var stage = day.stage || 'base';
+      var per = window.YT.unitMinutesFor(m, stage, state.profile);
+      var setSize = window.YT.moduleParam(m, state.profile, 'setSize') || 20;
+      var sets = Math.max(0.5, Math.round((t.minutes / (per * setSize)) * 2) / 2);
+      var q = Math.round(sets * setSize);
+      t.moduleId = m.id;
+      t.moduleName = m.name;
+      t.kind = 'practice';
+      t.title = m.short + ' · 刷题';
+      t.detail = sets + ' 组 · ' + q + ' 题';
+      t.amount = q;
+      t.sets = sets;
+      t.amountText = q + ' 题';
+      t.minutes = Math.round(q * per);
+      delete t.actualMinutes;
+    }
+    t.swappedFrom = from;
+
+    /* 换成别的科目，等于"我不做原来的、改做这个"——跳过状态自然取消 */
+    if (t.skip) {
+      t.skip = false;
+      delete t.skipAt;
+      state.skipLog = (state.skipLog || []).filter(function (x) {
+        return !(x.date === taskMenu.dateKey && x.moduleId === from);
+      });
+    }
+
+    /* 记一笔方向：连着几次都往同一科换，才值得动权重 */
+    state.swapLog = state.swapLog || [];
+    state.swapLog.push({ date: taskMenu.dateKey, from: from, to: t.moduleId });
+    if (state.swapLog.length > 40) state.swapLog = state.swapLog.slice(-40);
+
+    save();
+    return t.moduleId;
+  }
+
+  /* ---------------------------------------------------------------------
    * C2b 今天主攻一科
    *
    * 跟"自己加一项"不一样：加一项是在系统排的基础上再做，
@@ -204,7 +332,7 @@
     (day.tasks || []).forEach(function (t) {
       /* 口径要跟 applyFocus 一致：还没做的系统任务会让位，不占时间。
        * 否则一天排满是常态，主攻就永远说"时间不够"。 */
-      if (t.userAdded || t.status !== 'todo') used += t.minutes;
+      if (t.userAdded || t.status !== 'todo' || t.skip) used += t.minutes;
       if (t.status !== 'todo') doneCount++;
     });
     var cap = E.budgetFor(E.parseKey(tk), state.profile, day.stage).total;
@@ -250,7 +378,7 @@
 
     /* 还没做的系统任务让位；打过卡的、自己加的留着 */
     day.tasks = (day.tasks || []).filter(function (t) {
-      return t.userAdded || t.status !== 'todo';
+      return t.userAdded || t.status !== 'todo' || t.skip;
     });
 
     var used = 0;
@@ -353,6 +481,46 @@
       return { moduleId: id, days: cands[i].days, name: m.short };
     }
     return null;
+  }
+
+  /* 连着几天"今天不做"同一科 → 这才是该调强度的时候。
+   * 设置里那个"减少"是结论，这里是把用户攒出来的信号递给他确认。 */
+  function skipSuggestion() {
+    var tk = todayKey();
+    var log = state.skipLog || [];
+    if (!log.length) return null;
+    var ask = state.ui.prefAsked || {};
+
+    /* 最近五个学习日里，每一科各有几天被跳过 */
+    var byDay = {};        // moduleId -> { '2026-10-01': true }
+    var d = E.parseKey(tk);
+    var seen = 0, guard = 0;
+    while (seen < 5 && guard < 24) {
+      guard++;
+      var k = E.toKey(d);
+      d = E.addDays(d, -1);
+      var day = state.days[k];
+      if (!day || day.isRest) continue;
+      seen++;
+      log.forEach(function (x) {
+        if (x.date !== k) return;
+        byDay[x.moduleId] = byDay[x.moduleId] || {};
+        byDay[x.moduleId][k] = true;
+      });
+    }
+
+    var best = null;
+    Object.keys(byDay).forEach(function (id) {
+      var n = Object.keys(byDay[id]).length;
+      if (n < 3) return;
+      if (ask['skip:' + id]) return;
+      var cur = (state.profile.strength && state.profile.strength[id]) || 'normal';
+      if (cur === 'light' || cur === 'skip') return;   // 已经调过了
+      var m = MODULE_BY_ID[id];
+      if (!m) return;
+      if (!best || n > best.days) best = { moduleId: id, days: n, name: m.short };
+    });
+    return best;
   }
 
   /* ---------------------------------------------------------------------
@@ -489,7 +657,7 @@
     Object.keys(state.days).forEach(function (k) {
       if (k < tk) return;
       var day = state.days[k];
-      var touched = day.mood || (day.tasks || []).some(function (t) { return t.status !== 'todo'; });
+      var touched = E.dayTouched(day);
       if (!touched) delete state.days[k];
     });
     state.weekMark = state.weekMark || {};
@@ -1079,9 +1247,7 @@
       if (!E.isRest(d, profile)) {
         var day = state.days[k];
         if (!day) return k;
-        var touched = day.mood || (day.tasks || []).some(function (t) {
-          return t.status !== 'todo';
-        });
+        var touched = E.dayTouched(day);
         if (!touched) return k;
       }
       d = E.addDays(d, 1);
@@ -1113,9 +1279,7 @@
     Object.keys(state.days).forEach(function (k) {
       if (k <= tk) return;
       var day = state.days[k];
-      var touched = day.mood || (day.tasks || []).some(function (t) {
-        return t.status !== 'todo';
-      });
+      var touched = E.dayTouched(day);
       if (!touched) delete state.days[k];
     });
     E.ensureAhead(state, tk, 14);
@@ -1161,9 +1325,7 @@
     Object.keys(state.days).forEach(function (k) {
       if (k < tk) return;
       var day = state.days[k];
-      var touched = day.mood || (day.tasks || []).some(function (t) {
-        return t.status !== 'todo';
-      });
+      var touched = E.dayTouched(day);
       if (!touched) delete state.days[k];
     });
 
@@ -1340,6 +1502,7 @@
       restDays: [0],
       lessonMinutes: 150,
       speed: 1.5,
+      mode: 'semi',
       courseUnits: {},
       benchmarks: {},
     };
@@ -1379,6 +1542,7 @@
       restDays: draft.restDays,
       lessonMinutes: Number(draft.lessonMinutes) || 150,
       speed: Number(draft.speed) || 1.5,
+      mode: draft.mode || 'semi',
       courseUnits: draft.courseUnits,
       benchmarks: {},
       strength: {},
@@ -1417,7 +1581,7 @@
     '</div>';
   }
 
-  var ONBOARD_STEPS = 6;
+  var ONBOARD_STEPS = 7;
 
   function renderOnboarding() {
     if (!draft) draft = freshDraft();
@@ -1474,6 +1638,16 @@
       body += '</div><div class="footnote">建议至少留 1 天。休息日不算漏打卡，连续天数不会断。</div>';
 
     } else if (step === 5) {
+      /* 用哪种模式：这三档决定今日页上你能改多少东西 */
+      body = '<h2>你想怎么用它？</h2><p class="lead">这个以后在设置里随时能改。</p>';
+      body += '<button class="opt ' + (draft.mode === 'auto' ? 'on' : '') + '" data-act="pick-mode" data-v="auto">' +
+              '<div class="t">全自动</div><div class="d">系统排什么你就做什么，界面最干净。适合完全没头绪、想被带着走的人。</div></button>';
+      body += '<button class="opt ' + (draft.mode === 'semi' ? 'on' : '') + '" data-act="pick-mode" data-v="semi">' +
+              '<div class="t">半自动（推荐）</div><div class="d">系统排，但每天可以自己换、跳过、加练。适合大多数在职备考的人。</div></button>';
+      body += '<button class="opt ' + (draft.mode === 'manual' ? 'on' : '') + '" data-act="pick-mode" data-v="manual">' +
+              '<div class="t">自己排</div><div class="d">系统只排听课和复盘，刷题全由你自己加。适合已经知道自己缺什么、有自己的节奏的人。</div></button>';
+
+    } else if (step === 6) {
       body = '<h2>每个模块你打算听多少节课？</h2>' +
              '<p class="lead">不是"你买了多少"，是"你打算听多少"。以后听完想加，把数字往上改就行。</p>' +
              '<div class="numlist">';
@@ -1556,7 +1730,7 @@
 
   function renderTask(t, dateKey) {
     var cls = t.status === 'done' ? 'done' : t.status === 'half' ? 'half' : '';
-    var rowCls = t.status === 'done' ? ' is-done' : '';
+    var rowCls = (t.status === 'done' ? ' is-done' : '') + (t.skip ? ' is-skipped' : '');
     var body =
       /* 标题这一行也能点：手机上人的第一反应是戳任务名，
        * 而不是去戳左边那个 24 像素的小圈。 */
@@ -1574,6 +1748,9 @@
             (t.status === 'half' ? '<span class="pill">完成一半</span>' : '') +
           '</div>'
         : '');
+    if (t.skip) {
+      body += '<div class="task-meta"><span class="pill plain">今天不做</span></div>';
+    }
 
     var canTime = (t.kind === 'practice' || t.kind === 'essay' || t.kind === 'paperset');
     if (t.status === 'done' && canTime) {
@@ -1600,7 +1777,7 @@
     return '<div class="task' + rowCls + '">' +
       '<button class="tick ' + cls + '" data-act="cycle" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" aria-label="标记完成"></button>' +
       '<div class="task-body">' + body + '</div>' +
-      '<button class="del" data-act="del-task" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" title="删掉这项">×</button>' +
+      '<button class="del" data-act="task-menu" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" title="改这一项">⋯</button>' +
     '</div>';
   }
 
@@ -1620,13 +1797,16 @@
 
     var st = S.streak(state, tk);
     var doneCount = (day.tasks || []).filter(function (t) { return t.status === 'done'; }).length;
-    var totalCount = (day.tasks || []).length;
+    /* 今天不做的那些不算"欠着的"，别让 4 项里的 1 项白占分母 */
+    var skippedCount = (day.tasks || []).filter(function (t) { return t.skip; }).length;
+    var totalCount = (day.tasks || []).length - skippedCount;
     var head = '<div class="today-head">' +
       '<div class="date">' + fmtDate(tk, true) + '　' + weekdayName(tk) + '</div>' +
       '<h1>' + (day.isRest ? '今天休息' : '今天') + '</h1>' +
       '<div class="state">' +
         '<i>' + stageLabel(day.stage) + '</i>' +
         (totalCount ? ' · 已完成 <b>' + doneCount + ' / ' + totalCount + '</b> 项' : '') +
+        (skippedCount ? ' · <span class="muted">' + skippedCount + ' 项今天不做</span>' : '') +
         (st > 1 ? ' · 连续 <b>' + st + '</b> 天' : '') +
       '</div>' +
       '</div>';
@@ -1667,9 +1847,17 @@
       : '';
 
     /* 你老是自己加同一科，那就直接问要不要排进日常 */
-    var sug = prefSuggestion();
-    var sugHtml = sug
-      ? '<div class="pref-note">你最近五天有 <b>' + sug.days + '</b> 天自己加了 ' +
+    var skipSug = (state.profile.mode === 'auto') ? null : skipSuggestion();
+    var sug = skipSug ? null : prefSuggestion();
+    var sugHtml = skipSug
+      ? '<div class="pref-note">你最近五天有 <b>' + skipSug.days + '</b> 天把 <b>' +
+          esc(skipSug.name) + '</b> 划掉了，要不要干脆把它调成「减少」？' +
+          '<div class="row" style="gap:8px;margin-top:8px">' +
+            '<button class="btn sm primary" data-act="reduce-yes" data-m="' + skipSug.moduleId + '">调成减少</button>' +
+            '<button class="btn sm ghost" data-act="reduce-no" data-m="' + skipSug.moduleId + '">不用，我就偶尔</button>' +
+          '</div></div>'
+      : sug
+      ? '<div class="pref-note">你最近五天有 <b>' + sug.days + '</b> 天主动多练了 ' +
           '<b>' + esc(sug.name) + '</b>，要不要排进日常安排？' +
           '<div class="row" style="gap:8px;margin-top:8px">' +
             '<button class="btn sm primary" data-act="pref-yes" data-m="' + sug.moduleId + '">排进去</button>' +
@@ -1686,11 +1874,19 @@
 
       '<div class="section">' + freeHtml + extraFormHtml() +
         (state.ui.addingExtra ? '' :
-          '<div class="row" style="gap:8px">' +
-            '<button class="btn grow ghost" data-act="extra-open">加一项</button>' +
-            '<button class="btn grow ghost" data-act="focus-open">今天主攻一科</button>' +
-          '</div>') +
+          (usageMode() === 'auto'
+            ? '<div class="tiny muted" style="text-align:center">现在是全自动模式，只跟着做就行。' +
+              '想换科目、跳过多做点，去设置里改成半自动。</div>'
+            : '<div class="row" style="gap:8px">' +
+                '<button class="btn grow ghost" data-act="extra-open">加一项</button>' +
+                '<button class="btn grow ghost" data-act="focus-open">今天主攻一科</button>' +
+              '</div>')) +
       '</div>' +
+
+      (usageMode() === 'manual'
+        ? '<div class="section"><div class="free-note">刷题由你自己安排：点上面的「加一项」或「今天主攻一科」，' +
+          '系统只保留了该听哪节课。</div></div>'
+        : '') +
 
       '<div class="section"><p class="section-title">今天感觉</p>' +
         '<div class="moods">' +
@@ -2320,6 +2516,21 @@
     app.innerHTML = '<div class="screen">' +
       '<div class="top"><h1>设置</h1><div class="sub">改完以后，点最下面那个按钮重排后面的计划</div></div>' +
 
+      '<div class="section"><p class="section-title">怎么用它</p><div class="card">' +
+        '<div class="chips">' +
+          [['auto', '全自动'], ['semi', '半自动'], ['manual', '自己排']].map(function (x) {
+            return '<button class="chip ' + (usageMode() === x[0] ? 'on' : '') + '" data-act="set-mode" data-v="' + x[0] + '">' + x[1] + '</button>';
+          }).join('') +
+        '</div>' +
+        '<div class="footnote">' +
+          (usageMode() === 'auto'
+            ? '全自动：系统排什么做什么，今日页只留打卡。'
+            : usageMode() === 'manual'
+              ? '自己排：系统只排听课和复盘，刷题你自己加。'
+              : '半自动：系统排，每天可以换、跳过、加练。') +
+          '　改完记得点最下面重排一次。</div>' +
+      '</div></div>' +
+
       '<div class="section"><p class="section-title">考试与时间</p><div class="card">' +
         '<div class="field"><label>考试日期</label>' +
         '<input class="input" type="date" data-act="set-exam" value="' + esc(p.examDate) + '"></div>' +
@@ -2565,6 +2776,7 @@
     }
     if (act === 'pick-wd') { draft.weekdayMinutes = Number(el.getAttribute('data-v')); return reRender(); }
     if (act === 'pick-we') { draft.weekendMinutes = Number(el.getAttribute('data-v')); return reRender(); }
+    if (act === 'pick-mode') { draft.mode = el.getAttribute('data-v'); return reRender(); }
     if (act === 'toggle-rest') {
       var v = Number(el.getAttribute('data-v'));
       var i = draft.restDays.indexOf(v);
@@ -2599,6 +2811,8 @@
       var task = (day.tasks || []).filter(function (t) { return t.id === tid; })[0];
       if (!task) return;
       var next = task.status === 'todo' ? 'done' : task.status === 'done' ? 'half' : 'todo';
+      /* 跳过之后又做了：跳过自动撤销 */
+      if (next !== 'todo' && task.skip) { task.skip = false; delete task.skipAt; }
       setTaskStatus(task, next);
       if (next !== 'done') task.actualMinutes = null;
       save();
@@ -2676,7 +2890,7 @@
             Object.keys(state.days).forEach(function (k) {
               if (k <= ddk) return;
               var dd = state.days[k];
-              var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+              var touched = E.dayTouched(dd);
               if (!touched) delete state.days[k];
             });
             E.ensureAhead(state, todayKey(), 14);
@@ -2747,7 +2961,7 @@
           Object.keys(state.days).forEach(function (k) {
             if (k <= todayKey()) return;
             var dd = state.days[k];
-            var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+            var touched = E.dayTouched(dd);
             if (!touched) delete state.days[k];
           });
           E.ensureAhead(state, todayKey(), 14);
@@ -2900,7 +3114,7 @@
         Object.keys(state.days).forEach(function (k) {
           if (k <= todayKey()) return;
           var dd = state.days[k];
-          var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+          var touched = E.dayTouched(dd);
           if (!touched) delete state.days[k];
         });
         E.ensureAhead(state, todayKey(), 14);
@@ -3013,6 +3227,11 @@
       toast('已取消。改完点最下面重排一次就生效');
       return reRender();
     }
+    if (act === 'set-mode') {
+      state.profile.mode = el.getAttribute('data-v');
+      save();
+      return reRender();
+    }
     if (act === 'regen') {
       generateWithOverlay(function () {
         toast('已按新设置重排');
@@ -3116,7 +3335,7 @@
       Object.keys(state.days).forEach(function (k) {
         if (k <= todayKey()) return;
         var dd = state.days[k];
-        var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+        var touched = E.dayTouched(dd);
         if (!touched) delete state.days[k];
       });
       E.ensureAhead(state, todayKey(), 14);
@@ -3169,6 +3388,57 @@
 
     /* ---- 今天主攻一科 ---- */
     if (act === 'focus-open') return openFocus();
+
+    /* ---- 任务卡的三个动作：今天不做 / 换一科 / 删掉 ---- */
+    if (act === 'task-menu') {
+      return openTaskMenu(el.getAttribute('data-date'), el.getAttribute('data-task'));
+    }
+    if (act === 'menu-cancel') { taskMenu = null; return closeModal(); }
+    if (act === 'task-skip') {
+      if (!taskMenu) return closeModal();
+      var skT = findTask(taskMenu.dateKey, taskMenu.taskId);
+      if (!skT) { taskMenu = null; return closeModal(); }
+      skT.skip = true;
+      skT.skipAt = taskMenu.dateKey;
+      /* 记一笔：连着几天不做同一科，系统要开口问一句 */
+      state.skipLog = state.skipLog || [];
+      state.skipLog.push({ date: taskMenu.dateKey, moduleId: skT.moduleId });
+      if (state.skipLog.length > 60) state.skipLog = state.skipLog.slice(-60);
+      taskMenu = null;
+      save();
+      closeModal();
+      reRender();
+      toast('今天不做这项，不算你没完成');
+      return;
+    }
+    if (act === 'task-unskip') {
+      if (!taskMenu) return closeModal();
+      var unT = findTask(taskMenu.dateKey, taskMenu.taskId);
+      if (unT) {
+        unT.skip = false;
+        delete unT.skipAt;
+        state.skipLog = (state.skipLog || []).filter(function (x) {
+          return !(x.date === taskMenu.dateKey && x.moduleId === unT.moduleId);
+        });
+      }
+      taskMenu = null;
+      save();
+      closeModal();
+      reRender();
+      return;
+    }
+    if (act === 'task-swap') return openSwap();
+    if (act === 'swap-pick') {
+      var newMid = el.getAttribute('data-m');
+      var gotMid = applySwap(newMid);
+      var swappedName = gotMid ? (MODULE_BY_ID[gotMid] || {}).short : '';
+      taskMenu = null;
+      closeModal();
+      reRender();
+      if (gotMid) toast('今天换成' + swappedName + '，后面的安排也会偏一点');
+      return;
+    }
+
     if (act === 'focus-cancel') { focusDraft = null; return closeModal(); }
     if (act === 'focus-pick') {
       var fmid = el.getAttribute('data-m');
@@ -3195,7 +3465,7 @@
       Object.keys(state.days).forEach(function (k) {
         if (k <= tk) return;
         var dd = state.days[k];
-        var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+        var touched = E.dayTouched(dd);
         if (!touched) delete state.days[k];
       });
       E.ensureAhead(state, tk, 14);
@@ -3207,6 +3477,24 @@
     if (act === 'pref-no') {
       state.ui.prefAsked = state.ui.prefAsked || {};
       state.ui.prefAsked[el.getAttribute('data-m')] = true;
+      save();
+      return reRender();
+    }
+    /* "今天不做"攒够了 → 直接调成减少（等于替用户去设置里改了那一步） */
+    if (act === 'reduce-yes') {
+      var rmid = el.getAttribute('data-m');
+      state.profile.strength[rmid] = 'light';
+      state.ui.prefAsked = state.ui.prefAsked || {};
+      state.ui.prefAsked['skip:' + rmid] = true;
+      save();
+      generateWithOverlay(function () {
+        toast('已把' + ((MODULE_BY_ID[rmid] || {}).short || '') + '调成「减少」，后面的安排重排好了');
+      });
+      return;
+    }
+    if (act === 'reduce-no') {
+      state.ui.prefAsked = state.ui.prefAsked || {};
+      state.ui.prefAsked['skip:' + el.getAttribute('data-m')] = true;
       save();
       return reRender();
     }

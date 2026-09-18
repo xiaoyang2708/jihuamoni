@@ -734,6 +734,16 @@ window.YT = window.YT || {};
     /* ---- 剩下的时间：刷题 与 复盘 ---- */
     var remaining = Math.max(0, total - spent);
 
+    /* 自己排模式：系统只排"有顺序、没法自己安排"的听课，
+     * 刷题和申论交给用户自己加。阶段推进照旧，用户加的题也算数。 */
+    if (profile.mode === 'manual') {
+      var revM = Math.max(0, Math.min(C.maxReviewMinutes, Math.round(total * 0.08)));
+      if (revM >= 15 && tasks.length) {
+        tasks.push(makeReview(dateKey, revM, false));
+      }
+      return tasks;
+    }
+
     /* 冲刺期：周末按模考日排，工作日按模块专练排 */
     if (stageKey === 'sprint') {
       if (weekend) {
@@ -1026,6 +1036,10 @@ window.YT = window.YT || {};
     var extraPlanned = 0, extraDone = 0;    // 用户自己加的任务
     var byModule = {}, extraByModule = {};
     (day.tasks || []).forEach(function (t) {
+      /* 今天主动不做的：不进分母，也不算完成。
+       * 这是"我不想"和"我做不到"的分界——不做的这一项不该拉低完成率，
+       * 但它占的那段时间会还给用户（今日页的"还剩多少可以自己安排"会变大）。 */
+      if (t.skip) return;
       var cr = t.status === 'done' ? 1 : t.status === 'half' ? 0.5 : 0;
       var bag = t.userAdded ? extraByModule : byModule;
       if (t.userAdded) { extraPlanned += t.minutes; extraDone += t.minutes * cr; }
@@ -1113,8 +1127,11 @@ window.YT = window.YT || {};
       if (k >= beforeKey) continue;
       var day = state.days[k];
       if (!day || day.isRest) continue;
-      var touched = (day.tasks || []).some(function (t) { return t.status !== 'todo'; });
-      if (touched) return k;
+      /* 这里问的是"你上次真的学了是哪天"——打过卡才算。
+       * 自己加过任务、或者跳过任务，都说明你打开过，但没学。
+       * 断更要按"真的学了"来算，不然一次加任务就能把断更天数抹掉。 */
+      var studied = (day.tasks || []).some(function (t) { return t.status !== 'todo'; });
+      if (studied || day.mood) return k;
     }
     return null;
   }
@@ -1140,10 +1157,9 @@ window.YT = window.YT || {};
   function restartInfo(state, todayKey) {
     var today = state.days[todayKey];
     if (today && !today.isRest) {
-      var busy = today.mood || (today.tasks || []).some(function (t) {
-        return t.status !== 'todo';
-      });
-      if (busy) return { active: false, gap: 0, missed: 0, factor: 1, level: 'none', lastKey: null };
+      if (dayTouched(today)) {
+        return { active: false, gap: 0, missed: 0, factor: 1, level: 'none', lastKey: null };
+      }
     }
     var last = lastActiveKey(state, todayKey);
     if (!last) return { active: false, gap: null, missed: null, factor: 1, level: 'none', lastKey: null };
@@ -1164,12 +1180,20 @@ window.YT = window.YT || {};
 
   /* 一天"还没动过"的定义：没有任何状态变化、没选感受、也没自己加过东西。
    * 自己加过的任务必须保住——那是用户亲手写的，不能替他清掉。 */
+  /* 这一天用户动过没有：打过卡、选过感受、自己加过东西、或者明确说了"今天不做"。
+   * 只要动过，重排就不能把他这一天覆盖掉。
+   * （少了"跳过"这一条的话，今天不做的标记会在重开 App 时被清掉。） */
+  function dayTouched(day) {
+    if (!day) return false;
+    if (day.mood) return true;
+    return (day.tasks || []).some(function (t) {
+      return t.status !== 'todo' || t.userAdded || t.skip;
+    });
+  }
+
   function untouched(day) {
     if (!day || day.isRest) return false;
-    if (day.mood) return false;
-    return !(day.tasks || []).some(function (t) {
-      return t.status !== 'todo' || t.userAdded;
-    });
+    return !dayTouched(day);
   }
 
   /* 断更之后回来：清掉断更期间"排了但一下都没碰"的日子，
@@ -1184,8 +1208,9 @@ window.YT = window.YT || {};
       if (k >= todayKey || k <= info.lastKey) return;
       var day = state.days[k];
       if (!day || day.isRest || day.mood) return;
-      /* 打过卡的、动过的不碰 */
-      if ((day.tasks || []).some(function (t) { return t.status !== 'todo'; })) return;
+      /* 打过卡的、明确跳过的不碰。注意这里不算 userAdded——
+       * 自己加过任务的那天，系统排的部分照样要清（他加的那条留着）。 */
+      if ((day.tasks || []).some(function (t) { return t.status !== 'todo' || t.skip; })) return;
       if (!(day.tasks || []).length) return;
       /* 自己加的任务是他亲手写的，留着；只清系统排的那部分 */
       day.tasks = day.tasks.filter(function (t) { return t.userAdded; });
@@ -1279,10 +1304,7 @@ window.YT = window.YT || {};
         if (k < todayKey || weekKeyOf(k) !== wk) return;
         var day = state.days[k];
         if (day.isRest) return;
-        var touched = day.mood || (day.tasks || []).some(function (t) {
-          return t.status !== 'todo';
-        });
-        if (!touched) { delete state.days[k]; changed = true; }
+        if (!dayTouched(day)) { delete state.days[k]; changed = true; }
       });
     }
 
@@ -1300,7 +1322,8 @@ window.YT = window.YT || {};
      * 刷题和申论是弹性的，今天没做就过去了——补回来只是在堆任务，
      * 而堆任务正是让备考的人放弃的原因。 */
     var pending = (day.tasks || []).filter(function (t) {
-      return t.status === 'todo' && t.kind === 'course' && !t.noSeq;
+      /* 主动跳过的不顺延——已经明确说了今天不做，再搬到明天是耍赖 */
+      return t.status === 'todo' && t.kind === 'course' && !t.noSeq && !t.skip;
     });
     if (!pending.length) return [];
 
@@ -1367,6 +1390,7 @@ window.YT = window.YT || {};
     lessonLabel: lessonLabel,
     ensureAhead: ensureAhead,
     moduleSets: moduleSets,
+    dayTouched: dayTouched,
     allLessonsDone: allLessonsDone,
     readyModuleCount: readyModuleCount,
     stageFor: stageFor,

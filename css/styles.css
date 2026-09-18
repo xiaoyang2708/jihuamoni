@@ -1059,3 +1059,16 @@ html, body {
 .forecast-note b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .stage.skipped .stage-idx { opacity: .4; }
 .stage.skipped .stage-name { color: var(--ink-3); }
+.menu-list { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.menu-item {
+  display: block; width: 100%; text-align: left;
+  padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+  background: #fff; font: inherit; font-size: 14.5px; color: var(--ink); cursor: pointer;
+  transition: border-color .16s ease, background .16s ease;
+}
+.menu-item:active { background: #f4f0e8; }
+.menu-item small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--ink-3); }
+.menu-item.danger { color: var(--danger); }
+.task.is-skipped .task-title { color: var(--ink-3); text-decoration: line-through; }
+.task.is-skipped .tick { border-style: dashed; }
+.task.is-skipped .task-min { opacity: .5; }
