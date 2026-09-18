@@ -392,6 +392,7 @@ html, body {
   gap: 8px;
 }
 .stage-band span { font-weight: 400; opacity: .8; }
+.stage-band i { margin-left: auto; font-style: normal; font-weight: 600; opacity: .85; }
 .mp-head { font-size: 14px; font-weight: 650; color: var(--primary); }
 .mp-head.up { color: var(--accent); }
 .mp-sub {
@@ -588,7 +589,20 @@ html, body {
 .prog-name { flex: 0 0 76px; font-size: 13px; }
 .prog-bar { flex: 1; height: 6px; background: #eae5dd; border-radius: 20px; overflow: hidden; }
 .prog-bar > i { display: block; height: 100%; background: var(--primary); border-radius: 20px; }
-.prog-val { flex: 0 0 58px; text-align: right; font-size: 12px; color: var(--ink-3); }
+.prog-val { flex: 0 0 52px; text-align: right; font-size: 12px; color: var(--ink-3); }
+.prog-fix {
+  flex: 0 0 auto; margin-left: 6px;
+  border: 1px solid var(--line); background: #fff;
+  color: var(--ink-3); font: inherit; font-size: 11px;
+  padding: 2px 7px; border-radius: 20px; cursor: pointer;
+}
+.prog-fix:active { background: var(--primary-s); color: var(--primary); }
+.prog-sum {
+  font-size: 12.5px; color: var(--ink-2);
+  padding-bottom: 10px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.prog-sum b { color: var(--ink); }
 
 /* ---------- 表格 ---------- */
 

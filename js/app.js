@@ -85,6 +85,72 @@
     overlay.innerHTML = '';
   }
 
+  /* 带输入框的弹窗，用来补记已听的课 */
+  var inputCb = null;
+  function askInput(title, message, value, onOk) {
+    inputCb = onOk;
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal">' +
+        '<div class="modal-title">' + esc(title) + '</div>' +
+        '<div class="modal-msg">' + esc(message) + '</div>' +
+        '<input class="input" type="number" min="0" step="0.5" id="ask-input" value="' + value + '" style="margin-top:14px">' +
+        '<div class="row" style="gap:10px;margin-top:16px">' +
+          '<button class="btn grow" data-act="ask-no">取消</button>' +
+          '<button class="btn primary grow" data-act="ask-yes">确定</button>' +
+        '</div>' +
+      '</div>';
+    setTimeout(function () {
+      var el = document.getElementById('ask-input');
+      if (el) { el.focus(); el.select(); }
+    }, 50);
+  }
+
+  function closeAsk() {
+    inputCb = null;
+    overlay.className = 'overlay hidden';
+    overlay.innerHTML = '';
+  }
+
+  /* 补记：把该模块未完成的课从前往后标记完成，不够的补一条记在今天。
+   * 好处是不动数据结构——进度依然是算出来的，补记也是一条普通任务，删掉就能撤销。 */
+  function markCourseDone(moduleId, wantTotal, tk) {
+    var left = wantTotal;
+    var keys = Object.keys(state.days).sort();
+    for (var i = 0; i < keys.length && left > 0.001; i++) {
+      var day = state.days[keys[i]];
+      if (day.isRest) continue;
+      var tasks = day.tasks || [];
+      for (var j = 0; j < tasks.length && left > 0.001; j++) {
+        var t = tasks[j];
+        if (t.kind !== 'course' || t.moduleId !== moduleId || t.noSeq) continue;
+        if (t.status === 'done') continue;
+        var u = t.units || 1;
+        if (u <= left) { t.status = 'done'; left -= u; }
+      }
+    }
+    if (left > 0.001) {
+      var m = MODULE_BY_ID[moduleId];
+      var eff = E.effectiveLesson(state.profile);
+      if (!state.days[tk]) { E.ensureAhead(state, tk, 1); }
+      var today = state.days[tk];
+      if (today) {
+        today.isRest = false;
+        today.tasks.push({
+          id: 'makeup-' + Date.now(),
+          moduleId: moduleId, moduleName: m.name, kind: 'course',
+          title: m.short + ' · 补记',
+          detail: '已听 ' + left + ' 节',
+          amounts: left, units: left,
+          amountText: left + ' 节',
+          minutes: Math.round(left * eff),
+          status: 'done', actualMinutes: null,
+          userAdded: true, noSeq: true,
+        });
+      }
+    }
+  }
+
   function save() { store.save(state); }
 
   function reRender() { render(); }
@@ -102,7 +168,7 @@
     courseLabels = {};
     Object.keys(state.days || {}).sort().forEach(function (k) {
       (state.days[k].tasks || []).forEach(function (t) {
-        if (t.kind !== 'course') return;
+        if (t.kind !== 'course' || t.noSeq) return;   // 补记的不占节次编号
         var from = pos[t.moduleId] || 0;
         var units = t.units || 1;
         courseLabels[t.id] = window.YT.engine.lessonLabel(from, units);
@@ -699,8 +765,19 @@
       strengthen: '分模块刷题，开始提速',
       sprint: '限时套卷，查漏补缺',
     };
+    /* 色带右边挂一行小字，让用户每次打开都知道课程整体走到哪了 */
+    var bandProg = E.courseProgress(state);
+    var bandDone = 0, bandNeed = 0;
+    MODULES.forEach(function (m) {
+      var n = E.targetUnits(m, profile);
+      if (n <= 0) return;
+      bandNeed += n;
+      bandDone += Math.min(n, bandProg[m.id] || 0);
+    });
     var band = '<div class="stage-band">' + stageLabel(day.stage) +
-      '<span>' + (STAGE_SUB[day.stage] || '') + '</span></div>';
+      '<span>' + (STAGE_SUB[day.stage] || '') + '</span>' +
+      (bandNeed > 0 ? '<i>课 ' + bandDone + '/' + bandNeed + '</i>' : '') +
+      '</div>';
 
     var head = band + '<div class="today-head">' +
       '<div class="date">' + fmtDate(tk, true) + ' · ' + weekdayName(tk) + '</div>' +
@@ -1027,16 +1104,21 @@
 
     /* 听课进度 */
     var prog = E.courseProgress(state);
+    var tDone = 0, tNeed = 0;
     var progRows = MODULES.map(function (m) {
       var need = E.targetUnits(m, profile);
       if (need <= 0) return '';
       var done = Math.min(need, prog[m.id] || 0);
+      tDone += done; tNeed += need;
       return '<div class="prog">' +
         '<div class="prog-name">' + esc(m.short) + '</div>' +
         '<div class="prog-bar"><i style="width:' + Math.round(done / need * 100) + '%"></i></div>' +
-        '<div class="prog-val">' + done + ' / ' + need + ' 节</div>' +
+        '<div class="prog-val">剩 ' + (need - done) + ' 节</div>' +
+        '<button class="prog-fix" data-act="makeup" data-m="' + m.id + '">补记</button>' +
       '</div>';
     }).join('');
+    var progHead = '<div class="prog-sum">共 ' + tNeed + ' 节 · 已听 ' + tDone + ' 节 · 还剩 <b>' +
+      (tNeed - tDone) + '</b> 节</div>';
 
     app.innerHTML = '<div class="screen">' +
       '<div class="top"><h1>我的计划</h1>' +
@@ -1048,7 +1130,8 @@
 
       '<div class="section"><p class="section-title">日程</p>' + rangeBar +
         '<div class="card" style="margin-top:10px">' + daysHtml + '</div></div>' +
-      '<div class="section"><p class="section-title">听课进度</p><div class="card">' + progRows + '</div></div>' +
+      '<div class="section"><p class="section-title">听课进度</p><div class="card">' +
+        progHead + progRows + '</div></div>' +
       '</div>';
     renderTabbar('plan');
   }
@@ -1323,9 +1406,14 @@
           MODULES.map(function (m) {
             var v = (p.courseUnits && p.courseUnits[m.id] !== undefined && p.courseUnits[m.id] !== '')
               ? p.courseUnits[m.id] : m.courseUnits;
+            var need = E.targetUnits(m, p);
+            var doneM = Math.min(need, E.courseProgress(state)[m.id] || 0);
+            var sub = need > 0
+              ? '<span class="unit">已听 ' + doneM + ' · 剩 ' + (need - doneM) + '</span>'
+              : '';
             return '<div class="item"><label>' + esc(m.short) + '</label>' +
               '<input type="number" min="0" step="1" data-act="set-units" data-m="' + m.id + '" value="' + v + '">' +
-              '<span class="unit">节</span></div>';
+              '<span class="unit">节</span>' + sub + '</div>';
           }).join('') +
         '</div>' +
         '<div class="footnote">这是"这个模块你打算听多少节"，不是"你买了多少节"。' +
@@ -1670,6 +1758,33 @@
       return reRender();
     }
     /* 提醒里那个"加一组"，直接开表单并锁定模块 */
+    if (act === 'makeup') {
+      var mupId = el.getAttribute('data-m');
+      var mupMod = MODULE_BY_ID[mupId];
+      var mupNeed = E.targetUnits(mupMod, state.profile);
+      var mupDone = Math.min(mupNeed, E.courseProgress(state)[mupId] || 0);
+      return askInput('补记已听的课',
+        mupMod.name + ' 总共 ' + mupNeed + ' 节，现在已经听了多少节？' +
+        '（现在记的是 ' + mupDone + ' 节）',
+        mupDone,
+        function (v) {
+          if (v === null || isNaN(v)) return;
+          var want = Math.max(0, Math.min(mupNeed, Math.round(v * 2) / 2));
+          if (want <= mupDone) { toast('没有变化'); return; }
+          markCourseDone(mupId, want - mupDone, todayKey());
+          /* 补完重排后面没动过的天，课程接着往下排 */
+          Object.keys(state.days).forEach(function (k) {
+            if (k <= todayKey()) return;
+            var dd = state.days[k];
+            var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+            if (!touched) delete state.days[k];
+          });
+          E.ensureAhead(state, todayKey(), 14);
+          save();
+          toast('已补记到 ' + want + ' 节');
+          render();
+        });
+    }
     if (act === 'extra-quick') {
       var qm = el.getAttribute('data-m');
       state.ui.addingExtra = true;
@@ -1934,6 +2049,16 @@
     }
 
     /* ---- 弹窗 ---- */
+    if (act === 'ask-yes') {
+      var icb = inputCb;
+      var iel = document.getElementById('ask-input');
+      var ival = iel ? Number(iel.value) : null;
+      closeAsk();
+      if (icb) icb(ival);
+      return;
+    }
+    if (act === 'ask-no') return closeAsk();
+
     if (act === 'confirm-yes') {
       var cb = confirmCb;
       closeModal();
