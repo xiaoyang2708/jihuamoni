@@ -177,6 +177,175 @@
   }
 
   /* ---------------------------------------------------------------------
+   * C2b 今天主攻一科
+   *
+   * 跟"自己加一项"不一样：加一项是在系统排的基础上再做，
+   * 主攻是让系统排的今天全部让位，时间全给这一科。
+   * 已经打过卡的、自己加的一律不动——那是已经发生的事。
+   * ------------------------------------------------------------------- */
+
+  var focusDraft = null;
+
+  function openFocus() {
+    var tk = todayKey();
+    var day = state.days[tk];
+    if (!day || day.isRest) { toast('今天是休息日，先歇着'); return; }
+    var used = 0, doneCount = 0;
+    (day.tasks || []).forEach(function (t) {
+      /* 口径要跟 applyFocus 一致：还没做的系统任务会让位，不占时间。
+       * 否则一天排满是常态，主攻就永远说"时间不够"。 */
+      if (t.userAdded || t.status !== 'todo') used += t.minutes;
+      if (t.status !== 'todo') doneCount++;
+    });
+    var cap = E.budgetFor(E.parseKey(tk), state.profile, day.stage).total;
+    focusDraft = { left: Math.max(0, Math.round(cap - used)), doneCount: doneCount };
+    renderFocus();
+  }
+
+  function renderFocus() {
+    if (!focusDraft) return;
+    var d = focusDraft;
+    var chips = MODULES.map(function (m) {
+      return '<button class="chip" data-act="focus-pick" data-m="' + m.id + '">' + esc(m.short) + '</button>';
+    }).join('');
+
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:420px">' +
+        '<div class="modal-title">今天主攻这一科</div>' +
+        '<div class="modal-msg">' +
+          (d.left >= 25
+            ? '剩下的 ' + fmtMinutes(d.left) + ' 全部给这一科。'
+            : '今天剩下的时间不多了，主攻排不出来。') +
+          (d.doneCount ? '已经打完卡的 ' + d.doneCount + ' 项不动。' : '') +
+        '</div>' +
+        (d.left >= 25
+          ? '<div class="chips" style="margin-top:14px">' + chips + '</div>' +
+            '<div class="footnote" style="margin-top:14px">主攻的日子不计入完成率——' +
+            '那是你自己安排的强度，不是系统排的量合不合适。</div>'
+          : '') +
+        '<div class="row" style="margin-top:16px">' +
+          '<button class="btn grow" data-act="focus-cancel">取消</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* 把今天剩下的时间全给这一科。返回加了几条。 */
+  function applyFocus(moduleId) {
+    var tk = todayKey();
+    var day = state.days[tk];
+    if (!day) return -1;
+    var p = state.profile;
+    var stage = day.stage || 'base';
+
+    /* 还没做的系统任务让位；打过卡的、自己加的留着 */
+    day.tasks = (day.tasks || []).filter(function (t) {
+      return t.userAdded || t.status !== 'todo';
+    });
+
+    var used = 0;
+    day.tasks.forEach(function (t) { used += t.minutes; });
+    var cap = E.budgetFor(E.parseKey(tk), p, stage).total;
+    var left = Math.round(cap - used);
+    if (left < 25) return 0;
+
+    var stamp = Date.now();
+    var made = 0;
+    function push(t) {
+      t.id = 'focus-' + stamp + '-' + (made++);
+      t.userAdded = true;
+      t.focus = true;
+      t.status = 'todo';
+      t.actualMinutes = null;
+      day.tasks.push(t);
+    }
+
+    /* 申论那条线不按"组"算，按小题/大作文来 */
+    if (moduleId === 'slw') {
+      var left2 = left, guard = 0;
+      while (left2 >= YT.ESSAY.smallMinutes && guard < 6) {
+        guard++;
+        var big = (left2 >= YT.ESSAY.bigMinutes + 40) && (guard % 2 === 0);
+        var mins = big ? YT.ESSAY.bigMinutes : YT.ESSAY.smallMinutes;
+        if (mins > left2) break;
+        push({
+          moduleId: 'slw', moduleName: '申论', kind: 'essay',
+          title: big ? '申论 · 大作文（主攻）' : '申论 · 小题（主攻）',
+          detail: big ? '完整写一篇，写完自己对答案改' : '认真写完，对照参考答案改',
+          amounts: 1, amountText: big ? '1 篇' : '1 道', minutes: mins,
+        });
+        left2 -= mins;
+      }
+      return made;
+    }
+
+    var m = MODULE_BY_ID[moduleId];
+    var per = YT.unitMinutesFor(m, stage, p);
+    var setSize = YT.moduleParam(m, p, 'setSize') || 20;
+
+    /* 先留出复盘的时间：主攻完总得回头看错题。
+     * 剩得太少就不留了，不然刷不到几道题，主攻就名存实亡。 */
+    var errRate = E.errorRateFor(state);
+    var reviewMin = Math.max(20, Math.min(CFG.maxReviewMinutes,
+      Math.round(left * errRate * CFG.reviewRatio)));
+    if (left - reviewMin < 30) reviewMin = 0;
+    var leftP = left - reviewMin;
+
+    var guard2 = 0;
+    while (leftP >= 20 && guard2 < 6) {
+      guard2++;
+      var take = Math.min(leftP, CFG.maxPracticePerModule);
+      var sets = Math.max(0.5, Math.floor(take / (per * setSize) * 2) / 2);
+      var q = Math.round(sets * setSize);
+      var mins = Math.round(q * per);
+      if (mins < 15 || mins > take * 1.2) break;
+      push({
+        moduleId: m.id, moduleName: m.name, kind: 'practice',
+        title: m.short + ' · 主攻刷题',
+        detail: sets + ' 组 · ' + q + ' 题',
+        amount: q, amounts: sets, amountText: q + ' 题', minutes: mins,
+      });
+      leftP -= mins;
+    }
+
+    if (reviewMin > 0 && made) {
+      push({
+        moduleId: 'review', moduleName: '复盘', kind: 'review',
+        title: '错题复盘', detail: '把今天做错的题重做一遍，记下错因',
+        minutes: reviewMin, amountText: reviewMin + ' 分钟',
+      });
+    }
+    return made;
+  }
+
+  /* ---------------------------------------------------------------------
+   * C8 偏好层：连续自己加同一个模块 → 主动问要不要排进日常
+   *
+   * 只调"刷题权重"，不动听课节数——判推逻辑的课早就听完了，
+   * 单纯想多刷它的题，不该因为这个多出四节不存在的课。
+   * ------------------------------------------------------------------- */
+
+  /* 该不该问一句。问过就记住，不再烦人。 */
+  function prefSuggestion() {
+    var tk = todayKey();
+    var ask = state.ui.prefAsked || {};
+    var boosts = (state.profile && state.profile.practiceBoost) || {};
+    var cands = window.YT.archive.selfAddedByModule(state, tk, 5).filter(function (c) {
+      return c.days >= 3;   // 五个学习日里有三天自己加了，才算真倾向
+    });
+    for (var i = 0; i < cands.length; i++) {
+      var id = cands[i].moduleId;
+      if (ask[id]) continue;
+      if (boosts[id]) continue;
+      if (state.profile.strength && state.profile.strength[id] === 'skip') continue;
+      var m = MODULE_BY_ID[id];
+      if (!m) continue;
+      return { moduleId: id, days: cands[i].days, name: m.short };
+    }
+    return null;
+  }
+
+  /* ---------------------------------------------------------------------
    * 换一场考试
    *
    * 考公很少有人只考一次，所以这一步要给两条路：
@@ -1316,7 +1485,8 @@
       (taskDetail(t) ? '<div class="task-detail">' + esc(taskDetail(t)) + '</div>' : '') +
       ((t.carried || t.status === 'half' || t.userAdded)
         ? '<div class="task-meta">' +
-            (t.review ? '<span class="pill plain">回顾</span>'
+            (t.focus ? '<span class="pill plain">主攻</span>'
+                      : t.review ? '<span class="pill plain">回顾</span>'
                       : (t.userAdded ? '<span class="pill plain">自己加的</span>' : '')) +
             (t.carried ? '<span class="pill warn">顺延</span>' : '') +
             (t.status === 'half' ? '<span class="pill">完成一半</span>' : '') +
@@ -1414,7 +1584,19 @@
         '</div>'
       : '';
 
+    /* 你老是自己加同一科，那就直接问要不要排进日常 */
+    var sug = prefSuggestion();
+    var sugHtml = sug
+      ? '<div class="pref-note">你最近五天有 <b>' + sug.days + '</b> 天自己加了 ' +
+          '<b>' + esc(sug.name) + '</b>，要不要排进日常安排？' +
+          '<div class="row" style="gap:8px;margin-top:8px">' +
+            '<button class="btn sm primary" data-act="pref-yes" data-m="' + sug.moduleId + '">排进去</button>' +
+            '<button class="btn sm ghost" data-act="pref-no" data-m="' + sug.moduleId + '">不用</button>' +
+          '</div></div>'
+      : '';
+
     app.innerHTML = '<div class="screen">' + head +
+      (sugHtml ? '<div class="section">' + sugHtml + '</div>' : '') +
       (staleHtml ? '<div class="section">' + staleHtml + '</div>' : '') +
       (allDone ? '<div class="section"><div class="done-note">今天全部完成</div></div>' : '') +
 
@@ -1422,7 +1604,10 @@
 
       '<div class="section">' + freeHtml + extraFormHtml() +
         (state.ui.addingExtra ? '' :
-          '<button class="btn block ghost" data-act="extra-open">加一项</button>') +
+          '<div class="row" style="gap:8px">' +
+            '<button class="btn grow ghost" data-act="extra-open">加一项</button>' +
+            '<button class="btn grow ghost" data-act="focus-open">今天主攻一科</button>' +
+          '</div>') +
       '</div>' +
 
       '<div class="section"><p class="section-title">今天感觉</p>' +
@@ -2004,9 +2189,18 @@
       var summary = sf === 0
         ? '<span style="color:var(--danger)">这一科不排</span>'
         : '听课 <b>' + E.targetUnits(m, p) + '</b> 节 · 刷题量 <b>×' + sf + '</b>';
+      /* 自己点名要多刷的（C8 偏好层），单独标出来，也能一键取消 */
+      var boost = (p.practiceBoost && p.practiceBoost[m.id]) || 1;
+      var boostHtml = boost > 1
+        ? '<div class="row between" style="margin-bottom:6px">' +
+            '<span class="tiny muted">你自己点名要多练的这一科</span>' +
+            '<button class="chip on" data-act="clear-boost" data-m="' + m.id + '">刷题 ×' + boost + ' · 取消</button>' +
+          '</div>'
+        : '';
       return '<div style="padding:9px 0;border-bottom:1px solid var(--line)">' +
         '<div class="row between" style="margin-bottom:6px"><span style="font-size:13.5px">' + esc(m.short) + '</span>' +
         '<span class="tiny muted">' + summary + '</span></div>' +
+        boostHtml +
         '<div class="chips">' + btns + '</div></div>';
     }).join('');
 
@@ -2699,6 +2893,13 @@
       save();
       return reRender();
     }
+    if (act === 'clear-boost') {
+      var cbMid = el.getAttribute('data-m');
+      if (state.profile.practiceBoost) delete state.profile.practiceBoost[cbMid];
+      save();
+      toast('已取消。改完点最下面重排一次就生效');
+      return reRender();
+    }
     if (act === 'regen') {
       generateWithOverlay(function () {
         toast('已按新设置重排');
@@ -2831,6 +3032,50 @@
       go('today');
       toast(mode0 === 'new' ? '新一轮开始了，上一轮存在学习档案里' : '考试日期已更新，后面重排好了');
       return;
+    }
+
+    /* ---- 今天主攻一科 ---- */
+    if (act === 'focus-open') return openFocus();
+    if (act === 'focus-cancel') { focusDraft = null; return closeModal(); }
+    if (act === 'focus-pick') {
+      var fmid = el.getAttribute('data-m');
+      var fname = (MODULE_BY_ID[fmid] || {}).short || '';
+      var nMade = applyFocus(fmid);
+      focusDraft = null;
+      save();
+      closeModal();
+      reRender();
+      toast(nMade > 0 ? '今天主攻' + fname + '，其他任务先让位' : '今天剩下的时间不够了');
+      return;
+    }
+
+    /* ---- 偏好层 ---- */
+    if (act === 'pref-yes') {
+      var pmid = el.getAttribute('data-m');
+      var pm = MODULE_BY_ID[pmid] || {};
+      state.profile.practiceBoost = state.profile.practiceBoost || {};
+      var curB = state.profile.practiceBoost[pmid] || 1;
+      state.profile.practiceBoost[pmid] = Math.round(Math.min(2, curB + 0.4) * 10) / 10;
+      state.ui.prefAsked = state.ui.prefAsked || {};
+      state.ui.prefAsked[pmid] = true;
+      /* 后面还没动过的天重排，让新的权重马上生效 */
+      Object.keys(state.days).forEach(function (k) {
+        if (k <= tk) return;
+        var dd = state.days[k];
+        var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+        if (!touched) delete state.days[k];
+      });
+      E.ensureAhead(state, tk, 14);
+      save();
+      reRender();
+      toast('已经把' + (pm.short || '') + '排进日常，后面会自动多排它的题');
+      return;
+    }
+    if (act === 'pref-no') {
+      state.ui.prefAsked = state.ui.prefAsked || {};
+      state.ui.prefAsked[el.getAttribute('data-m')] = true;
+      save();
+      return reRender();
     }
     if (act === 'arch-toggle') {
       if (!archDraft) return;
@@ -2992,11 +3237,27 @@
        * 免得配置文件改了之后，存下来的这份还是旧的、字段对不上。 */
       var start = (state.roadmap && state.roadmap.startKey) || todayKey();
       state.roadmap = E.buildRoadmap(state.profile, start);
+      lastRollKey = todayKey();
       dailyRoll();
       save();
     }
     render();
   }
+
+  /* 手机从后台切回来时页面不会重新加载，跨天也不会自己重算。
+   * 所以每次回到前台，如果已经不是同一天了，就补跑一次跨天检查
+   * （断更、顺延、重新排两周走的都是真实路径）。 */
+  var lastRollKey = null;
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    if (!state.profile) return;
+    var tk = todayKey();
+    if (tk === lastRollKey) return;
+    lastRollKey = tk;
+    dailyRoll();
+    save();
+    render();
+  });
 
   /* 调试用：在浏览器控制台里输入 __ytDebug() 就能看到当前状态 */
   window.__ytDebug = function () { return state; };

@@ -277,5 +277,43 @@ console.log('\n【9】换一场考试：上一轮封存，课不用重听');
     firstCourse && firstCourse.detail);
 }
 
+/* ======================= 10. 偏好层：老自己加同一科 ======================= */
+console.log('\n【10】连续几天自己加同一科，系统该开口问一句');
+{
+  const s = { profile, roadmap: null, days: {}, scores: [] };
+  s.roadmap = E.buildRoadmap(profile, '2026-09-01');
+  const selfMade = (id, i) => {
+    const m = YT.MODULE_BY_ID[id];
+    return {
+      id: 'u' + i, moduleId: id, moduleName: m.name, kind: 'practice',
+      title: m.short + ' · 加练', detail: '', amount: 20, amounts: 1,
+      amountText: '20 题', minutes: 50, status: 'todo', actualMinutes: null, userAdded: true,
+    };
+  };
+  ['2026-09-07', '2026-09-08', '2026-09-09'].forEach((k, i) => {
+    s.days[k] = { date: k, isRest: false, stage: 'base',
+      tasks: [mkTask('zlfx', i), selfMade('pdlj', i)].filter(Boolean), mood: null };
+  });
+  function mkTask(id, i) {
+    const m = YT.MODULE_BY_ID[id];
+    return { id: 's' + i, moduleId: id, moduleName: m.name, kind: 'practice',
+      title: m.short + ' · 刷题', detail: '', amount: 20, amounts: 1,
+      amountText: '20 题', minutes: 50, status: 'todo', actualMinutes: null };
+  }
+
+  const hits = A.selfAddedByModule(s, '2026-09-10', 5);
+  const pdlj = hits.find(h => h.moduleId === 'pdlj');
+  check('数得出自己加了几天', pdlj && pdlj.days === 3, JSON.stringify(hits));
+  check('系统排的不算进去', !hits.some(h => h.moduleId === 'zlfx'), JSON.stringify(hits));
+  check('只出现一次（按模块聚合）', hits.filter(h => h.moduleId === 'pdlj').length === 1, hits.length);
+
+  /* 权重加成：只影响刷题分配，不动听课节数 */
+  const before = profile.examDate;
+  check('加成不影响听课节数',
+    E.targetUnits(YT.MODULE_BY_ID.pdlj, profile) ===
+    E.targetUnits(YT.MODULE_BY_ID.pdlj, Object.assign({}, profile, { practiceBoost: { pdlj: 1.4 } })),
+    '听课节数被改动了');
+}
+
 console.log('\n' + (fail ? '有 ' + fail + ' 条没过 ❌' : '全部通过 ✅'));
 process.exit(fail ? 1 : 0);

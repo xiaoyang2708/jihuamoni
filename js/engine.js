@@ -448,7 +448,8 @@ window.YT = window.YT || {};
     pool.forEach(function (m) {
       /* 权重 = 用户设的强度 × 模块本身的性价比。
        * 资料/言语/判断是提分主力，会在轮转里出现得更频繁。 */
-      var w = strengthFactor(profile, m.id) * (m.weight === undefined ? 1 : m.weight);
+      var boost = (profile.practiceBoost && profile.practiceBoost[m.id]) || 1;
+      var w = strengthFactor(profile, m.id) * (m.weight === undefined ? 1 : m.weight) * boost;
       if (w <= 0) return;
       var times = Math.max(1, Math.round(w * 2));
       for (var i = 0; i < times; i++) weighted.push(m);

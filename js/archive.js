@@ -250,10 +250,40 @@ window.YT = window.YT || {};
     };
   }
 
+  /* 最近这些天里，用户自己加得最勤的是哪几科。
+   * 只数"自己加的、不是回顾、不是主攻"的任务——那是他主动多要的。 */
+  function selfAddedByModule(state, todayKey, lookDays) {
+    var E2 = YT.engine;
+    var d = E2.parseKey(todayKey);
+    var hits = {};
+    var seenDays = 0, guard = 0;
+    while (seenDays < lookDays && guard < lookDays * 3 + 7) {
+      guard++;
+      var k = E2.toKey(d);
+      d = E2.addDays(d, -1);   // 从今天开始往前数：今天加的那次也算
+      var day = state.days[k];
+      if (!day || day.isRest) continue;   // 只数学习日
+      seenDays++;
+      var seen = {};
+      (day.tasks || []).forEach(function (t) {
+        if (!t.userAdded || t.review || t.focus) return;
+        seen[t.moduleId] = true;
+      });
+      Object.keys(seen).forEach(function (id) {
+        hits[id] = hits[id] || { moduleId: id, days: 0, lastKey: null };
+        hits[id].days++;
+        if (!hits[id].lastKey || k > hits[id].lastKey) hits[id].lastKey = k;
+      });
+    }
+    return Object.keys(hits).map(function (id) { return hits[id]; })
+      .sort(function (a, b) { return b.days - a.days; });
+  }
+
   YT.archive = {
     build: build,
     lessonWhere: lessonWhere,
     latestRates: latestRates,
     roundSummary: roundSummary,
+    selfAddedByModule: selfAddedByModule,
   };
 })(window.YT);

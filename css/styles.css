@@ -1028,3 +1028,8 @@ html, body {
   .numlist { grid-template-columns: 1fr; }
   .table { font-size: 12px; }
 }
+.pref-note {
+  background: #f4f0e8; border-radius: var(--radius);
+  padding: 13px 15px; font-size: 13px; line-height: 1.6; color: var(--ink-2);
+}
+.pref-note b { color: var(--ink); }
