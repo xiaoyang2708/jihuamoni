@@ -38,6 +38,15 @@
       .replace(/"/g, '&quot;');
   }
 
+  /* 任务 id 必须唯一：查任务、打卡、删除全靠它对上号。
+   * 只用 Date.now() 的话，同一毫秒里加两条就会撞 id——
+   * 表现就是"点第二条没反应"（其实是改到了第一条）。 */
+  var uidSeq = 0;
+  function uid(prefix) {
+    uidSeq++;
+    return prefix + Date.now() + '-' + uidSeq;
+  }
+
   function fmtDate(key, withYear) {
     var d = E.parseKey(key);
     return (withYear ? d.getFullYear() + '年' : '') + (d.getMonth() + 1) + '月' + d.getDate() + '日';
@@ -684,7 +693,7 @@
        * 它只是把上一节回头看一遍，单独给一个 kind。 */
       var isCourseReview = r.kind === 'course';
       var t = {
-        id: 'review-' + Date.now() + '-' + added,
+        id: uid('review-'),
         moduleId: r.moduleId,
         moduleName: r.moduleName,
         kind: isCourseReview ? 'review' : 'practice',
@@ -731,7 +740,7 @@
       if (today) {
         today.isRest = false;
         today.tasks.push({
-          id: 'makeup-' + Date.now(),
+          id: uid('makeup-'),
           moduleId: moduleId, moduleName: m.name, kind: 'course',
           title: m.short + ' · 补记',
           detail: '已听 ' + left + ' 节',
@@ -1478,7 +1487,9 @@
     var cls = t.status === 'done' ? 'done' : t.status === 'half' ? 'half' : '';
     var rowCls = t.status === 'done' ? ' is-done' : '';
     var body =
-      '<div class="task-top">' +
+      /* 标题这一行也能点：手机上人的第一反应是戳任务名，
+       * 而不是去戳左边那个 24 像素的小圈。 */
+      '<div class="task-top" data-act="cycle" data-date="' + dateKey + '" data-task="' + esc(t.id) + '">' +
         '<span class="task-title">' + esc(t.title) + '</span>' +
         '<span class="task-min">' + fmtMinutes(t.minutes) + '</span>' +
       '</div>' +
@@ -2666,7 +2677,7 @@
         var qe2 = document.querySelector('[data-act="extra-qty"]');
         var su = Math.max(0.5, Math.round((Number(qe2 && qe2.value) || 1) * 2) / 2);
         task = {
-          id: 'extra-' + Date.now(),
+          id: uid('extra-'),
           moduleId: 'slw', moduleName: '申论', kind: 'course',
           title: '申论 · 听课（自己加的）',
           detail: su + ' 节',
@@ -2678,7 +2689,7 @@
       } else if (extraDraft.group === 'slw') {
         var big = extraDraft.type === 'big';
         task = {
-          id: 'extra-' + Date.now(),
+          id: uid('extra-'),
           moduleId: 'slw', moduleName: '申论', kind: 'essay',
           title: '申论 · ' + (big ? '大作文' : '小题'),
           detail: '自己加的',
@@ -2697,7 +2708,7 @@
           var eff2 = window.YT.engine.effectiveLesson(state.profile);
           var units = Math.round(qv * 2) / 2;
           task = {
-            id: 'extra-' + Date.now(),
+            id: uid('extra-'),
             moduleId: m3.id, moduleName: m3.name, kind: 'course',
             title: m3.short + ' · 听课（自己加的）',
             detail: units + ' 节',
@@ -2710,7 +2721,7 @@
           var per3 = window.YT.unitMinutesFor(m3, dayX.stage, state.profile);
           var q3 = Math.max(1, Math.round((m3.setSize || 20) * qv));
           task = {
-            id: 'extra-' + Date.now(),
+            id: uid('extra-'),
             moduleId: m3.id, moduleName: m3.name, kind: 'practice',
             title: m3.short + ' · 加练',
             detail: q3 + ' 题 · 自己加的',
