@@ -490,7 +490,7 @@
         '<h2>你打算什么时候考？</h2>' +
         '<p class="lead">这是整个计划的锚点，后面所有安排都从这一天倒推。</p>' +
         '<div class="field"><label>考试日期</label>' +
-        '<input class="input" type="date" id="f-exam" value="' + esc(draft.examDate) + '"></div>' +
+        '<input class="input" type="date" data-act="set-exam-draft" value="' + esc(draft.examDate) + '"></div>' +
         '<div class="chips">' +
         '<button class="chip" data-act="exam-preset" data-months="2">约 2 个月后</button>' +
         '<button class="chip" data-act="exam-preset" data-months="4">约 4 个月后</button>' +
@@ -773,6 +773,9 @@
 
   var extraDraft = { group: null, moduleId: null, essayKind: 'small' };
 
+  /* 往哪一天加。今日页默认今天，计划页点某天的"＋"就指向那一天。 */
+  function extraTargetDay() { return state.ui.extraDate || todayKey(); }
+
   function extraFormHtml() {
     if (!state.ui.addingExtra) return '';
     var g = extraDraft.group;
@@ -976,14 +979,19 @@
     var label = k === tk ? '今天' : weekdayName(k);
     var head = '<div class="pd-head">' +
       '<div class="pd-date">' + label + '<small>' + (d.getMonth() + 1) + '/' + d.getDate() + '</small></div>' +
-      '<div class="pd-total">' + (isRest ? '休息' : (total ? fmtMinutes(total) : '—')) + '</div>' +
+      '<div class="pd-right">' +
+        '<span class="pd-total">' + (isRest ? '休息' : (total ? fmtMinutes(total) : '—')) + '</span>' +
+        '<button class="pd-add" data-act="extra-open-day" data-v="' + k + '" title="给这天加一项">＋</button>' +
+      '</div>' +
     '</div>';
 
-    if (isRest) return '<div class="plan-day rest' + (collapsible ? ' foldable' : '') + '">' + head + '</div>';
+    var formHere = (state.ui.addingExtra && state.ui.extraDate === k) ? extraFormHtml() : '';
+
+    if (isRest) return '<div class="plan-day rest' + (collapsible ? ' foldable' : '') + '">' + head + formHere + '</div>';
     if (!day) {
       return k < tk
-        ? '<div class="plan-day past">' + head + '</div>'
-        : '<div class="plan-day">' + head + '<div class="pd-stage">还没排到</div></div>';
+        ? '<div class="plan-day past">' + head + formHere + '</div>'
+        : '<div class="plan-day">' + head + '<div class="pd-stage">还没排到</div>' + formHere + '</div>';
     }
 
     var stageName = STAGE_NAME[day.stage] || '';
@@ -1001,12 +1009,12 @@
       return '<div class="plan-day foldable' + (open ? ' open' : '') + '" data-act="fold-day" data-v="' + k + '">' +
         head +
         (open ? '' : '<div class="pd-brief">' + esc(kinds.join(' · ')) + '</div>') +
-        body + '</div>';
+        body + formHere + '</div>';
     }
 
     return '<div class="plan-day">' + head +
       '<div class="pd-stage">' + stageName + '</div>' +
-      '<div class="pd-tasks">' + taskRows(day) + '</div></div>';
+      '<div class="pd-tasks">' + taskRows(day) + '</div>' + formHere + '</div>';
   }
 
   function taskRows(day) {
@@ -1153,13 +1161,19 @@
 
     var strengthRows = MODULES.map(function (m) {
       var cur = p.strength[m.id] || 'normal';
+      var sf = window.YT.STRENGTH[cur].factor;
       var btns = ['strong', 'normal', 'light', 'skip'].map(function (k) {
         return '<button class="chip ' + (cur === k ? 'on' : '') + '" data-act="set-strength" data-m="' + m.id + '" data-v="' + k + '">' +
                window.YT.STRENGTH[k].label + '</button>';
       }).join('');
+      /* 强度同时决定"听多少课"和"刷多少题"，两个都要显示出来，
+       * 不然用户以为它只改了听课。 */
+      var summary = sf === 0
+        ? '<span style="color:var(--danger)">这一科不排</span>'
+        : '听课 <b>' + E.targetUnits(m, p) + '</b> 节 · 刷题量 <b>×' + sf + '</b>';
       return '<div style="padding:9px 0;border-bottom:1px solid var(--line)">' +
         '<div class="row between" style="margin-bottom:6px"><span style="font-size:13.5px">' + esc(m.short) + '</span>' +
-        '<span class="tiny muted">' + (E.targetUnits(m, p)) + ' 节</span></div>' +
+        '<span class="tiny muted">' + summary + '</span></div>' +
         '<div class="chips">' + btns + '</div></div>';
     }).join('');
 
@@ -1206,7 +1220,8 @@
 
       '<div class="section"><p class="section-title">各模块强度</p>' +
         '<div class="card" style="padding-top:4px;padding-bottom:4px">' + strengthRows + '</div>' +
-        '<div class="footnote">"减少"适合你本身有底子的模块，"不学"适合你打算放弃的（比如数量关系）。这比逐条改任务省事，改完系统自己重排。</div>' +
+        '<div class="footnote">强度决定这一科整体占多少份量——同时影响听课节数和刷题量，不是只改听课。' +
+        '"减少"适合你本身有底子的模块，"不学"适合你打算放弃的（比如数量关系）。改完点最下面重排。</div>' +
       '</div>' +
 
       '<div class="section"><p class="section-title">高级参数</p><div class="card">' +
@@ -1365,6 +1380,7 @@
       var d = new Date();
       d.setMonth(d.getMonth() + months);
       draft.examDate = E.toKey(d);
+      draft.examTouched = true;
       return reRender();
     }
     if (act === 'pick-base') {
@@ -1455,11 +1471,25 @@
     /* ---- 自己加任务 ---- */
     if (act === 'extra-open') {
       state.ui.addingExtra = true;
+      state.ui.extraDate = tk;
+      extraDraft = { group: null, moduleId: null, essayKind: 'small' };
+      return reRender();
+    }
+    if (act === 'extra-open-day') {
+      var od = el.getAttribute('data-v');
+      /* 再点一次同一个"＋"就收起来 */
+      if (state.ui.addingExtra && state.ui.extraDate === od) {
+        state.ui.addingExtra = false;
+        return reRender();
+      }
+      state.ui.addingExtra = true;
+      state.ui.extraDate = od;
       extraDraft = { group: null, moduleId: null, essayKind: 'small' };
       return reRender();
     }
     if (act === 'extra-cancel') {
       state.ui.addingExtra = false;
+      state.ui.extraDate = null;
       return reRender();
     }
     if (act === 'extra-group') {
@@ -1479,8 +1509,16 @@
       return reRender();
     }
     if (act === 'extra-add') {
-      var dayX = state.days[tk];
+      var targetKey = extraTargetDay();
+      var dayX = state.days[targetKey];
+      if (!dayX) {
+        /* 计划页可能点到了还没排到的日子，先把它补出来 */
+        E.ensureAhead(state, tk, 90);
+        dayX = state.days[targetKey];
+      }
       if (!dayX) return;
+      /* 休息日上加了任务，就把它当成学习日 */
+      if (dayX.isRest) dayX.isRest = false;
       var task = null;
       if (extraDraft.group === 'slw') {
         var big = extraDraft.essayKind === 'big';
@@ -1515,6 +1553,7 @@
       if (!task) return;
       dayX.tasks.push(task);
       state.ui.addingExtra = false;
+      state.ui.extraDate = null;
       extraDraft = { group: null, moduleId: null, essayKind: 'small' };
       save();
       toast('加进去了。这个不算在系统完成率里');
@@ -1681,6 +1720,18 @@
         /* 不整页重渲染（会丢焦点），只把下面那块预览换掉 */
         var pv = document.getElementById('ob-preview');
         if (pv) pv.innerHTML = previewHtml();
+      }
+      return;
+    }
+    /* 问卷里的考试日期。手输日期时"下一步"要立刻可用——
+     * 之前这个输入框漏了 data-act，手输的日期系统根本收不到，
+     * 只有下面几个快捷按钮能用。 */
+    if (act === 'set-exam-draft') {
+      draft.examDate = el.value;
+      var nb = document.querySelector('[data-act="ob-next"]');
+      if (nb) {
+        if (draft.examDate) { nb.style.opacity = ''; nb.style.pointerEvents = ''; }
+        else { nb.style.opacity = '.4'; nb.style.pointerEvents = 'none'; }
       }
       return;
     }
