@@ -24,7 +24,11 @@
 
   function $(sel) { return document.querySelector(sel); }
 
-  function todayKey() { return E.toKey(new Date()); }
+  /* 正常情况下就是真实今天。开发者工具里"快进"时会被换成模拟日期，
+   * 这样所有已经写好的逻辑（周重排、顺延、阶段推进）走的是真实代码路径。 */
+  function todayKey() { return state.simDate || E.toKey(new Date()); }
+
+  function realTodayKey() { return E.toKey(new Date()); }
 
   function esc(s) {
     return String(s === undefined || s === null ? '' : s)
@@ -98,6 +102,107 @@
    * ------------------------------------------------------------------- */
 
   var moodPreview = null;
+
+  /* ---------------------------------------------------------------------
+   * 开发者工具：快进
+   * 不用真的等 30 天，就能看到跨周重排、降档、阶段推进跑出来是什么样。
+   * 发布给朋友时把 SHOW_DEV 改成 false，这一块就不出现。
+   * ------------------------------------------------------------------- */
+
+  var SHOW_DEV = true;
+
+  function makeRnd(seed) {
+    var s = seed || 20260918;
+    return function () {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      return s / 0x7fffffff;
+    };
+  }
+
+  /* 按完成率造一天的打卡记录。固定种子，同样参数跑出来结果一样。 */
+  function simulateCheckin(day, rate, rnd) {
+    if (!day || day.isRest) return;
+    (day.tasks || []).forEach(function (t) {
+      var r = rnd();
+      if (r < rate) {
+        t.status = 'done';
+        if (rnd() < 0.6) {
+          t.actualMinutes = Math.max(1, Math.round(t.minutes * (0.75 + rnd() * 0.5)));
+        }
+      } else if (r < rate + 0.12) {
+        t.status = 'half';
+      }
+    });
+    /* 感受跟完成情况挂钩：做得顺就是轻松，做不动就是累 */
+    var r2 = rnd();
+    if (rate < 0.6) day.mood = r2 < 0.5 ? 'hard' : 'tired';
+    else if (rate > 0.9) day.mood = r2 < 0.5 ? 'easy' : 'ok';
+    else day.mood = r2 < 0.4 ? 'ok' : (r2 < 0.7 ? 'tired' : 'easy');
+  }
+
+  function simulateForward(days, rate) {
+    /* 先备份，随时能还原 */
+    state.devBackup = JSON.stringify({
+      simDate: state.simDate, days: state.days, roadmap: state.roadmap,
+      weeklyLog: state.weeklyLog, weekMark: state.weekMark,
+    });
+
+    var rnd = makeRnd(20260918 + days);
+    var d = E.parseKey(todayKey());
+    var done = 0;
+    for (var i = 0; i < days; i++) {
+      var dk = E.toKey(d);
+      state.simDate = dk;
+      dailyRoll();                       // 和真实打开 App 走同一条路径
+      var day = state.days[dk];
+      if (day && !day.isRest) { simulateCheckin(day, rate, rnd); done++; }
+      d = E.addDays(d, 1);
+    }
+    state.simDate = E.toKey(d);
+    dailyRoll();
+    save();
+    return done;
+  }
+
+  function restoreDev() {
+    if (!state.devBackup) return false;
+    var b = JSON.parse(state.devBackup);
+    state.simDate = b.simDate;
+    state.days = b.days;
+    state.roadmap = b.roadmap;
+    state.weeklyLog = b.weeklyLog;
+    state.weekMark = b.weekMark;
+    state.devBackup = null;
+    save();
+    return true;
+  }
+
+  function devRows() {
+    var rate = state.ui.simRate || 0.75;
+    function rateBtn(v, label) {
+      return '<button class="chip ' + (rate === v ? 'on' : '') + '" data-act="sim-rate" data-v="' + v + '">' + label + '</button>';
+    }
+    return '<div class="param-row">' +
+      '<div class="param-note">这一块只有你自己用，发布给朋友时会隐藏。' +
+      '快进会按你选的完成率把中间每一天都跑一遍——周重排、任务顺延、阶段推进走的都是真实逻辑，不是造出来的假数据。跑完可以一键还原。</div>' +
+      '<div class="param-head" style="margin-top:10px"><span class="param-label">模拟完成率</span></div>' +
+      '<div class="chips" style="margin-top:6px">' +
+        rateBtn(0.5, '50% 经常完不成') + rateBtn(0.75, '75% 一般') + rateBtn(0.95, '95% 很稳') +
+      '</div>' +
+      '<div class="param-head" style="margin-top:14px"><span class="param-label">快进</span></div>' +
+      '<div class="chips" style="margin-top:6px">' +
+        '<button class="chip" data-act="sim-run" data-v="7">7 天</button>' +
+        '<button class="chip" data-act="sim-run" data-v="30">30 天</button>' +
+        '<button class="chip" data-act="sim-run" data-v="60">60 天</button>' +
+        '<button class="chip" data-act="sim-run" data-v="120">120 天</button>' +
+      '</div>' +
+      '<div class="param-note" style="margin-top:12px">当前日期：<b>' + todayKey() + '</b>' +
+        (state.simDate ? '（真实今天是 ' + realTodayKey() + '）' : '') + '</div>' +
+      (state.devBackup
+        ? '<button class="btn ghost block" style="margin-top:10px" data-act="sim-restore">还原到快进前</button>'
+        : '') +
+    '</div>';
+  }
 
   /* 明天起第一个"还没动过"的学习日。已打过卡的日子不会因为改感受被重排，
    * 所以预览也只看这一天。 */
@@ -1118,6 +1223,14 @@
         '<button class="btn block danger" data-act="wipe">清空全部数据</button>' +
       '</div></div>' +
 
+      (SHOW_DEV ? '<div class="section"><p class="section-title">开发者工具</p><div class="card">' +
+        '<button class="param-toggle" data-act="toggle-dev">' +
+          (state.ui.showDev ? '收起 ▲' : '展开 ▼') +
+          '<span>快进模拟，只有你自己用</span>' +
+        '</button>' +
+        (state.ui.showDev ? devRows() : '') +
+      '</div></div>' : '') +
+
       '<div class="sticky-cta above-tabs"><button class="btn primary block" data-act="regen">重新生成后面的计划</button></div>' +
       '</div>';
     renderTabbar('settings');
@@ -1455,6 +1568,30 @@
       state.profile.tuning.essayStartStage = el.getAttribute('data-v');
       save();
       return reRender();
+    }
+    if (act === 'toggle-dev') {
+      state.ui.showDev = !state.ui.showDev;
+      save();
+      return reRender();
+    }
+    if (act === 'sim-rate') {
+      state.ui.simRate = Number(el.getAttribute('data-v'));
+      save();
+      return reRender();
+    }
+    if (act === 'sim-run') {
+      var nDays = Number(el.getAttribute('data-v'));
+      var rate = state.ui.simRate || 0.75;
+      var startKey = todayKey();
+      var ran = simulateForward(nDays, rate);
+      toast('已快进 ' + nDays + ' 天（' + ran + ' 个学习日）');
+      go('plan');
+      return;
+    }
+    if (act === 'sim-restore') {
+      if (restoreDev()) { toast('已还原'); go('today'); }
+      else toast('没有可还原的快照');
+      return;
     }
 
     /* ---- 设置 ---- */

@@ -467,8 +467,10 @@ window.YT = window.YT || {};
     if (!perQ || perQ <= 0) return null;
     var setMinutes = setSize * perQ;
     var sets = minutes / setMinutes;
-    if (sets < 0.5) return null;
-    sets = Math.floor(sets * 2) / 2;          // 只到半组
+    /* 只排整组，不排半组——真实备考是按组做的。
+     * 装不下一整组就留白，不硬凑。 */
+    sets = Math.min(Math.floor(sets), T(profile, 'maxSetsPerModule'));
+    if (sets < 1) return null;
     var qty = Math.max(1, Math.round(setSize * sets));
     return {
       sets: sets,
@@ -480,8 +482,7 @@ window.YT = window.YT || {};
   }
 
   function setLabel(plan) {
-    if (plan.sets === 1) return '1 组 · ' + plan.qty + ' 题';
-    if (plan.sets === 0.5) return '半组 · ' + plan.qty + ' 题';
+    if (plan.sets === 1) return plan.qty + ' 题';
     return plan.sets + ' 组 · ' + plan.qty + ' 题';
   }
 
@@ -537,6 +538,18 @@ window.YT = window.YT || {};
         allow -= pick.minutes;
         if (pick.kind === 'course') { doneUnits += pick.units; ec.listens++; }
         else { ec.practices++; }
+      }
+      /* 同一天排了两道小题就合成一条，别显示成两条一模一样的 */
+      var slwTasks = tasks.filter(function (t) {
+        return t.moduleId === 'slw' && t.kind === 'essay';
+      });
+      if (slwTasks.length === 2 && slwTasks[0].title === slwTasks[1].title) {
+        var ea = slwTasks[0], eb = slwTasks[1];
+        ea.amounts = 2;
+        ea.amountText = '2 道';
+        ea.detail = '认真写完 2 道，对照参考答案改';
+        ea.minutes += eb.minutes;
+        tasks.splice(tasks.indexOf(eb), 1);
       }
     }
 
