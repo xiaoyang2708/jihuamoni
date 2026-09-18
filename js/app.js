@@ -10,6 +10,7 @@
   var S = window.YT.stats;
   var store = window.YT.store;
   var MODULES = window.YT.MODULES;
+  var MODULE_BY_ID = window.YT.MODULE_BY_ID;
   var CFG = window.YT.CONFIG;
 
   var state = store.load();
@@ -570,16 +571,25 @@
 
     var allDone = (day.tasks || []).length > 0 && (day.tasks || []).every(function (t) { return t.status === 'done'; });
 
+    /* 留白 = 当天容量 − 系统排的 − 自己加的。够 15 分钟才提示，太少提示反而尴尬。 */
+    var cap = E.budgetFor(E.parseKey(tk), profile, day.stage).total;
+    var freeMin = Math.max(0, cap - s.planned - s.extraPlanned);
+    var freeHtml = (freeMin >= 15 && !state.ui.addingExtra)
+      ? '<div class="free-note">基础任务之外还剩 <b>' + fmtMinutes(freeMin) +
+        '</b>，你可以自己安排</div>'
+      : '';
+
     app.innerHTML = '<div class="screen">' + head +
       '<div class="section">' +
         '<div class="card">' +
           '<div class="row between" style="margin-bottom:2px">' +
-            '<span class="tiny muted">今日进度</span>' +
+            '<span class="tiny muted">今日基础任务</span>' +
             '<span class="tiny muted">' + pct(s.rate) + '</span>' +
           '</div>' +
           '<div class="daybar"><i style="width:' + Math.round(s.rate * 100) + '%"></i></div>' +
           '<div class="daybar-meta"><span>计划 ' + fmtMinutes(s.planned) + '</span>' +
-          '<span>已完成 ' + fmtMinutes(s.done) + '</span></div>' +
+          '<span>已完成 ' + fmtMinutes(s.done) +
+          (s.extraPlanned ? '　· 自己加 ' + fmtMinutes(s.extraPlanned) : '') + '</span></div>' +
         '</div>' +
       '</div>' +
 
@@ -588,6 +598,11 @@
         '<div class="tiny muted" style="margin-top:3px">这就是节奏感。明天见。</div></div></div>' : '') +
 
       '<div class="section"><p class="section-title">今日任务</p><div class="card">' + tasksHtml + '</div></div>' +
+
+      '<div class="section">' + freeHtml + extraFormHtml() +
+        (state.ui.addingExtra ? '' :
+          '<button class="btn block ghost" data-act="extra-open">＋ 我自己加一项</button>') +
+      '</div>' +
 
       '<div class="section"><p class="section-title">今天感觉怎么样</p>' +
         '<div class="moods">' +
@@ -633,6 +648,65 @@
 
   function moodBtn(id, label, cur) {
     return '<button class="mood ' + (cur === id ? 'on' : '') + '" data-act="mood" data-v="' + id + '">' + label + '</button>';
+  }
+
+  /* ---------------------------------------------------------------------
+   * 自己加任务
+   * 系统排的是"基础任务"，装不下一整组的时间留白，用户想加什么自己加。
+   * ------------------------------------------------------------------- */
+
+  /* 六板块 + 申论。判断推理底下有三个子模块，需要再选一次。 */
+  var EXTRA_GROUPS = [
+    { id: 'zlfx', name: '资料' },
+    { id: 'yy',   name: '言语' },
+    { id: 'pd',   name: '判断', subs: ['pdlj', 'pdtx', 'pddl'] },
+    { id: 'sl',   name: '数量' },
+    { id: 'cs',   name: '常识' },
+    { id: 'zzll', name: '政治' },
+    { id: 'slw',  name: '申论' },
+  ];
+
+  var extraDraft = { group: null, moduleId: null, essayKind: 'small' };
+
+  function extraFormHtml() {
+    if (!state.ui.addingExtra) return '';
+    var g = extraDraft.group;
+    var chips = EXTRA_GROUPS.map(function (x) {
+      return '<button class="chip ' + (g === x.id ? 'on' : '') + '" data-act="extra-group" data-v="' + x.id + '">' + x.name + '</button>';
+    }).join('');
+
+    var sub = '';
+    if (g === 'pd') {
+      sub = '<div class="chips" style="margin-top:8px">' +
+        ['pdlj', 'pdtx', 'pddl'].map(function (id) {
+          var m = MODULE_BY_ID[id];
+          return '<button class="chip ' + (extraDraft.moduleId === id ? 'on' : '') + '" data-act="extra-module" data-v="' + id + '">' + esc(m.short.replace('判推', '')) + '</button>';
+        }).join('') + '</div>';
+    }
+    /* 申论没有"几组"，用小题/大作文区分 */
+    if (g === 'slw') {
+      sub += '<div class="chips" style="margin-top:8px">' +
+        '<button class="chip ' + (extraDraft.essayKind === 'small' ? 'on' : '') + '" data-act="extra-essay" data-v="small">小题 1 道</button>' +
+        '<button class="chip ' + (extraDraft.essayKind === 'big' ? 'on' : '') + '" data-act="extra-essay" data-v="big">大作文 1 篇</button>' +
+      '</div>';
+    } else if (g && (g !== 'pd' || extraDraft.moduleId)) {
+      var m2 = MODULE_BY_ID[extraDraft.moduleId || g];
+      var per = window.YT.unitMinutesFor(m2, state.days[todayKey()].stage, state.profile);
+      sub += '<div class="ef-qty"><label>做几组</label>' +
+        '<input type="number" min="0.5" step="0.5" value="1" data-act="extra-qty" data-per="' + per + '" data-size="' + (m2.setSize || 20) + '">' +
+        '<span>组 · 约 <b id="ef-min">' + Math.round((m2.setSize || 20) * per) + '</b> 分钟</span></div>';
+    }
+
+    var canAdd = g && (g === 'slw' || extraDraft.moduleId || g !== 'pd');
+    return '<div class="extra-form">' +
+      '<div class="ef-title">我想加一项</div>' +
+      '<div class="chips">' + chips + '</div>' +
+      sub +
+      '<div class="row" style="gap:8px;margin-top:12px">' +
+        '<button class="btn sm ghost" data-act="extra-cancel">取消</button>' +
+        '<button class="btn sm primary grow" data-act="extra-add"' + (canAdd ? '' : ' style="opacity:.4;pointer-events:none"') + '>加进来</button>' +
+      '</div>' +
+    '</div>';
   }
 
   function stageLabel(key) {
@@ -1260,6 +1334,75 @@
       dd.isRest = false;
       dd.tasks = E.buildTasks(E.parseKey(tk), tk, state, state.roadmap, null);
       save();
+      return reRender();
+    }
+
+    /* ---- 自己加任务 ---- */
+    if (act === 'extra-open') {
+      state.ui.addingExtra = true;
+      extraDraft = { group: null, moduleId: null, essayKind: 'small' };
+      return reRender();
+    }
+    if (act === 'extra-cancel') {
+      state.ui.addingExtra = false;
+      return reRender();
+    }
+    if (act === 'extra-group') {
+      var eg = el.getAttribute('data-v');
+      extraDraft.group = eg;
+      var hit = EXTRA_GROUPS.filter(function (x) { return x.id === eg; })[0];
+      /* 没有子模块的板块直接锁定模块 */
+      extraDraft.moduleId = (hit && hit.subs) ? null : eg;
+      return reRender();
+    }
+    if (act === 'extra-module') {
+      extraDraft.moduleId = el.getAttribute('data-v');
+      return reRender();
+    }
+    if (act === 'extra-essay') {
+      extraDraft.essayKind = el.getAttribute('data-v');
+      return reRender();
+    }
+    if (act === 'extra-add') {
+      var dayX = state.days[tk];
+      if (!dayX) return;
+      var task = null;
+      if (extraDraft.group === 'slw') {
+        var big = extraDraft.essayKind === 'big';
+        task = {
+          id: 'extra-' + Date.now(),
+          moduleId: 'slw', moduleName: '申论', kind: 'essay',
+          title: '申论 · ' + (big ? '大作文' : '小题'),
+          detail: '自己加的',
+          amounts: 1,
+          amountText: big ? '1 篇' : '1 道',
+          minutes: big ? window.YT.ESSAY.bigMinutes : window.YT.ESSAY.smallMinutes,
+          status: 'todo', actualMinutes: null, userAdded: true,
+        };
+      } else if (extraDraft.moduleId) {
+        var m3 = MODULE_BY_ID[extraDraft.moduleId];
+        var qtyEl = document.querySelector('[data-act="extra-qty"]');
+        var sets = qtyEl ? Number(qtyEl.value) : 1;
+        if (!sets || sets <= 0) sets = 1;
+        var per3 = window.YT.unitMinutesFor(m3, dayX.stage, state.profile);
+        var q3 = Math.max(1, Math.round((m3.setSize || 20) * sets));
+        task = {
+          id: 'extra-' + Date.now(),
+          moduleId: m3.id, moduleName: m3.name, kind: 'practice',
+          title: m3.short + ' · 加练',
+          detail: q3 + ' 题 · 自己加的',
+          amount: q3, sets: sets,
+          amountText: q3 + ' 题',
+          minutes: Math.round(q3 * per3),
+          status: 'todo', actualMinutes: null, userAdded: true,
+        };
+      }
+      if (!task) return;
+      dayX.tasks.push(task);
+      state.ui.addingExtra = false;
+      extraDraft = { group: null, moduleId: null, essayKind: 'small' };
+      save();
+      toast('加进去了。这个不算在系统完成率里');
       return reRender();
     }
 

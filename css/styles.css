@@ -296,6 +296,35 @@ html, body {
 
 /* ---------- 每日感受 ---------- */
 
+.free-note {
+  font-size: 12.5px; color: var(--ink-2);
+  background: #f2efe9;
+  border-radius: var(--radius-s);
+  padding: 10px 13px;
+  margin-bottom: 10px;
+}
+.free-note b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.extra-form {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 15px 16px;
+  margin-bottom: 10px;
+}
+.ef-title { font-size: 14px; font-weight: 650; margin-bottom: 10px; }
+.ef-qty {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 12px; font-size: 13px; color: var(--ink-2);
+}
+.ef-qty input {
+  width: 70px; font: inherit; font-size: 15px; font-weight: 650;
+  padding: 6px 8px; border: 1.5px solid var(--line);
+  border-radius: 8px; background: #fff; color: var(--ink); text-align: center;
+}
+.ef-qty input:focus { outline: none; border-color: var(--primary); }
+.ef-qty b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
 .moods { display: flex; gap: 6px; margin-top: 2px; }
 .mood {
   flex: 1;

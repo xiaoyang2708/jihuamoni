@@ -632,12 +632,6 @@ window.YT = window.YT || {};
                                  Math.round(remaining * reviewRatio / (1 + reviewRatio)));
     var practiceMinutes = remaining - reviewMinutes;
 
-    /* 时间不够排一组有意义的题时，别硬塞"5 题"这种任务，把时间让给消化 */
-    if (practiceMinutes < C.minPracticeMinutes) {
-      reviewMinutes = remaining;
-      practiceMinutes = 0;
-    }
-
     if (practiceMinutes >= 15) {
       var learned = [];
       Object.keys(progress).forEach(function (id) {
@@ -682,17 +676,12 @@ window.YT = window.YT || {};
           });
         }
       });
-      /* 时间不够半组的话，这块时间别浪费，并到消化/复盘里去 */
-      var usedByPractice = practiceTasks.reduce(function (s, t) { return s + t.minutes; }, 0);
-      var leftover = practiceMinutes - usedByPractice;
-      /* 只有"不变"或"加量"时才把零头并进复盘。
-       * 减量的日子如果也并进去，复盘反而变大，等于把"太难了"抵消掉了。 */
-      if (leftover > 0 && moodF >= 1) {
-        reviewMinutes = Math.min(T(profile, 'maxReviewMinutes'), reviewMinutes + leftover);
-      }
       if (practiceTasks.length) {
         tasks = tasks.concat(practiceTasks);
       }
+      /* 剩下装不下一整组的时间不硬凑。
+       * 这是"基础任务"，本来就该留白给用户自己安排；以前会把零头塞给
+       * "课程消化"，结果每天排得满满当当，用户自己加什么都成了超载。 */
     }
 
     /* ---- 复盘 ---- */
@@ -800,22 +789,31 @@ window.YT = window.YT || {};
    * ------------------------------------------------------------------- */
 
   function dayStats(day) {
-    var planned = 0, done = 0;
-    var byModule = {};
+    var planned = 0, done = 0;              // 系统排的基础任务
+    var extraPlanned = 0, extraDone = 0;    // 用户自己加的任务
+    var byModule = {}, extraByModule = {};
     (day.tasks || []).forEach(function (t) {
-      planned += t.minutes;
       var cr = t.status === 'done' ? 1 : t.status === 'half' ? 0.5 : 0;
-      done += t.minutes * cr;
+      var bag = t.userAdded ? extraByModule : byModule;
+      if (t.userAdded) { extraPlanned += t.minutes; extraDone += t.minutes * cr; }
+      else { planned += t.minutes; done += t.minutes * cr; }
 
       var g = t.moduleId;
-      if (!byModule[g]) byModule[g] = { planned: 0, done: 0, name: t.moduleName };
-      byModule[g].planned += t.minutes;
-      byModule[g].done += t.minutes * cr;
+      if (!bag[g]) bag[g] = { planned: 0, done: 0, name: t.moduleName };
+      bag[g].planned += t.minutes;
+      bag[g].done += t.minutes * cr;
     });
     return {
       planned: planned, done: done,
+      /* 完成率只用系统排的任务算。用户自己加的量不计入——
+       * 那个数字是用来判断"系统排的量合不合适"的，
+       * 混进用户自己加的部分会掩盖真实的信号。 */
       rate: planned > 0 ? done / planned : 0,
+      extraPlanned: extraPlanned, extraDone: extraDone,
+      totalPlanned: planned + extraPlanned,
+      totalDone: done + extraDone,
       byModule: byModule,
+      extraByModule: extraByModule,
     };
   }
 
