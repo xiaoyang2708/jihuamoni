@@ -908,13 +908,15 @@
    * ------------------------------------------------------------------- */
 
   function actualOptions(minutes) {
-    var mults = [0.6, 0.8, 1, 1.25, 1.5];
+    /* 计划时长本身永远排第一档：大多数情况其实就是照着计划的时间做完的 */
+    var mults = [1, 0.6, 0.8, 1.25, 1.5];
     var out = [];
+    var base = Math.max(1, Math.round(minutes));
     mults.forEach(function (x) {
-      var v = Math.max(5, Math.round(minutes * x / 5) * 5);
+      var v = x === 1 ? base : Math.max(5, Math.round(minutes * x / 5) * 5);
       if (out.indexOf(v) === -1) out.push(v);
     });
-    return out;
+    return out.sort(function (a, b) { return a - b; });
   }
 
   function renderTask(t, dateKey) {
@@ -944,7 +946,15 @@
           body += '<button class="chip" data-act="set-actual" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" data-min="' + v + '">' + v + ' 分</button>';
         });
         body += '<button class="chip" data-act="skip-actual" data-date="' + dateKey + '" data-task="' + esc(t.id) + '">跳过</button>';
-        body += '</div></div>';
+        body += '</div>';
+        /* 预设档位永远不可能刚好，给一个能自己填的地方 */
+        body += '<div class="custom-time">' +
+          '<span>或自己填</span>' +
+          '<input type="number" min="1" max="600" step="1" inputmode="numeric" ' +
+            'data-act="actual-custom" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" ' +
+            'placeholder="' + t.minutes + '">' +
+          '<span>分钟</span></div>';
+        body += '</div>';
       }
     }
 
@@ -2455,7 +2465,21 @@
   document.addEventListener('change', function (ev) {
     var el = ev.target.closest('[data-act]');
     if (!el) return;
-    if (el.getAttribute('data-act') === 'set-exam') { state.profile.examDate = el.value; save(); }
+    var act = el.getAttribute('data-act');
+    if (act === 'set-exam') { state.profile.examDate = el.value; save(); }
+    /* 自己填的实际用时：输入完按回车或者点到别处就提交 */
+    if (act === 'actual-custom') {
+      var v = Number(el.value);
+      if (!v || v <= 0) return;
+      var dk = el.getAttribute('data-date');
+      var tid = el.getAttribute('data-task');
+      var t = ((state.days[dk] || {}).tasks || []).filter(function (x) { return x.id === tid; })[0];
+      if (!t) return;
+      t.actualMinutes = Math.max(1, Math.min(600, Math.round(v)));
+      setTaskStatus(t, t.status, { actualMinutes: t.actualMinutes });
+      save();
+      render();
+    }
   });
 
   /* ---------------------------------------------------------------------
