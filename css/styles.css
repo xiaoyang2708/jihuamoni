@@ -910,6 +910,26 @@ html, body {
 .modal-msg { margin-top: 8px; font-size: 13.5px; color: var(--ink-2); line-height: 1.65; }
 
 /* 改动对比清单 */
+.score-form { margin-top: 12px; max-height: 46vh; overflow-y: auto; }
+.score-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--line);
+}
+.score-row:last-child { border-bottom: 0; }
+.sr-name { flex: 0 0 66px; font-size: 13.5px; }
+.score-row input {
+  width: 62px; font: inherit; font-size: 15px; font-weight: 600;
+  padding: 5px 8px; border: 1.5px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--ink); text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.score-row input:focus { outline: none; border-color: var(--primary); }
+.sr-pct { font-size: 13px; color: var(--ink-3); }
+.sr-tgt { margin-left: auto; font-size: 11.5px; color: var(--ink-3); }
+.score-list { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 4px; }
+.score-item { padding: 8px 0; font-size: 13px; border-bottom: 1px solid var(--line); }
+.score-item:last-child { border-bottom: 0; }
+
 .chg-list { margin-top: 10px; max-height: 300px; overflow-y: auto; }
 .chg-row {
   padding: 9px 0; border-bottom: 1px solid var(--line);

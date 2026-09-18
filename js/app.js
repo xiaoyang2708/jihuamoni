@@ -113,6 +113,58 @@
     overlay.innerHTML = '';
   }
 
+  /* ---------------------------------------------------------------------
+   * B2 记录一次成绩
+   * 只填手上有的模块，其他留空。攒下来之后复盘时长、模块强度建议
+   * 都会用真实数据算，不再拍脑袋。
+   * ------------------------------------------------------------------- */
+
+  var scoreDraft = null;
+
+  function showScoreForm() {
+    var last = (state.scores || [])[(state.scores || []).length - 1];
+    scoreDraft = {
+      date: todayKey(),
+      source: (last && last.source) || '模考',
+      rates: {},
+    };
+    var rows = MODULES.filter(function (m) { return !m.essay; }).map(function (m) {
+      var tgt = window.YT.moduleParam(m, state.profile, 'targetRate');
+      return '<div class="score-row">' +
+        '<span class="sr-name">' + esc(m.short) + '</span>' +
+        '<input type="number" min="0" max="100" step="1" data-act="score-rate" data-m="' + m.id + '" value="" placeholder="—">' +
+        '<span class="sr-pct">%</span>' +
+        (tgt !== null && tgt !== undefined ? '<span class="sr-tgt">目标 ' + Math.round(tgt * 100) + '</span>' : '<span class="sr-tgt">未设目标</span>') +
+      '</div>';
+    }).join('');
+
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:420px">' +
+        '<div class="modal-title">记录一次成绩</div>' +
+        '<div class="modal-msg">只填有数据的，其他留空。</div>' +
+        '<div class="score-form">' +
+          '<div class="score-row">' +
+            '<span class="sr-name">日期</span>' +
+            '<input type="date" data-act="score-date" value="' + scoreDraft.date + '" style="flex:1">' +
+          '</div>' +
+          '<div class="score-row">' +
+            '<span class="sr-name">来源</span>' +
+            '<div class="chips" style="margin:0">' +
+              ['模考', '模块刷题', '真题套卷'].map(function (s) {
+                return '<button class="chip ' + (scoreDraft.source === s ? 'on' : '') + '" data-act="score-source" data-v="' + s + '">' + s + '</button>';
+              }).join('') +
+            '</div>' +
+          '</div>' +
+          rows +
+        '</div>' +
+        '<div class="row" style="gap:10px;margin-top:16px">' +
+          '<button class="btn grow" data-act="score-cancel">取消</button>' +
+          '<button class="btn primary grow" data-act="score-save">保存</button>' +
+        '</div>' +
+      '</div>';
+  }
+
   /* 补记：把该模块未完成的课从前往后标记完成，不够的补一条记在今天。
    * 好处是不动数据结构——进度依然是算出来的，补记也是一条普通任务，删掉就能撤销。 */
   function markCourseDone(moduleId, wantTotal, tk) {
@@ -268,6 +320,32 @@
   }
 
   function save() { store.save(state); }
+
+  /* ---------------------------------------------------------------------
+   * 打卡记录：追加式
+   * 每次改状态都往 task.log 里追加一条带时间戳的记录，
+   * task.status 只是"最新一条的结果"，方便别处照旧读取。
+   * 好处：能画出"哪天学的、几点学的"；将来做多设备同步也不会冲突。
+   * ------------------------------------------------------------------- */
+
+  function setTaskStatus(task, status, extra) {
+    task.status = status;
+    task.log = task.log || [];
+    var entry = { at: new Date().toISOString(), status: status };
+    if (extra) Object.keys(extra).forEach(function (k) { entry[k] = extra[k]; });
+    task.log.push(entry);
+    /* 一天里改来改去的话只留最近 20 条，别把存储撑爆 */
+    if (task.log.length > 20) task.log = task.log.slice(-20);
+  }
+
+  /* 某个任务"什么时候完成的"——学习档案要用 */
+  function taskDoneAt(task) {
+    if (!task.log) return null;
+    for (var i = task.log.length - 1; i >= 0; i--) {
+      if (task.log[i].status === 'done') return task.log[i].at;
+    }
+    return null;
+  }
 
   function reRender() { render(); }
 
@@ -1385,6 +1463,7 @@
     var o = S.overall(state, tk);
     var st = S.streak(state, tk);
     var timing = S.moduleTiming(state);
+    var scores = state.scores || [];
 
     var rows = timing.map(function (r) {
       var med = r.medianPerQuestion === null ? '—' : (Math.round(r.medianPerQuestion * 10) / 10) + ' 分';
@@ -1410,6 +1489,28 @@
         '<div class="metric"><div class="v">' + st + '</div><div class="k">连续打卡</div></div>' +
         '<div class="metric"><div class="v">' + o.daysStudied + '</div><div class="k">学习天数</div></div>' +
         '<div class="metric"><div class="v">' + (o.planned ? pct(o.rate) : '—') + '</div><div class="k">完成任务</div></div>' +
+      '</div></div>' +
+
+      '<div class="section"><div class="card">' +
+        '<div class="row between">' +
+          '<div><div style="font-weight:600">成绩记录</div>' +
+          '<div class="tiny muted" style="margin-top:2px">' +
+            (scores.length ? '已记录 ' + scores.length + ' 次 · 复盘时长按你的错误率算' : '还没记录过，复盘时长先按错误率 30% 估') +
+          '</div></div>' +
+          '<button class="btn sm primary" data-act="score-open">记录</button>' +
+        '</div>' +
+        (scores.length ? '<div class="score-list">' +
+          scores.slice(-3).reverse().map(function (sc) {
+            var parts = [];
+            Object.keys(sc.rates || {}).forEach(function (k) {
+              var m = MODULE_BY_ID[k];
+              if (m && sc.rates[k] !== null && sc.rates[k] !== undefined && sc.rates[k] !== '') {
+                parts.push(m.short + ' ' + Math.round(sc.rates[k] * 100) + '%');
+              }
+            });
+            return '<div class="score-item"><b>' + fmtDate(sc.date, false) + '</b> ' + esc(sc.source || '') +
+              '<div class="tiny muted" style="margin-top:2px">' + esc(parts.join(' · ')) + '</div></div>';
+          }).join('') + '</div>' : '') +
       '</div></div>' +
 
       '<div class="section">' +
@@ -1739,15 +1840,10 @@
       var day = state.days[dk];
       if (!day) return;
       var task = (day.tasks || []).filter(function (t) { return t.id === tid; })[0];
-      /* 没加成功要说清楚原因——原来这里是静默返回，
-       * 用户点"加进来"完全没反应，不知道哪里没填。 */
-      if (!task) {
-        if (!extraDraft.group) return toast('先选一个科目');
-        if (extraDraft.group === 'pd' && !extraDraft.moduleId) return toast('判断推理要再选具体哪一块（逻辑 / 图形 / 定义类比）');
-        return toast('这项加不进去，换个科目试试');
-      }
-      task.status = task.status === 'todo' ? 'done' : task.status === 'done' ? 'half' : 'todo';
-      if (task.status !== 'done') task.actualMinutes = null;
+      if (!task) return;
+      var next = task.status === 'todo' ? 'done' : task.status === 'done' ? 'half' : 'todo';
+      setTaskStatus(task, next);
+      if (next !== 'done') task.actualMinutes = null;
       save();
       return reRender();
     }
@@ -1756,6 +1852,7 @@
       var t2 = ((state.days[dk2] || {}).tasks || []).filter(function (t) { return t.id === tid2; })[0];
       if (!t2) return;
       t2.actualMinutes = Number(el.getAttribute('data-min'));
+      setTaskStatus(t2, t2.status, { actualMinutes: t2.actualMinutes });
       save();
       return reRender();
     }
@@ -1980,7 +2077,12 @@
           };
         }
       }
-      if (!task) return;
+      /* 加不成功要说清楚原因，不能静默返回 */
+      if (!task) {
+        if (!extraDraft.group) return toast('先选一个科目');
+        if (extraDraft.group === 'pd' && !extraDraft.moduleId) return toast('判断推理要再选具体哪一块');
+        return toast('这项加不进去，换个科目试试');
+      }
       dayX.tasks.push(task);
       state.ui.addingExtra = false;
       state.ui.extraDate = null;
@@ -2192,6 +2294,41 @@
     }
     if (act === 'chg-ok') { lastUndo = null; return closeModal(); }
 
+    /* ---- 成绩记录 ---- */
+    if (act === 'score-open') return showScoreForm();
+    if (act === 'score-cancel') { scoreDraft = null; return closeModal(); }
+    if (act === 'score-source') {
+      if (!scoreDraft) return;
+      scoreDraft.source = el.getAttribute('data-v');
+      return showScoreForm();
+    }
+    if (act === 'score-save') {
+      if (!scoreDraft) return closeModal();
+      var rates = {};
+      MODULES.forEach(function (m) {
+        var v = scoreDraft.rates[m.id];
+        if (v !== undefined && v !== null && v !== '') rates[m.id] = v;
+      });
+      if (!Object.keys(rates).length) return toast('至少填一个模块');
+      state.scores = state.scores || [];
+      state.scores.push({ date: scoreDraft.date, source: scoreDraft.source, rates: rates });
+      if (state.scores.length > 60) state.scores = state.scores.slice(-60);
+      /* 错误率变了，复盘时长跟着变，后面没动过的天重排一遍 */
+      Object.keys(state.days).forEach(function (k) {
+        if (k <= todayKey()) return;
+        var dd = state.days[k];
+        var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+        if (!touched) delete state.days[k];
+      });
+      E.ensureAhead(state, todayKey(), 14);
+      scoreDraft = null;
+      save();
+      closeModal();
+      render();
+      toast('已记录。复盘时长会按你的错误率算');
+      return;
+    }
+
     if (act === 'ask-yes') {
       var icb = inputCb;
       var iel = document.getElementById('ask-input');
@@ -2276,6 +2413,16 @@
       var qv2 = Number(el.value) || 0;
       var mn2 = document.getElementById('ef-min');
       if (mn2) mn2.textContent = Math.round(qper * qsize * qv2);
+      return;
+    }
+    if (act === 'score-rate') {
+      if (!scoreDraft) return;
+      var sm = el.getAttribute('data-m');
+      scoreDraft.rates[sm] = el.value === '' ? '' : Math.max(0, Math.min(1, Number(el.value) / 100));
+      return;
+    }
+    if (act === 'score-date') {
+      if (scoreDraft) scoreDraft.date = el.value;
       return;
     }
     if (act === 'set-lesson') {

@@ -695,7 +695,7 @@ window.YT = window.YT || {};
         return tasks;
       }
 
-      var rr = T(profile, 'reviewRatio');
+      var rr = errorRateFor(state) * T(profile, 'reviewRatio');
       var rvW = Math.min(T(profile, 'maxReviewMinutes'),
                          Math.max(15, Math.round(remaining * rr / (1 + rr))));
       var pmW = remaining - rvW;
@@ -704,7 +704,7 @@ window.YT = window.YT || {};
       return tasks;
     }
 
-    var reviewRatio = T(profile, 'reviewRatio');
+    var reviewRatio = errorRateFor(state) * T(profile, 'reviewRatio');
     var reviewMinutes = Math.min(T(profile, 'maxReviewMinutes'),
                                  Math.round(remaining * reviewRatio / (1 + reviewRatio)));
     var practiceMinutes = remaining - reviewMinutes;
@@ -946,6 +946,25 @@ window.YT = window.YT || {};
 
   /* 每日感受换算成的量调整系数。
    * 只看最近若干天，避免某一天心情不好就把整个计划带偏。 */
+  /* 错误率。用户录过成绩就用他的真实数据，没录过按 30% 估。
+   * 用最近三次的平均，避免某一次考砸把复盘时间撑得很大。 */
+  function errorRateFor(state) {
+    var scores = state.scores || [];
+    if (!scores.length) return C.defaultErrorRate;
+    var recent = scores.slice(-3);
+    var sum = 0, n = 0;
+    recent.forEach(function (sc) {
+      Object.keys(sc.rates || {}).forEach(function (k) {
+        var r = sc.rates[k];
+        if (r === null || r === undefined || r === '') return;
+        var v = Number(r);
+        if (!isFinite(v) || v < 0 || v > 1) return;
+        sum += (1 - v); n++;
+      });
+    });
+    return n ? sum / n : C.defaultErrorRate;
+  }
+
   function moodFactor(state, todayKey) {
     var keys = Object.keys(state.days || {}).filter(function (k) {
       return (!todayKey || k <= todayKey) && state.days[k].mood;
@@ -1095,6 +1114,7 @@ window.YT = window.YT || {};
     reflowRule: reflowRule,
     computeReflow: computeReflow,
     moodFactor: moodFactor,
+    errorRateFor: errorRateFor,
     reflowForDate: reflowForDate,
     rollWeek: rollWeek,
     carryOver: carryOver,

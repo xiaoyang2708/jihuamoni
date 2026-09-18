@@ -91,7 +91,12 @@ YT.CONFIG = {
     strengthen: { weekday: { course: 0.40 }, weekend: { course: 0.40 } },
     sprint:     { weekday: { course: 0.00 }, weekend: { course: 0.00 } },
   },
-  reviewRatio: 0.4,       // 复盘时长 = 刷题时长 × 这个系数
+  /* 复盘时长 = 刷题时长 × 错误率 × 复盘系数
+   *   错误率：用户录过成绩就用他的真实数据，没录过按 30% 估
+   *   复盘系数 1.4：复盘一道错题比做一道题多花 40% 的时间
+   * 默认两者相乘正好 42%，跟最早那版"刷题时长的 40%"基本一致。 */
+  defaultErrorRate: 0.30,
+  reviewRatio: 1.4,
   maxReviewMinutes: 60,   // 复盘再长也没意义，到顶就把时间还给刷题
   /* 一条刷题任务最长多少分钟，超了就按整组切成几条。
    * 注意这是"单条任务的长度"，不是一天的总量上限——
