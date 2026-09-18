@@ -76,6 +76,20 @@ console.log('');
 
 E.ensureAhead(state, todayKey, Math.min(state.roadmap.totalStudyDays, 60));
 
+/* 阶段是"学完了没有"算出来的，不是按日期切的——单独看一眼实际形状 */
+const fc = E.forecast(state, todayKey);
+if (fc) {
+  console.log('按进度推进算出来（不是按日期切）：');
+  fc.stages.forEach(st => {
+    console.log('  【' + st.name + '】' + (st.startKey || '—') + ' → ' + (st.endKey || '—') +
+                '　' + st.studyDays + ' 个学习日');
+  });
+  console.log('  课听完：' + (fc.courseDoneKey || '—') +
+              '　进冲刺：' + (fc.sprintKey || '—') +
+              '　离考试还有 ' + fc.studyDaysToExam + ' 个学习日');
+  console.log('');
+}
+
 console.log('='.repeat(64));
 console.log('接下来 14 个学习日的安排');
 console.log('='.repeat(64));

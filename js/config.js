@@ -114,6 +114,17 @@ YT.CONFIG = {
     sprintMin: 14,
     sprintMax: 30,
     baseRatioOfRest: 0.45,  // 基础期占（总天数 − 冲刺期）的比例
+
+    /* —— 阶段怎么推进：不看日历，看学完了没有 ——
+     * 原来只要日期到了就换阶段，结果会出现"专项没做完却已经该刷套卷了"。
+     * 现在两条硬条件：
+     *   课全部听完 → 出基础期
+     *   课全听完 且 至少 sprintMinModules 个模块的专项各刷够 readySetsPerModule 组
+     *   → 进冲刺期，开始套卷
+     * 上面那三个比例数字只在"估算还要多少天"时当参考，不再决定每天排什么。 */
+    sprintMinModules: 5,      // 至少几个模块的专项过完一轮
+    readySetsPerModule: 30,   // "过完一轮" = 累计做完几组（一组 = 套卷里该模块的题量）
+    forceSprintDays: 30,      // 离考试不足这么多学习日，不管进度直接进冲刺
   },
 
   /* —— 申论是独立的一条线 ——
@@ -150,6 +161,14 @@ YT.CONFIG = {
 /* 感受的分数和显示名 */
 YT.MOOD_SCORE = { easy: 1, ok: 0, tired: -1, hard: -2 };
 YT.MOOD_LABEL = { easy: '太轻松', ok: '刚好', tired: '有点累', hard: '太难了' };
+
+/* 三个阶段的名字和目标。阶段什么时候开始、什么时候结束是算出来的
+ * （见 engine 的 stageFor），这里只放文案。 */
+YT.STAGE_META = {
+  base:       { name: '基础期', goal: '把行测各模块和申论过一遍，建立做题手感' },
+  strengthen: { name: '强化期', goal: '分模块大量刷题，申论开始动笔写' },
+  sprint:     { name: '冲刺期', goal: '限时套卷和模考，申论成篇，查漏补缺' },
+};
 
 /* 每日可用时长的预设档位（问卷里用） */
 YT.TIME_OPTIONS = [

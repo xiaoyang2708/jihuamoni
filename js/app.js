@@ -48,6 +48,7 @@
   }
 
   function fmtDate(key, withYear) {
+    if (!key) return '—';
     var d = E.parseKey(key);
     return (withYear ? d.getFullYear() + '年' : '') + (d.getMonth() + 1) + '月' + d.getDate() + '日';
   }
@@ -312,7 +313,7 @@
         moduleId: m.id, moduleName: m.name, kind: 'practice',
         title: m.short + ' · 主攻刷题',
         detail: sets + ' 组 · ' + q + ' 题',
-        amount: q, amounts: sets, amountText: q + ' 题', minutes: mins,
+        amount: q, sets: sets, amountText: q + ' 题', minutes: mins,
       });
       leftP -= mins;
     }
@@ -1171,6 +1172,7 @@
     state.weekMark[E.weekKeyOf(tk)] = true;
 
     E.ensureAhead(state, tk, 14);
+    refreshForecast(tk);
     save();
 
     if (onDone) onDone();
@@ -1207,6 +1209,74 @@
   }
 
   /* 每次打开时把过期没做完的任务顺延 / 砍掉，并保证未来两周已排好 */
+  /* 按现在的进度往前推一遍，看课什么时候听完、什么时候进套卷。
+   * 阶段表也换成这一份——它跟每天实际排的阶段是同一套算法算的。 */
+  function refreshForecast(tk) {
+    if (!state.profile || !state.roadmap) return;
+    state.forecast = E.forecast(state, tk);
+    if (state.forecast) state.roadmap.stages = state.forecast.stages;
+    /* 中间挤不出专项期的话，顺手算一下"砍多少课能腾出四周"。
+     * 只有这种情况才多跑几次预测，正常情况下零开销。 */
+    state.cutPlan = null;
+    var wantDays = cutWantDays();
+    if (state.forecast && (state.forecast.stages[1].studyDays || 0) < wantDays) {
+      state.cutPlan = courseCutPlan(tk, wantDays);
+    }
+  }
+
+  /* 希望腾出多少学习日给专项。备考期短的话按比例要，别张口就要四周——
+   * 一共只剩一个月的人，砍掉七成的课也变不出四周。 */
+  function cutWantDays() {
+    var total = (state.roadmap && state.roadmap.totalStudyDays) || 100;
+    return Math.max(7, Math.min(20, Math.floor(total * 0.4)));
+  }
+
+  /* 砍课比例不是拍脑袋来的：把每科课节数按同一个比例缩小，
+   * 重新预测一遍，看专项期能不能到 wantDays 天。试几档就够。
+   * 试的时候临时改 profile，马上改回来——中间没有异步操作，安全。 */
+  function courseCutPlan(tk, wantDays) {
+    var p = state.profile;
+    var cur = {};
+    MODULES.forEach(function (m) {
+      var v = p.courseUnits && p.courseUnits[m.id];
+      cur[m.id] = (v === undefined || v === null || v === '') ? m.courseUnits : v;
+    });
+
+    /* 最多建议砍一半。再往下砍就不是"优化"了，是让用户别听课了，
+     * 那种情况该走"提高倍速 / 每天加时间"这两条路。 */
+    var tries = [0.85, 0.7, 0.6, 0.5];
+    var best = null;
+    var sumBefore = 0;
+    MODULES.forEach(function (m) { sumBefore += cur[m.id]; });
+
+    for (var i = 0; i < tries.length; i++) {
+      var f = tries[i];
+      var sumAfter = 0;
+      MODULES.forEach(function (m) {
+        var nv = Math.max(0.5, Math.round(cur[m.id] * f * 2) / 2);
+        sumAfter += nv;
+        p.courseUnits[m.id] = nv;
+      });
+      var fc = E.forecast(state, tk);
+      MODULES.forEach(function (m) { p.courseUnits[m.id] = cur[m.id]; });
+      /* 已经砍到低了，再建议就是骚扰 */
+      if (sumAfter >= sumBefore - 0.001) continue;
+      var strDays = fc ? (fc.stages[1].studyDays || 0) : 0;
+      best = { factor: f, strDays: strDays };
+      if (strDays >= wantDays) break;
+    }
+    if (!best || best.factor >= 1) return null;
+
+    /* 挑一个模块当例子说给用户听，比一堆百分比好懂 */
+    var sample = null;
+    MODULES.forEach(function (m) {
+      if (sample || !cur[m.id]) return;
+      sample = { short: m.short, from: cur[m.id], to: Math.max(0.5, Math.round(cur[m.id] * best.factor * 2) / 2) };
+    });
+    best.sample = sample;
+    return best;
+  }
+
   function dailyRoll() {
     var tk = todayKey();
 
@@ -1240,6 +1310,7 @@
 
     /* 3. 保证未来两周都是排好的 */
     E.ensureAhead(state, tk, 14);
+    refreshForecast(tk);
 
     /* 4. 记一笔，让用户看得到"为什么这周变少了" */
     if (roll.ws && roll.ws.planned > 0) {
@@ -1801,20 +1872,48 @@
 
     var stagesHtml = rm.stages.map(function (st, i) {
       var cur = st.key === todayStage ? ' cur' : '';
+      var skipped = !st.studyDays;
       var range = st.startKey ? (fmtDate(st.startKey, false) + ' – ' + fmtDate(st.endKey, false)) : '—';
-      return '<div class="stage' + cur + '">' +
+      return '<div class="stage' + cur + (skipped ? ' skipped' : '') + '">' +
         '<div class="stage-idx">' + (i + 1) + '</div>' +
         '<div class="grow"><div class="stage-name">' + st.name + (st.key === todayStage ? ' · 进行中' : '') + '</div>' +
-        '<div class="stage-date">' + range + ' · ' + st.studyDays + ' 个学习日</div>' +
+        '<div class="stage-date">' + range + ' · ' + (skipped ? '按现在的进度会跳过' : st.studyDays + ' 个学习日') + '</div>' +
         '<div class="tiny muted" style="margin-top:3px">' + esc(st.goal) + '</div></div></div>';
     }).join('');
+
+    /* 预测：课哪天听完、哪天开始套卷。学得快就提前，学得慢就往后推。 */
+    var fc = state.forecast;
+    var fcHtml = '';
+    if (fc && fc.courseDoneKey && fc.sprintKey) {
+      var sprintLeft = E.countStudyDays(fc.sprintKey, fc.examKey, state.profile);
+      fcHtml = '<div class="forecast-note">按现在的进度：<b>' + fmtDate(fc.courseDoneKey, false) +
+        '</b> 听完所有课，<b>' + fmtDate(fc.sprintKey, false) + '</b> 开始刷套卷，之后有 <b>' +
+        sprintLeft + '</b> 个学习日做套卷。<br>' +
+        '<span class="muted">学得快就提前，学得慢就往后推，这里会跟着变。</span></div>';
+    }
 
     /* 听课体检 */
     var lc = rm.lessonCheck;
     var checkHtml = '';
     /* 老数据里可能没有这个字段（那时候还没算强化期），先兜一下 */
     var capH = isFinite(lc && lc.capacityMinutes) ? Math.round(lc.capacityMinutes / 60) : 0;
-    if (lc && !lc.fit) {
+    var cp = state.cutPlan;
+    if (cp && fc && fc.courseDoneKey) {
+      /* 课把时间吃完了，中间挤不出专项期——这正是"砍课不砍题"要出手的时候 */
+      checkHtml = '<div class="section"><div class="card" style="background:var(--accent-s);box-shadow:none">' +
+        '<div style="font-weight:600;color:var(--accent)">中间挤不出专项训练的时间</div>' +
+        '<div class="tiny" style="margin-top:4px;color:var(--ink-2)">' +
+        '按现在的进度，你的课要到 <b>' + fmtDate(fc.courseDoneKey, false) + '</b> 才听完，' +
+        '之后就剩 ' + (fc.stages[2].studyDays || 0) + ' 个学习日，直接上套卷了。</div>' +
+        '<div class="tiny" style="margin-top:6px;color:var(--ink-3)">' +
+        '刷题是提分主力，课是输入。要砍就砍课：把每科的课节数砍掉约 <b>' +
+        Math.round((1 - cp.factor) * 100) + '%</b>' +
+        (cp.sample ? '（比如' + cp.sample.short + '从 ' + cp.sample.from + ' 节减到 ' + cp.sample.to + ' 节）' : '') +
+        '，专项训练能从 <b>' + (fc.stages[1].studyDays || 0) + '</b> 天变成 <b>' + cp.strDays + '</b> 天。</div>' +
+        '<button class="btn sm primary" style="margin-top:10px" data-act="cut-course" data-f="' + cp.factor + '">帮我砍</button>' +
+        '<button class="btn sm ghost" style="margin-top:10px;margin-left:8px" data-act="goto" data-to="settings">我自己调</button>' +
+        '</div></div>';
+    } else if (lc && !lc.fit) {
       checkHtml = '<div class="section"><div class="card" style="background:var(--accent-s);box-shadow:none">' +
         '<div style="font-weight:600;color:var(--accent)">课时量偏大</div>' +
         '<div class="tiny" style="margin-top:4px;color:var(--ink-2)">' +
@@ -1827,7 +1926,9 @@
     } else if (lc) {
       checkHtml = '<div class="section"><div class="card" style="background:var(--primary-s);box-shadow:none">' +
         '<div class="tiny" style="color:var(--primary)">课时量排得下：听课 ' + Math.round(lc.totalMinutes / 60) +
-        ' 小时，基础期加强化期放得下 ' + capH + ' 小时。</div>' +
+        ' 小时。' + (fc && fc.stages[1].studyDays
+          ? '专项训练有 ' + fc.stages[1].studyDays + ' 个学习日。'
+          : '') + '</div>' +
         '</div></div>';
     }
 
@@ -1905,6 +2006,7 @@
 
       '<div class="section"><p class="section-title">总体节奏</p><div class="card">' + stagesHtml + '</div></div>' +
       checkHtml +
+      (fcHtml ? '<div class="section">' + fcHtml + '</div>' : '') +
       logHtml +
 
       '<div class="section"><p class="section-title">日程</p>' + rangeBar +
@@ -2915,6 +3017,26 @@
       generateWithOverlay(function () {
         toast('已按新设置重排');
         go('today');
+      });
+      return;
+    }
+    /* 砍课：把每科的课节数按同一个比例缩小，然后重排。
+     * 只动听课，一道题都不动——刷题是提分主力。 */
+    if (act === 'cut-course') {
+      var cf = Number(el.getAttribute('data-f')) || 0.6;
+      var p0 = state.profile;
+      var changed = 0;
+      MODULES.forEach(function (m) {
+        var v = (p0.courseUnits && p0.courseUnits[m.id] !== undefined && p0.courseUnits[m.id] !== '')
+          ? p0.courseUnits[m.id] : m.courseUnits;
+        var nv = Math.max(0.5, Math.round(Number(v) * cf * 2) / 2);
+        if (nv < Number(v)) changed++;
+        p0.courseUnits[m.id] = nv;
+      });
+      save();
+      generateWithOverlay(function () {
+        toast('已把 ' + changed + ' 个模块的课砍到 ' + Math.round(cf * 100) + '%，题一道没动');
+        go('plan');
       });
       return;
     }

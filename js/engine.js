@@ -106,9 +106,9 @@ window.YT = window.YT || {};
     var strengthen = rest - base;
 
     var stages = [
-      { key: 'base',       name: '基础期', studyDays: base,       goal: '把行测各模块和申论过一遍，建立做题手感' },
-      { key: 'strengthen', name: '强化期', studyDays: strengthen, goal: '分模块大量刷题，申论开始动笔写' },
-      { key: 'sprint',     name: '冲刺期', studyDays: sprint,     goal: '限时套卷和模考，申论成篇，查漏补缺' },
+      { key: 'base',       name: YT.STAGE_META.base.name,       studyDays: base,       goal: YT.STAGE_META.base.goal },
+      { key: 'strengthen', name: YT.STAGE_META.strengthen.name, studyDays: strengthen, goal: YT.STAGE_META.strengthen.goal },
+      { key: 'sprint',     name: YT.STAGE_META.sprint.name,     studyDays: sprint,     goal: YT.STAGE_META.sprint.goal },
     ];
 
     /* 把学习日数量落到具体日历日期上 */
@@ -209,6 +209,59 @@ window.YT = window.YT || {};
     }
     /* 超出大纲范围：考试日之后就按冲刺期处理 */
     return 'sprint';
+  }
+
+  /* ---------------------------------------------------------------------
+   * 阶段推进：不看日历，看学完了没有
+   *
+   * 用户的原话：专项没做完就让人开始刷套卷，这个尴尬必须避免。
+   * 所以阶段的开关是三条硬条件，而不是"到了几月几号"。
+   * ------------------------------------------------------------------- */
+
+  /* 每个模块累计做完了多少组（半完成的算半组） */
+  function moduleSets(state) {
+    var out = {};
+    Object.keys(state.days || {}).forEach(function (k) {
+      (state.days[k].tasks || []).forEach(function (t) {
+        if (t.kind !== 'practice' || t.status === 'todo') return;
+        var cr = t.status === 'done' ? 1 : 0.5;
+        /* 引擎排的刷题用 sets 记组数，自己加的/主攻的写成 amounts——
+         * 两个都认，免得同一种任务因为来源不同被算丢。 */
+        out[t.moduleId] = (out[t.moduleId] || 0) + (t.sets || t.amounts || 0) * cr;
+      });
+    });
+    return out;
+  }
+
+  /* 要听的课是不是都听完了。申论单独一条线，不卡这里——
+   * 它有自己的预算节奏，拿它去卡阶段会让整个计划卡住。 */
+  function allLessonsDone(profile, progress) {
+    var done = true;
+    YT.MODULES.forEach(function (m) {
+      if (m.essay) return;
+      var need = targetUnits(m, profile);
+      if (need <= 0.001) return;              // 不学的模块不算
+      if ((progress[m.id] || 0) < need - 0.001) done = false;
+    });
+    return done;
+  }
+
+  /* 有几个模块的专项过完一轮了 */
+  function readyModuleCount(profile, sets) {
+    var n = 0;
+    YT.MODULES.forEach(function (m) {
+      if (m.essay) return;
+      if (targetUnits(m, profile) <= 0.001) return;
+      if ((sets[m.id] || 0) >= C.stage.readySetsPerModule - 0.001) n++;
+    });
+    return n;
+  }
+
+  function stageFor(profile, progress, sets, daysLeft) {
+    /* 快到考试了就别管进度了，直接上套卷——不然会一路练到考前 */
+    if (daysLeft !== undefined && daysLeft !== null && daysLeft <= C.stage.forceSprintDays) return 'sprint';
+    if (!allLessonsDone(profile, progress)) return 'base';
+    return readyModuleCount(profile, sets) >= C.stage.sprintMinModules ? 'sprint' : 'strengthen';
   }
 
   /* 阶段内已经走过多少（0~1） */
@@ -536,15 +589,15 @@ window.YT = window.YT || {};
    * "选了太难了刷题反而变多"那种反向信号。 */
   function buildTasks(date, dateKey, state, roadmap, opts) {
     var moodF = (opts && opts.moodFactor) || 1;
-    var shared = { progress: opts && opts.progress, factor: opts && opts.factor };
+    var shared = { progress: opts && opts.progress, factor: opts && opts.factor, stage: opts && opts.stage };
     if (moodF === 1) {
       return buildTasksInner(date, dateKey, state, roadmap,
-        { progress: shared.progress, factor: shared.factor, moodF: 1 });
+        { progress: shared.progress, factor: shared.factor, moodF: 1, stage: shared.stage });
     }
     var base = buildTasksInner(date, dateKey, state, roadmap,
-      { progress: shared.progress, factor: shared.factor, moodF: 1 });
+      { progress: shared.progress, factor: shared.factor, moodF: 1, stage: shared.stage });
     var adj = buildTasksInner(date, dateKey, state, roadmap,
-      { progress: shared.progress, factor: shared.factor, moodF: moodF });
+      { progress: shared.progress, factor: shared.factor, moodF: moodF, stage: shared.stage });
     return mergeMonotone(base, adj, moodF > 1);
   }
 
@@ -579,7 +632,9 @@ window.YT = window.YT || {};
 
   function buildTasksInner(date, dateKey, state, roadmap, opts) {
     var profile = state.profile;
-    var stageKey = stageOf(dateKey, roadmap);
+    /* 阶段是算出来的：调用方根据"到这一天为止预计学完了多少"给。
+     * 只有单独调用（没传 stage）时才退回按日期查表。 */
+    var stageKey = (opts && opts.stage) || stageOf(dateKey, roadmap);
     var budget = budgetFor(date, profile, stageKey);
     var factor = (opts && opts.factor) || 1;
     var moodF = (opts && opts.moodF) || 1;
@@ -834,13 +889,16 @@ window.YT = window.YT || {};
   /* 保证从今天起至少有 ahead 个学习日已排好。
    * 关键：一边生成一边把"已经排进去的听课量"累加起来，
    * 这样第 2 天不会又从头排第 1 节。 */
-  function ensureAhead(state, todayKey, ahead) {
+  function ensureAhead(state, todayKey, ahead, seed) {
     var profile = state.profile;
     var roadmap = state.roadmap;
     if (!roadmap) return state;
     roadmap.startKey = roadmap.startKey || todayKey;
 
-    var projected = courseProgress(state, todayKey);
+    /* seed 是给"预测"用的：拿今天的真实进度当起点，在副本里往前推。
+     * 不传就用真实进度。 */
+    var projected = (seed && seed.progress) || courseProgress(state, todayKey);
+    var projSets = (seed && seed.sets) || moduleSets(state);
     var mf = moodFactor(state, todayKey);
     var ri = restartInfo(state, todayKey);
     var d = parseKey(todayKey);
@@ -862,12 +920,20 @@ window.YT = window.YT || {};
            * 再叠一层"上周完成率低"的话，0.6 × 0.6 = 0.36，
            * 等于回来第一天就给三成任务——那不叫接上，那叫劝退。 */
           var dayFactor = (ri.active && k === todayKey) ? ri.factor : rf.factor;
+          /* 阶段由"到这天为止预计学完了多少"决定，快考试了就直接进冲刺 */
+          var leftDays = countStudyDays(k, profile.examDate, profile);
+          /* 冲刺窗口不能把整个计划吃掉。备考期很短的时候（比如只剩一个月），
+           * 无条件进冲刺会导致一节课都不排——那不是冲刺，那是放弃。 */
+          var totalDays = roadmap.totalStudyDays || 100;
+          var forceDays = Math.max(7, Math.min(C.stage.forceSprintDays, Math.floor(totalDays * 0.25)));
+          var stg = stageFor(profile, projected, projSets, leftDays <= forceDays ? 0 : 999);
           day = {
-            date: k, isRest: false, stage: stageOf(k, roadmap),
+            date: k, isRest: false, stage: stg,
             tasks: buildTasks(d, k, state, roadmap, {
               progress: projected,
               factor: dayFactor,
               moodFactor: mf.factor,
+              stage: stg,
             }),
             mood: null, generatedAt: new Date().toISOString(),
           };
@@ -877,6 +943,9 @@ window.YT = window.YT || {};
         (day.tasks || []).forEach(function (t) {
           if (t.kind === 'course' && t.units) {
             projected[t.moduleId] = (projected[t.moduleId] || 0) + t.units;
+          } else if (t.kind === 'practice') {
+            var st = t.sets || t.amounts || 0;
+            if (st) projSets[t.moduleId] = (projSets[t.moduleId] || 0) + st;
           }
         });
         made++;
@@ -884,6 +953,68 @@ window.YT = window.YT || {};
       d = addDays(d, 1);
     }
     return state;
+  }
+
+  /* ---------------------------------------------------------------------
+   * 进度预测（C5）
+   *
+   * 拿今天的真实进度当起点，在"副本"里把整份计划往前跑一遍，
+   * 看两条关键节点落在哪天。副本跑完就扔，不动真实数据。
+   * 这就是"进度快就提前、慢就延后"的来源——它算的不是日历，是推进速度。
+   * ------------------------------------------------------------------- */
+
+  function forecast(state, todayKey) {
+    var profile = state.profile;
+    if (!profile || !profile.examDate || !state.roadmap) return null;
+
+    var probe = {
+      profile: profile,
+      roadmap: state.roadmap,
+      days: {},
+      scores: state.scores || [],
+    };
+    ensureAhead(probe, todayKey, 400, {
+      progress: courseProgress(state, todayKey),
+      sets: moduleSets(state),
+    });
+
+    var firstStage = {};
+    var lastStage = {};
+    var countStage = {};
+    var lastCourseKey = null;
+    Object.keys(probe.days).sort().forEach(function (k) {
+      var day = probe.days[k];
+      if (day.isRest) return;
+      if (!firstStage[day.stage]) firstStage[day.stage] = k;
+      lastStage[day.stage] = k;
+      countStage[day.stage] = (countStage[day.stage] || 0) + 1;
+      (day.tasks || []).forEach(function (t) {
+        if (t.kind === 'course') lastCourseKey = k;
+      });
+    });
+
+    /* 阶段表也由预测来，不再用日期比例算——
+     * 否则计划页写的"强化期 10月31日开始"和实际每天排的会对不上。 */
+    var stages = ['base', 'strengthen', 'sprint'].map(function (key) {
+      var meta = YT.STAGE_META[key];
+      return {
+        key: key,
+        name: meta.name,
+        goal: meta.goal,
+        startKey: firstStage[key] || '',
+        endKey: lastStage[key] || '',
+        studyDays: countStage[key] || 0,
+      };
+    });
+
+    return {
+      courseDoneKey: lastCourseKey,
+      strengthenKey: firstStage.strengthen || null,
+      sprintKey: firstStage.sprint || null,
+      stages: stages,
+      examKey: profile.examDate,
+      studyDaysToExam: countStudyDays(todayKey, profile.examDate, profile),
+    };
   }
 
   /* ---------------------------------------------------------------------
@@ -1235,6 +1366,11 @@ window.YT = window.YT || {};
     buildTasks: buildTasks,
     lessonLabel: lessonLabel,
     ensureAhead: ensureAhead,
+    moduleSets: moduleSets,
+    allLessonsDone: allLessonsDone,
+    readyModuleCount: readyModuleCount,
+    stageFor: stageFor,
+    forecast: forecast,
     dayStats: dayStats,
     weekStats: weekStats,
     reflowRule: reflowRule,
