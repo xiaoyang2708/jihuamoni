@@ -322,5 +322,69 @@ console.log('\n【10】连续几天自己加同一科，系统该开口问一句
     '听课节数被改动了');
 }
 
+/* ======================= 11. 行测学习顺序 ======================= */
+console.log('\n【11】用户能自己定行测的学习顺序');
+{
+  const p1 = Object.assign({}, profile);
+  check('没设过顺序时按默认：资料第一个',
+    E.moduleOrder(p1)[0] === 'zlfx', E.moduleOrder(p1).join(','));
+  check('申论在队尾（它走自己那条线）',
+    E.moduleOrder(p1)[E.moduleOrder(p1).length - 1] === 'slw', E.moduleOrder(p1).join(','));
+
+  /* 用户把言语拉到最前面 */
+  const ids = E.moduleOrder(p1);
+  const moved = ['yy'].concat(ids.filter(x => x !== 'yy'));
+  const p2 = Object.assign({}, p1, { moduleOrder: moved });
+  check('顺序按用户设的走', E.moduleOrder(p2)[0] === 'yy', E.moduleOrder(p2).join(','));
+
+  const s = { profile: p2, roadmap: null, days: {}, scores: [] };
+  const tk = E.toKey(new Date(2026, 8, 18));
+  s.roadmap = E.buildRoadmap(p2, tk);
+  E.ensureAhead(s, tk, 6);
+  const firstCourses = [];
+  Object.keys(s.days).sort().forEach(k => {
+    (s.days[k].tasks || []).forEach(t => {
+      if (t.kind !== 'course') return;
+      if (t.moduleId === 'slw') return;   // 申论走自己那条线，不算在行测顺序里
+      if (firstCourses.indexOf(t.moduleId) === -1) firstCourses.push(t.moduleId);
+    });
+  });
+  check('实际排出来的课也从言语开始', firstCourses[0] === 'yy', firstCourses.join(','));
+
+  /* 老档案里少一个模块、多一个不认识的 id，也不能崩 */
+  const p3 = Object.assign({}, p1, { moduleOrder: ['nope', 'sl'] });
+  const o3 = E.moduleOrder(p3);
+  check('顺序表缺模块会补齐、多余的丢掉',
+    o3.length === ids.length && o3.indexOf('nope') === -1 && o3[0] === 'sl', o3.join(','));
+}
+
+/* ======================= 12. 各种任务字段要对得上 ======================= */
+console.log('\n【12】任务字段契约：排出来的任务，统计读得到');
+{
+  const s = { profile, roadmap: null, days: {}, scores: [] };
+  const tk = E.toKey(new Date(2026, 8, 18));
+  s.roadmap = E.buildRoadmap(profile, tk);
+  E.ensureAhead(s, tk, 30);
+  const all = [];
+  Object.keys(s.days).forEach(k => (s.days[k].tasks || []).forEach(t => all.push(t)));
+
+  const practice = all.filter(t => t.kind === 'practice');
+  const course = all.filter(t => t.kind === 'course');
+  const essay = all.filter(t => t.kind === 'essay');
+  check('每个刷题任务都有题量 amount', practice.every(t => t.amount > 0), practice.length);
+  check('每个刷题任务都有组数 sets（专项达标要数它）', practice.every(t => t.sets > 0), practice.length);
+  check('每个听课任务都有节数 units', course.every(t => t.units > 0), course.length);
+  check('每个申论任务都有道数 amounts', essay.every(t => t.amounts > 0), essay.length);
+
+  /* 拿真实数据跑一遍消费者，看有没有读到 undefined。
+   * 统计只认打过卡的，所以先把它们标成完成。 */
+  all.forEach(t => { t.status = 'done'; });
+  const sets = E.moduleSets(s);
+  const counted = Object.keys(sets).filter(k => sets[k] > 0);
+  check('专项组数算得出来（不是一堆 0）', counted.length >= 3, JSON.stringify(sets));
+  const arch = A.build(s, E.toKey(new Date(2026, 10, 1)), 'base');
+  check('学习档案的累计题量算得出来', arch.questionTotal > 0, arch.questionTotal);
+}
+
 console.log('\n' + (fail ? '有 ' + fail + ' 条没过 ❌' : '全部通过 ✅'));
 process.exit(fail ? 1 : 0);

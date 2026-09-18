@@ -429,14 +429,35 @@ window.YT = window.YT || {};
   }
 
   /* 当前该听哪个模块：按 order 找第一个没听完的 */
+  /* 行测听课的先后顺序。用户能改（设置里的"学习顺序"），
+   * 没改过就用 config 里的默认 order。申论不在这条线上。 */
+  function moduleOrder(profile) {
+    var all = YT.MODULES.slice().sort(function (a, b) { return a.order - b.order; });
+    var ids = all.map(function (m) { return m.id; });
+    var mine = profile && profile.moduleOrder;
+    if (!mine || !mine.length) return ids;
+    /* 用户存的顺序为准，但要能兼容以后新增/删掉的模块：
+     * 没提到的补在后面，不认识的丢掉。 */
+    var out = mine.filter(function (id) { return ids.indexOf(id) !== -1; });
+    ids.forEach(function (id) { if (out.indexOf(id) === -1) out.push(id); });
+    return out;
+  }
+
+  /* 使用模式：全自动 / 半自动 / 自己排。老档案没有这个字段，按半自动算。 */
+  function usageModeOf(profile) {
+    var m = profile && profile.mode;
+    return (m === 'auto' || m === 'manual') ? m : 'semi';
+  }
+
   function currentCourseModule(profile, progress) {
-    var list = YT.MODULES.slice().sort(function (a, b) { return a.order - b.order; });
-    for (var i = 0; i < list.length; i++) {
+    var ids = moduleOrder(profile);
+    for (var i = 0; i < ids.length; i++) {
+      var m = YT.MODULE_BY_ID[ids[i]];
       /* 申论走自己那条线，不排进行测的听课队列 */
-      if (list[i].essay) continue;
-      var need = targetUnits(list[i], profile);
+      if (!m || m.essay) continue;
+      var need = targetUnits(m, profile);
       if (need <= 0) continue;
-      if ((progress[list[i].id] || 0) < need - 0.001) return list[i];
+      if ((progress[m.id] || 0) < need - 0.001) return m;
     }
     return null;
   }
@@ -738,7 +759,7 @@ window.YT = window.YT || {};
      * 刷题、申论、复盘全交给用户自己加。
      * （复盘系统会在今日页算一个建议时长摆着，加不加他决定。）
      * 阶段推进照旧，用户加的题也算数。 */
-    if (profile.mode === 'manual') {
+    if (usageModeOf(profile) === 'manual') {
       /* 只留"听哪节课"。申论那条线里的小题/大作文也是练题，一并去掉——
        * 这个模式的意思就是：课我给你排好，其余你说了算。 */
       return tasks.filter(function (t) { return t.kind === 'course'; });
@@ -1382,6 +1403,8 @@ window.YT = window.YT || {};
     budgetFor: budgetFor,
     courseProgress: courseProgress,
     currentCourseModule: currentCourseModule,
+    moduleOrder: moduleOrder,
+    usageModeOf: usageModeOf,
     targetUnits: targetUnits,
     effectiveLesson: effectiveLesson,
     studyableModules: studyableModules,

@@ -361,8 +361,7 @@
 
   /* 使用模式。老数据里没有这个字段的，按半自动算。 */
   function usageMode() {
-    var m = state.profile && state.profile.mode;
-    return (m === 'auto' || m === 'manual') ? m : 'semi';
+    return E.usageModeOf(state.profile);
   }
 
   /* 自己排模式：系统不排复盘，但可以按他今天自己排的量算一个建议时长，
@@ -1039,7 +1038,6 @@
         kind: isCourseReview ? 'review' : 'practice',
         title: r.title,
         detail: r.detail,
-        amounts: isCourseReview ? 1 : r.amount,
         amountText: isCourseReview ? fmtMinutes(r.minutes) : r.amount + ' 题',
         minutes: r.minutes,
         status: 'todo',
@@ -2019,7 +2017,7 @@
       : '';
 
     /* 你老是自己加同一科，那就直接问要不要排进日常 */
-    var skipSug = (state.profile.mode === 'auto') ? null : skipSuggestion();
+    var skipSug = (usageMode() === 'auto') ? null : skipSuggestion();
     var sug = skipSug ? null : prefSuggestion();
     var sugHtml = skipSug
       ? '<div class="pref-note">你最近五天有 <b>' + skipSug.days + '</b> 天把 <b>' +
@@ -2668,6 +2666,34 @@
    * 设置
    * ------------------------------------------------------------------- */
 
+  /* ---------------------------------------------------------------------
+   * 学习顺序：行测先学哪一科 + 申论什么时候开始
+   *
+   * 顺序只决定"听课的先后"。练习怎么分配还是按各科的性价比走——
+   * 换个顺序不该把一套经过调校的刷题权重也带偏。
+   * ------------------------------------------------------------------- */
+
+  function orderRows() {
+    var ids = E.moduleOrder(state.profile);
+    var rows = ids.map(function (id, i) {
+      var m = MODULE_BY_ID[id];
+      if (!m) return '';
+      var isEssay = !!m.essay;
+      var sub = isEssay ? '<span class="unit">独立一条线</span>'
+                        : '<span class="unit">' + E.targetUnits(m, state.profile) + ' 节</span>';
+      /* 申论不参与行测的先后，它的起点由下面那个开关决定 */
+      var arrows = isEssay ? '<span class="ord-hint">见下</span>'
+        : '<button class="ord-mv" data-act="ord-up" data-m="' + id + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="上移">↑</button>' +
+          '<button class="ord-mv" data-act="ord-down" data-m="' + id + '"' + (i === ids.length - 1 ? ' disabled' : '') + ' aria-label="下移">↓</button>';
+      return '<div class="ord-row">' +
+        '<span class="ord-n">' + (i + 1) + '</span>' +
+        '<span class="ord-t">' + esc(m.short) + '</span>' + sub +
+        arrows +
+      '</div>';
+    }).join('');
+    return '<div class="order-list">' + rows + '</div>';
+  }
+
   function renderSettings() {
     var p = state.profile;
 
@@ -2774,6 +2800,14 @@
         '<div class="footnote">有底子的选「减少」，打算放弃的选「不学」（比如数量关系）。改完点最下面重排。</div>' +
       '</div>' +
 
+      '<div class="section"><p class="section-title">学习顺序</p><div class="card">' +
+        orderRows() +
+        '<div class="footnote">只决定听课的先后。练题怎么分配还是按各科的性价比走，' +
+        '换个顺序不会把刷题权重也带偏。已经听过的课不受影响。</div>' +
+      '</div>' +
+      '<div class="card" style="margin-top:10px">' + essayStartRow() + '</div>' +
+      '</div>' +
+
       '<div class="section"><p class="section-title">高级参数</p><div class="card">' +
         '<button class="param-toggle" data-act="toggle-advanced">' +
           (state.ui.showAdvanced ? '收起 ▲' : '展开 ▼') +
@@ -2826,7 +2860,6 @@
     }
     return row('essayShare', '申论占比', 100, '%', '35',
                '申论单独占每天多少时间。剩下的是行测。') +
-           essayStartRow() +
            row('reviewRatio', '复盘系数', 1, '', '1.4',
                '复盘一道错题比做一道题多花多少倍时间。') +
            row('maxReviewMinutes', '复盘时长上限', 1, '分钟', '60',
@@ -3425,6 +3458,19 @@
       /* 换模式等于换一套排法，直接重排一次，别让用户自己记得去点 */
       var modeName = { auto: '全自动', semi: '半自动', manual: '自己排' }[state.profile.mode] || '';
       generateWithOverlay(function () { toast('已切到' + modeName + '，后面的安排重排好了'); });
+      return;
+    }
+    /* 上移/下移一科：顺序即刻生效，后面没动过的天立刻重排 */
+    if (act === 'ord-up' || act === 'ord-down') {
+      var oid = el.getAttribute('data-m');
+      var arr = E.moduleOrder(state.profile).slice();
+      var oi = arr.indexOf(oid);
+      var oj = act === 'ord-up' ? oi - 1 : oi + 1;
+      if (oi < 0 || oj < 0 || oj >= arr.length) return;
+      var tmpId = arr[oi]; arr[oi] = arr[oj]; arr[oj] = tmpId;
+      state.profile.moduleOrder = arr;
+      save();
+      generateAll(function () { reRender(); });
       return;
     }
     if (act === 'regen') {

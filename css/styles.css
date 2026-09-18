@@ -1078,3 +1078,25 @@ html, body {
   font-size: 13px; line-height: 1.6; color: var(--ink-2);
 }
 .review-hint b { color: var(--ink); }
+.order-list { padding: 2px 0; }
+.ord-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--line);
+}
+.ord-row:last-child { border-bottom: 0; }
+.ord-n {
+  flex: 0 0 22px; height: 22px; border-radius: 50%;
+  background: rgba(120,120,128,.10); color: var(--ink-2);
+  font-size: 12px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+}
+.ord-t { flex: 0 0 auto; font-size: 14px; }
+.ord-row .unit { flex: 1; font-size: 12px; color: var(--ink-3); }
+.ord-mv {
+  flex: 0 0 auto; width: 36px; height: 36px;
+  border: 0; background: none; border-radius: 10px;
+  font: inherit; font-size: 15px; color: var(--primary); cursor: pointer;
+}
+.ord-mv:active { background: #f4f0e8; }
+.ord-mv:disabled { opacity: .25; cursor: default; }
+.ord-hint { flex: 0 0 auto; width: 72px; text-align: right; font-size: 12px; color: var(--ink-3); }
