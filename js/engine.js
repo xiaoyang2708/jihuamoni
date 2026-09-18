@@ -1020,8 +1020,11 @@ window.YT = window.YT || {};
     var day = state.days[fromKey];
     if (!day || day.isRest) return [];
 
+    /* 只顺延听课。听课是有顺序的，落下一节后面的接不上；
+     * 刷题和申论是弹性的，今天没做就过去了——补回来只是在堆任务，
+     * 而堆任务正是让备考的人放弃的原因。 */
     var pending = (day.tasks || []).filter(function (t) {
-      return t.status === 'todo' && (t.kind === 'course' || t.kind === 'practice' || t.kind === 'essay');
+      return t.status === 'todo' && t.kind === 'course' && !t.noSeq;
     });
     if (!pending.length) return [];
 

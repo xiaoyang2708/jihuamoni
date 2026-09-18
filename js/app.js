@@ -172,6 +172,22 @@
           t.status = 'todo';
           t.actualMinutes = null;
           left -= u;
+        } else if (t.status !== 'todo' && u > left) {
+          /* 部分退回：把这条任务缩短，剩下的留到后面再退。
+           * 不这么做的话，3 节往回退到 1 节会落在 1.5 节上——
+           * 因为只能整条整条地退。 */
+          var nu = Math.round((u - left) * 2) / 2;
+          if (nu >= 0.5) {
+            var perU = t.minutes / u;
+            t.units = nu; t.amounts = nu;
+            t.minutes = Math.round(nu * perU);
+            t.amountText = nu + ' 节';
+            t.status = 'todo';
+            t.actualMinutes = null;
+          } else {
+            day.tasks.splice(j, 1);
+          }
+          left = 0;
         }
       }
     }
@@ -752,6 +768,7 @@
               '<input type="number" min="1" max="3" step="0.1" data-act="set-speed" value="' + draft.speed + '"><span class="unit">倍</span></div>' +
               '</div>';
       body += '<div id="ob-preview">' + previewHtml() + '</div>';
+      body += '<button class="btn ghost block" style="margin-top:14px" data-act="no-course">我不用听课，直接开始刷题</button>';
       body += '<div class="footnote">每节课的时长和倍速决定一节课实际要花多久。这些数字直接决定基础期排多少天。</div>';
     }
 
@@ -1496,6 +1513,7 @@
           }).join('') +
         '</div>' +
         '<div class="footnote">填你打算听多少节，不是买了多少节。想加课就往上改，已经听过的不重来。</div>' +
+        '<button class="btn ghost block" style="margin-top:10px" data-act="no-course-settings">不听课，全部设为 0</button>' +
       '</div></div>' +
 
       '<div class="section"><p class="section-title">各模块强度</p>' +
@@ -1693,6 +1711,11 @@
       var v = Number(el.getAttribute('data-v'));
       var i = draft.restDays.indexOf(v);
       if (i === -1) draft.restDays.push(v); else draft.restDays.splice(i, 1);
+      return reRender();
+    }
+    /* 不需要听课的人：把课节数全部归零，时间全给刷题 */
+    if (act === 'no-course') {
+      MODULES.forEach(function (m) { draft.courseUnits[m.id] = 0; });
       return reRender();
     }
     if (act === 'ob-prev') { state.ui.onboardStep = Math.max(0, (state.ui.onboardStep || 0) - 1); save(); return reRender(); }
@@ -2010,6 +2033,20 @@
       save();
       toast('已恢复推荐值');
       return reRender();
+    }
+    if (act === 'no-course-settings') {
+      return askConfirm('不听课', '所有模块的课节数会设为 0，时间全部给刷题。已经打过的卡不变。', function () {
+        var before = takeSnapshot();
+        MODULES.forEach(function (m) { state.profile.courseUnits[m.id] = 0; });
+        Object.keys(state.days).forEach(function (k) {
+          if (k <= todayKey()) return;
+          var dd = state.days[k];
+          var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+          if (!touched) delete state.days[k];
+        });
+        E.ensureAhead(state, todayKey(), 14);
+        finishChange(before, '已改成不听课');
+      });
     }
     if (act === 'set-essay-start') {
       state.profile.tuning = state.profile.tuning || {};
