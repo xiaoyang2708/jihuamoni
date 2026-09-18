@@ -807,7 +807,7 @@
     /* 先备份，随时能还原 */
     state.devBackup = JSON.stringify({
       simDate: state.simDate, days: state.days, roadmap: state.roadmap,
-      weeklyLog: state.weeklyLog, weekMark: state.weekMark,
+      weeklyLog: state.weeklyLog, weekMark: state.weekMark, rounds: state.rounds,
     });
 
     var rnd = makeRnd(20260918 + days);
@@ -835,6 +835,7 @@
     state.roadmap = b.roadmap;
     state.weeklyLog = b.weeklyLog;
     state.weekMark = b.weekMark;
+    state.rounds = b.rounds || [];
     if (b.onboarding && b.profile) state.profile = b.profile;
     state.devBackup = null;
     save();
@@ -2640,6 +2641,7 @@
       state.roadmap = null;
       state.weeklyLog = [];
       state.weekMark = {};
+      state.rounds = [];
       state.simDate = null;
       state.ui.onboardStep = 0;
       state.ui.screen = 'today';
