@@ -139,8 +139,14 @@ window.YT = window.YT || {};
       if (m.essay) return;
       totalLessonMinutes += targetUnits(m, profile) * effectiveLesson(profile);
     });
-    var capacityPerDay = averageCourseMinutes(profile);
+    /* 听课不是只在基础期——没听完的课会一路排到强化期。
+     * 所以容量要把强化期也算进来，否则课多的人会被误判成"排不下"。 */
+    var baseCap = base * averageCourseMinutes(profile, 'base');
+    var strCap = strengthen * averageCourseMinutes(profile, 'strengthen');
+    var capacity = baseCap + strCap;
+    var capacityPerDay = averageCourseMinutes(profile, 'base');
     var needDays = capacityPerDay > 0 ? Math.ceil(totalLessonMinutes / capacityPerDay) : 999;
+    var freeDays = Math.floor(capacity / (capacityPerDay || 1));
 
     return {
       startKey: todayKey,
@@ -150,7 +156,11 @@ window.YT = window.YT || {};
         totalMinutes: Math.round(totalLessonMinutes),
         needDays: needDays,
         baseDays: base,
-        fit: needDays <= base,
+        freeDays: freeDays,
+        capacityMinutes: Math.round(capacity),
+        /* 容量是按平均值估的，实际排课会把零头也用上，所以给 10% 的余量，
+         * 否则"刚好差一点"的情况会一直亮着警告。 */
+        fit: totalLessonMinutes <= capacity * 1.15,
       },
       generatedAt: new Date().toISOString(),
     };
@@ -173,8 +183,8 @@ window.YT = window.YT || {};
   }
 
   /* 基础期平均每天能分给听课的分钟数 */
-  function averageCourseMinutes(profile) {
-    var table = C.split.base;
+  function averageCourseMinutes(profile, stageKey) {
+    var table = C.split[stageKey || 'base'] || C.split.base;
     var wd = profile.weekdayMinutes * table.weekday.course;
     var we = profile.weekendMinutes * table.weekend.course;
     /* 一周里休息掉的天数要扣掉，粗略按 5 个工作日 / 2 个周末日算 */
@@ -476,8 +486,10 @@ window.YT = window.YT || {};
      * 装不下一整组就留白，不硬凑。
      * 不设组数上限：高强度刷专题的人一天可能刷十几组、几百道题，
      * 那是正常的，不该被系统卡住。 */
-    sets = Math.floor(sets);
-    if (sets < 1) return null;
+    /* 允许半组：一组 50 分钟太粗，"太难了"要减 35 分钟的话
+     * 不砍半组就无处可落。10 道题在真实刷题里也很常见。 */
+    sets = Math.floor(sets * 2) / 2;
+    if (sets < 0.5) return null;
     var qty = Math.max(1, Math.round(setSize * sets));
     return {
       sets: sets,
@@ -490,6 +502,7 @@ window.YT = window.YT || {};
 
   function setLabel(plan) {
     if (plan.sets === 1) return plan.qty + ' 题';
+    if (plan.sets === 0.5) return '半组 · ' + plan.qty + ' 题';
     /* 组数少的时候带上组数（"3 组 · 30 题"有信息量）；
      * 组数一大，"11 组"这种说法反而没人这么讲，直接说题数。 */
     if (plan.sets <= 4) return plan.sets + ' 组 · ' + plan.qty + ' 题';

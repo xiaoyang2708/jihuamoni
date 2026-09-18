@@ -1141,13 +1141,15 @@
       checkHtml = '<div class="section"><div class="card" style="background:var(--accent-s);box-shadow:none">' +
         '<div style="font-weight:600;color:var(--accent)">课时量偏大</div>' +
         '<div class="tiny" style="margin-top:4px;color:var(--ink-2)">' +
-        '按现在的节数和倍速，听课需要 <b>' + lc.needDays + ' 个学习日</b>，但基础期只有 <b>' + lc.baseDays + ' 天</b>。' +
-        '会挤压后面的强化和冲刺。可以：提高倍速、减少要听的节数（比如数量关系只挑重点听），或者把每日时长调高。</div>' +
+        '按现在的节数和倍速，听课要 <b>' + Math.round(lc.totalMinutes / 60) + ' 小时</b>，' +
+        '但基础期加强化期一共只容得下 <b>' + Math.round(lc.capacityMinutes / 60) + ' 小时</b>。' +
+        '听不完，而且会挤压刷题时间。可以：提高倍速、减少要听的节数（比如数量关系只挑重点听），或者把每日时长调高。</div>' +
         '<button class="btn sm ghost" style="margin-top:10px" data-act="goto" data-to="settings">去调整</button>' +
         '</div></div>';
     } else if (lc) {
       checkHtml = '<div class="section"><div class="card" style="background:var(--primary-s);box-shadow:none">' +
-        '<div class="tiny" style="color:var(--primary)">课时量排得下：听课约需 ' + lc.needDays + ' 个学习日，基础期有 ' + lc.baseDays + ' 天。</div>' +
+        '<div class="tiny" style="color:var(--primary)">课时量排得下：听课 ' + Math.round(lc.totalMinutes / 60) +
+        ' 小时，基础期加强化期容得下 ' + Math.round(lc.capacityMinutes / 60) + ' 小时。</div>' +
         '</div></div>';
     }
 
