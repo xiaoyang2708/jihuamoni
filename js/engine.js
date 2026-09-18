@@ -22,7 +22,13 @@ window.YT = window.YT || {};
 
   /* 申论占比。冲刺期由整套卷逻辑接管，不再是这个数。 */
   function essayShareFor(profile, stageKey) {
-    if (stageKey === 'sprint') return 0;
+    /* 申论什么时候开始学，用户可配。三档：基础期 / 强化期 / 冲刺期。 */
+    var start = (profile && profile.tuning && profile.tuning.essayStartStage) || 'base';
+    var order = { base: 0, strengthen: 1, sprint: 2 };
+    if ((order[stageKey] || 0) < (order[start] || 0)) return 0;
+    /* 冲刺期本来交给整套卷，只有用户明确说"冲刺期才开始学申论"时才走这条线 */
+    if (stageKey === 'sprint' && start !== 'sprint') return 0;
+
     var t = profile && profile.tuning && profile.tuning.essayShare;
     if (t !== undefined && t !== null && t !== '') return Number(t);
     return (C.essayShare && C.essayShare[stageKey]) || 0;
@@ -450,6 +456,35 @@ window.YT = window.YT || {};
     return Math.max(C.amountMin, v);
   }
 
+  /* 按"组"安排刷题。一组 = 真题套卷里这个模块的题量。
+   * 时间不够一整组就排半组——真实备考不会有人做"17 道资料分析"这种数。
+   * 返回 null 表示时间不够半组，这个模块今天不排。 */
+  function planSets(minutes, module, stage, profile) {
+    var setSize = YT.moduleParam(module, profile, 'setSize');
+    var examMinutes = YT.moduleParam(module, profile, 'examMinutes');
+    if (!setSize || !examMinutes) return null;
+    var perQ = YT.unitMinutesFor(module, stage, profile);
+    if (!perQ || perQ <= 0) return null;
+    var setMinutes = setSize * perQ;
+    var sets = minutes / setMinutes;
+    if (sets < 0.5) return null;
+    sets = Math.floor(sets * 2) / 2;          // 只到半组
+    var qty = Math.max(1, Math.round(setSize * sets));
+    return {
+      sets: sets,
+      qty: qty,
+      perQ: perQ,
+      minutes: Math.round(qty * perQ),
+      setSize: setSize,
+    };
+  }
+
+  function setLabel(plan) {
+    if (plan.sets === 1) return '1 组 · ' + plan.qty + ' 题';
+    if (plan.sets === 0.5) return '半组 · ' + plan.qty + ' 题';
+    return plan.sets + ' 组 · ' + plan.qty + ' 题';
+  }
+
   /* ---------------------------------------------------------------------
    * 第五部分：生成某一天
    * ------------------------------------------------------------------- */
@@ -565,10 +600,15 @@ window.YT = window.YT || {};
           tasks.push(makePaper(dateKey, '行测整套限时', '按考试时间做完，中途不停表', paper));
         }
         if (essayLeft >= 150) {
-          tasks.push(makePaper(dateKey, '申论整套', '完整写一套，对照答案自己批一遍',
-                               Math.min(C.sprintEssayMinutes, essayLeft), 'slw', '申论'));
+          /* 用户把申论线设在冲刺期时，上面已经排过申论了，这里不再叠一套 */
+          if (!(profile.tuning && profile.tuning.essayStartStage === 'sprint')) {
+            tasks.push(makePaper(dateKey, '申论整套', '完整写一套，对照答案自己批一遍',
+                                 Math.min(C.sprintEssayMinutes, essayLeft), 'slw', '申论'));
+          }
         } else if (essayLeft >= 70) {
-          tasks.push(makePaper(dateKey, '申论 · 大作文', '完整写一篇，写完自己对答案改', 70, 'slw', '申论'));
+          if (!(profile.tuning && profile.tuning.essayStartStage === 'sprint')) {
+            tasks.push(makePaper(dateKey, '申论 · 大作文', '完整写一篇，写完自己对答案改', 70, 'slw', '申论'));
+          }
         } else if (paper >= 30) {
           var lastPaper = tasks[tasks.length - 1];
           lastPaper.minutes += essayLeft;
@@ -613,32 +653,50 @@ window.YT = window.YT || {};
       var slots = Math.max(1, Math.min(wantSlots, Math.floor(practiceMinutes / 20)));
       var alloc = allocatePractice(practiceMinutes, slots, profile, dayIndex * 7 + date.getDate(),
                                    stageKey === 'base' ? learned : null);
+      var practiceTasks = [];
       alloc.forEach(function (a) {
-        var per = (profile.benchmarks && profile.benchmarks[a.module.id]) || a.module.unitMinutes;
-        /* 单科时间太长就分组，宁可拆成"做 40 题 × 4 组"，也不要甩一条 150 题 */
-        var groups = Math.max(1, Math.ceil(a.minutes / T(profile, 'maxPracticePerModule')));
-        var eachMin = a.minutes / groups;
-        for (var gi = 0; gi < groups; gi++) {
-          var q = roundAmount(eachMin / per);
-          tasks.push({
+        var plan = planSets(a.minutes, a.module, stageKey, profile);
+        if (!plan) return;
+        /* 一条任务最长不超过单科上限，超了就拆成两条 */
+        var chunks = Math.max(1, Math.ceil(plan.minutes / T(profile, 'maxPracticePerModule')));
+        var setsPerChunk = plan.sets / chunks;
+        var qtyPerChunk = Math.round(plan.qty / chunks);
+        for (var gi = 0; gi < chunks; gi++) {
+          var thisSets = (gi === chunks - 1) ? (plan.sets - setsPerChunk * gi) : setsPerChunk;
+          var thisQty = (gi === chunks - 1) ? (plan.qty - qtyPerChunk * gi) : qtyPerChunk;
+          if (thisQty < 1) continue;
+          var sub = { sets: thisSets, qty: thisQty, perQ: plan.perQ, setSize: plan.setSize };
+          practiceTasks.push({
             id: nextId(dateKey),
             moduleId: a.module.id,
             moduleName: a.module.name,
             kind: 'practice',
-            title: a.module.short + ' · 刷题' + (groups > 1 ? '（' + (gi + 1) + '/' + groups + '）' : ''),
-            detail: q + ' 题',
-            amount: q,
-            amountText: q + ' 题',
-            minutes: Math.round(q * per),
+            title: a.module.short + ' · 刷题' + (chunks > 1 ? '（' + (gi + 1) + '/' + chunks + '）' : ''),
+            detail: setLabel(sub),
+            amount: thisQty,
+            sets: thisSets,
+            amountText: setLabel(sub),
+            minutes: Math.round(thisQty * plan.perQ),
             status: 'todo',
             actualMinutes: null,
           });
         }
       });
+      /* 时间不够半组的话，这块时间别浪费，并到消化/复盘里去 */
+      var usedByPractice = practiceTasks.reduce(function (s, t) { return s + t.minutes; }, 0);
+      var leftover = practiceMinutes - usedByPractice;
+      /* 只有"不变"或"加量"时才把零头并进复盘。
+       * 减量的日子如果也并进去，复盘反而变大，等于把"太难了"抵消掉了。 */
+      if (leftover > 0 && moodF >= 1) {
+        reviewMinutes = Math.min(T(profile, 'maxReviewMinutes'), reviewMinutes + leftover);
+      }
+      if (practiceTasks.length) {
+        tasks = tasks.concat(practiceTasks);
+      }
     }
 
     /* ---- 复盘 ---- */
-    if (reviewMinutes >= 8 && tasks.length) {
+    if (reviewMinutes >= 12 && tasks.length) {
       var hasPractice = tasks.some(function (t) {
         return t.kind === 'practice' || t.kind === 'paperset';
       });

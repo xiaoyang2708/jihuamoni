@@ -1053,7 +1053,10 @@
   function advancedRows() {
     var t = (state.profile && state.profile.tuning) || {};
     function val(k) {
-      return (t[k] === undefined || t[k] === null || t[k] === '') ? CFG[k] : t[k];
+      if (t[k] !== undefined && t[k] !== null && t[k] !== '') return t[k];
+      /* 申论占比在配置文件里是按阶段存的，取基础期那个当推荐值 */
+      if (k === 'essayShare') return (CFG.essayShare && CFG.essayShare.base) || 0.35;
+      return CFG[k];
     }
     function row(k, label, scale, unit, rec, note) {
       var shown = Math.round(val(k) * scale * 100) / 100;
@@ -1069,6 +1072,7 @@
     }
     return row('essayShare', '申论占比', 100, '%', '35',
                '申论单独占每天多少时间。剩下的是行测。') +
+           essayStartRow() +
            row('reviewRatio', '复盘系数', 1, '', '1.4',
                '复盘一道错题比做一道题多花多少倍时间。') +
            row('maxReviewMinutes', '复盘时长上限', 1, '分钟', '60',
@@ -1078,7 +1082,50 @@
            row('maxPracticePerModule', '单科每日上限', 1, '分钟', '120',
                '同一科超过这个时长就拆成"第 1 组 / 第 2 组"。') +
            row('maxLessonUnitsPerDay', '单日听课上限', 1, '节', '3', '一天最多听几节课。') +
+           moduleParamRows() +
            '<button class="btn ghost block" style="margin-top:12px" data-act="reset-tuning">全部恢复推荐值</button>';
+  }
+
+  /* 申论从哪个阶段开始学 */
+  function essayStartRow() {
+    var cur = (state.profile.tuning && state.profile.tuning.essayStartStage) || 'base';
+    function btn(v, label) {
+      return '<button class="' + (v === cur ? 'on' : '') + '" data-act="set-essay-start" data-v="' + v + '">' + label + '</button>';
+    }
+    return '<div class="param-row">' +
+      '<div class="param-head"><span class="param-label">申论什么时候开始</span>' +
+      '<span class="param-rec">推荐 一开始就学</span></div>' +
+      '<div class="segmented" style="margin-top:8px">' +
+        btn('base', '一开始就学') + btn('strengthen', '强化期') + btn('sprint', '冲刺期') +
+      '</div>' +
+      '<div class="param-note">选"冲刺期"的话，前面完全不排申论，到冲刺期再开始。申论靠积累，越晚开始越吃力。</div>' +
+    '</div>';
+  }
+
+  /* 各模块的训练参数：一组多少题、目标正确率、考试限时 */
+  function moduleParamRows() {
+    var rows = MODULES.filter(function (m) { return !m.essay; }).map(function (m) {
+      function pv(k) { return window.YT.moduleParam(m, state.profile, k); }
+      var tr = window.YT.moduleParam(m, state.profile, 'targetRate');
+      var trVal = (tr === null || tr === undefined) ? '' : Math.round(tr * 100);
+      return '<div class="train-row">' +
+        '<div class="tr-name">' + esc(m.short) + '</div>' +
+        '<div class="tr-fields">' +
+          '<label>一组<input type="number" min="1" step="1" data-act="set-module" data-m="' + m.id + '" data-k="setSize" value="' + pv('setSize') + '">题</label>' +
+          '<label>目标<input type="number" min="0" max="100" step="1" data-act="set-module" data-m="' + m.id + '" data-k="targetRate" data-scale="100" value="' + trVal + '" placeholder="待设">%</label>' +
+          '<label>限时<input type="number" min="1" step="1" data-act="set-module" data-m="' + m.id + '" data-k="examMinutes" value="' + pv('examMinutes') + '">分</label>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    return '<div class="param-row"><div class="param-head">' +
+      '<span class="param-label">各模块训练参数</span>' +
+      '<span class="param-rec">按国考量给的默认值</span></div>' +
+      '<div class="param-note">一组 = 真题套卷里这个模块有多少题，练习就按整组做。' +
+      '目标正确率是"这个模块练到多少算过关"。限时是考试时这个模块分配多少分钟，也是提速的终点。</div>' +
+      rows +
+      '<div class="param-note">数量和常识没有默认目标正确率——很多人直接放弃，或者全靠蒙。建议你自己设一个，或者把强度设成"不学"。</div>' +
+    '</div>';
   }
 
   /* ---------------------------------------------------------------------
@@ -1255,8 +1302,15 @@
     }
     if (act === 'reset-tuning') {
       state.profile.tuning = {};
+      state.profile.moduleParams = {};
       save();
       toast('已恢复推荐值');
+      return reRender();
+    }
+    if (act === 'set-essay-start') {
+      state.profile.tuning = state.profile.tuning || {};
+      state.profile.tuning.essayStartStage = el.getAttribute('data-v');
+      save();
       return reRender();
     }
 
@@ -1357,6 +1411,21 @@
       } else {
         var pv = Number(el.value) / scale;
         if (!isNaN(pv)) state.profile.tuning[pk] = pv;
+      }
+      save();
+      return;
+    }
+    if (act === 'set-module') {
+      var mm = el.getAttribute('data-m');
+      var mk = el.getAttribute('data-k');
+      var mscale = Number(el.getAttribute('data-scale') || 1);
+      state.profile.moduleParams = state.profile.moduleParams || {};
+      state.profile.moduleParams[mm] = state.profile.moduleParams[mm] || {};
+      if (el.value === '') {
+        delete state.profile.moduleParams[mm][mk];
+      } else {
+        var mv = Number(el.value) / mscale;
+        if (!isNaN(mv)) state.profile.moduleParams[mm][mk] = mv;
       }
       save();
       return;

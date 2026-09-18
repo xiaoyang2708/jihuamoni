@@ -7,22 +7,62 @@ window.YT = window.YT || {};
 
 /* 行测模块顺序 + 申论。
  * order 决定基础期的推进顺序，按你给的：
- * 资料 → 言语 → 判推逻辑 → 判推图形 → 判推定义类比 → 政治理论 → 数量 → 常识，申论并行。 */
+ * 资料 → 言语 → 判推逻辑 → 判推图形 → 判推定义类比 → 政治理论 → 数量 → 常识，申论并行。
+ *
+ * 三个和"刷题"有关的参数：
+ *   setSize      一组多少题。真题套卷里这个模块有多少题，练习就按这个整组做。
+ *   examMinutes  考试时这个模块分配多少分钟。这是"提速"的终点。
+ *   targetRate   目标正确率。null 表示不给默认值，让用户自己设。
+ *
+ * 默认值按国考 135 题的量给（湖北省考题量少一些，可以自己在设置里改小）。 */
 YT.MODULES = [
   /* weight = 刷题轮转里的权重。资料/言语/判断是提分主力，给高权重；
    * 数量、常识、政治理论靠积累，刷题收益低，权重压低。 */
-  { id: 'zlfx', name: '资料分析',      short: '资料',       order: 1, unitMinutes: 2.5, courseUnits: 4, weight: 2.5 },
-  { id: 'yy',   name: '言语理解',      short: '言语',       order: 2, unitMinutes: 1.5, courseUnits: 5, weight: 2.5 },
-  { id: 'pdlj', name: '判断推理·逻辑', short: '判推逻辑',   order: 3, unitMinutes: 1.5, courseUnits: 4, weight: 2.5 },
-  { id: 'pdtx', name: '判断推理·图形', short: '判推图形',   order: 4, unitMinutes: 1.2, courseUnits: 3, weight: 2.5 },
-  { id: 'pddl', name: '定义判断·类比', short: '定义类比',   order: 5, unitMinutes: 1.2, courseUnits: 2, weight: 2.5 },
-  { id: 'zzll', name: '政治理论',      short: '政治理论',   order: 6, unitMinutes: 1.2, courseUnits: 3, weight: 1.2 },
-  { id: 'sl',   name: '数量关系',      short: '数量',       order: 7, unitMinutes: 2.5, courseUnits: 4, weight: 1 },
+  { id: 'zlfx', name: '资料分析',      short: '资料',       order: 1, unitMinutes: 2.5, courseUnits: 4, weight: 2.5,
+    setSize: 20, examMinutes: 28, targetRate: 0.85 },
+  { id: 'yy',   name: '言语理解',      short: '言语',       order: 2, unitMinutes: 1.5, courseUnits: 5, weight: 2.5,
+    setSize: 30, examMinutes: 28, targetRate: 0.75 },
+  { id: 'pdlj', name: '判断推理·逻辑', short: '判推逻辑',   order: 3, unitMinutes: 1.5, courseUnits: 4, weight: 2.5,
+    setSize: 10, examMinutes: 9,  targetRate: 0.75 },
+  { id: 'pdtx', name: '判断推理·图形', short: '判推图形',   order: 4, unitMinutes: 1.2, courseUnits: 3, weight: 2.5,
+    setSize: 5,  examMinutes: 4,  targetRate: 0.75 },
+  { id: 'pddl', name: '定义判断·类比', short: '定义类比',   order: 5, unitMinutes: 1.2, courseUnits: 2, weight: 2.5,
+    setSize: 20, examMinutes: 16, targetRate: 0.75 },
+  { id: 'zzll', name: '政治理论',      short: '政治理论',   order: 6, unitMinutes: 1.2, courseUnits: 3, weight: 1.2,
+    setSize: 20, examMinutes: 9,  targetRate: 0.60 },
+  /* 数量：很多人直接放弃，不给默认正确率，让用户自己决定要不要设 */
+  { id: 'sl',   name: '数量关系',      short: '数量',       order: 7, unitMinutes: 2.5, courseUnits: 4, weight: 1,
+    setSize: 15, examMinutes: 18, targetRate: null },
   /* 常识性价比最低，靠平时积累，专门刷题收益很小，很多人直接不学。
-   * 权重压到最低，用户也可以在设置里一键设成"不学"。 */
-  { id: 'cs',   name: '常识判断',      short: '常识',       order: 8, unitMinutes: 1.0, courseUnits: 2, weight: 0.6 },
-  { id: 'slw',  name: '申论',          short: '申论',       order: 9, unitMinutes: 40,  courseUnits: 6, weight: 0, essay: true },
+   * 权重压到最低，正确率也全靠蒙，不设目标。 */
+  { id: 'cs',   name: '常识判断',      short: '常识',       order: 8, unitMinutes: 1.0, courseUnits: 2, weight: 0.6,
+    setSize: 15, examMinutes: 8,  targetRate: null },
+  { id: 'slw',  name: '申论',          short: '申论',       order: 9, unitMinutes: 40,  courseUnits: 6, weight: 0, essay: true,
+    setSize: null, examMinutes: null, targetRate: null },
 ];
+
+/* 取模块参数。用户在设置里改过的存在 profile.moduleParams 里，没改就用上面的默认值。 */
+YT.moduleParam = function (module, profile, key) {
+  var over = profile && profile.moduleParams && profile.moduleParams[module.id];
+  if (over && over[key] !== undefined && over[key] !== null && over[key] !== '') {
+    return Number(over[key]);
+  }
+  return module[key];
+};
+
+/* 提速曲线：基础期按"练会"的速度，冲刺期压到考试速度。
+ * 强化期取两者之间。这样"限时提速"就不是模糊的感觉，而是一个算得出来的数。 */
+YT.unitMinutesFor = function (module, stage, profile) {
+  var setSize = YT.moduleParam(module, profile, 'setSize');
+  var examMinutes = YT.moduleParam(module, profile, 'examMinutes');
+  if (!setSize || !examMinutes) return module.unitMinutes;
+  var bench = (profile && profile.benchmarks && profile.benchmarks[module.id]);
+  var slow = (bench === undefined || bench === null) ? module.unitMinutes : Number(bench);
+  var fast = examMinutes / setSize;
+  if (stage === 'sprint') return fast;
+  if (stage === 'strengthen') return slow * 0.6 + fast * 0.4;
+  return slow;
+};
 
 YT.MODULE_BY_ID = {};
 YT.MODULES.forEach(function (m) { YT.MODULE_BY_ID[m.id] = m; });
@@ -87,7 +127,7 @@ YT.CONFIG = {
    * 只看最近 moodWindow 天的感受，取平均分再换算成系数。
    * 太轻松 = +1，刚好 = 0，有点累 = -1，太难了 = -2。 */
   moodWindow: 5,
-  moodWeight: 0.08,       // 平均分每 1 分，刷题和复盘的量变动 8%
+  moodWeight: 0.10,       // 平均分每 1 分，刷题和复盘的量变动 10%
   moodFactorMin: 0.75,
   moodFactorMax: 1.10,
 
