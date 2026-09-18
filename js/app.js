@@ -18,6 +18,7 @@
   var overlay = document.getElementById('overlay');
   var draft = null;
   var lastEnterKey = '';
+  var pendingRestart = null;   // 断更回来时，等这一屏画完再弹学习档案
 
   /* ---------------------------------------------------------------------
    * 小工具
@@ -173,6 +174,180 @@
           '<button class="btn primary grow" data-act="score-save">保存</button>' +
         '</div>' +
       '</div>';
+  }
+
+  /* ---------------------------------------------------------------------
+   * C1 学习档案
+   *
+   * 两个入口共用这一套：
+   *   view    —— 统计页里点开，随时都能看
+   *   restart —— 断更之后自动弹出来，先说"你完成了什么"，再说"从哪接上"
+   * 文案只写"怎么办"，不写"系统怎么工作"。
+   * ------------------------------------------------------------------- */
+
+  var archDraft = null;
+
+  function barWidth(done, need) {
+    if (!need) return 0;
+    return Math.max(0, Math.min(100, Math.round(done / need * 100)));
+  }
+
+  function openArchive(mode, info) {
+    var tk = todayKey();
+    var stage = (state.days[tk] || {}).stage || 'base';
+    var arch = window.YT.archive.build(state, tk, stage);
+    archDraft = {
+      mode: mode || 'view',
+      info: info || null,
+      arch: arch,
+      items: (arch.review || []).map(function (r) { return { on: true, item: r }; }),
+    };
+    renderArchive();
+  }
+
+  function renderArchive() {
+    if (!archDraft) return;
+    var a = archDraft.arch;
+    var restart = archDraft.mode === 'restart';
+
+    /* ---- 听课 ---- */
+    var courses = a.courses.slice().sort(function (x, y) {
+      var rank = function (c) {
+        if (c.done > 0.001 && c.done < c.need - 0.001) return 0;   // 听到一半的排最前
+        if (c.done >= c.need - 0.001) return 1;                    // 听完的
+        return 2;                                                  // 还没开始的
+      };
+      return rank(x) - rank(y) || 0;
+    });
+    /* 弹窗里按钮不能被挤到屏幕外，所以列表要克制 */
+    var courseHidden = Math.max(0, courses.length - 5);
+    courses = courses.slice(0, 5);
+
+    var courseHtml = courses.map(function (c) {
+      var done = c.done >= c.need - 0.001;
+      return '<div class="arch-row">' +
+        '<span class="an">' + esc(c.short) + '</span>' +
+        '<span class="bar"><i style="width:' + barWidth(c.done, c.need) + '%"></i></span>' +
+        '<span class="av">' + (Math.round(c.done * 10) / 10) + '/' + c.need + ' 节' +
+          (done ? ' <em>✓</em>' : '') + '</span>' +
+      '</div>';
+    }).join('');
+
+    /* ---- 刷题 ---- */
+    var prac = a.practices.slice(0, 3);
+    var pracHtml = prac.map(function (p) {
+      return '<div class="arch-row"><span class="an">' + esc(p.short) + '</span>' +
+        '<span class="bar"><i style="width:' + barWidth(p.questions, prac[0].questions) + '%"></i></span>' +
+        '<span class="av">' + p.questions + ' 题</span></div>';
+    }).join('');
+    if (a.papers) {
+      pracHtml += '<div class="arch-row"><span class="an">套卷</span><span class="bar"></span>' +
+        '<span class="av">' + a.papers + ' 套</span></div>';
+    }
+
+    /* ---- 建议先回顾这些 ---- */
+    var reviewHtml = archDraft.items.map(function (it, i) {
+      return '<button class="arch-item' + (it.on ? ' on' : '') + '" data-act="arch-toggle" data-i="' + i + '">' +
+        '<span class="box">' + (it.on ? '✓' : '') + '</span>' +
+        '<span class="at"><b>' + esc(it.item.title) + '</b>' +
+          '<span class="ad">' + esc(it.item.detail) + ' · ' + fmtMinutes(it.item.minutes) + '</span></span>' +
+      '</button>';
+    }).join('');
+
+    var head, sub;
+    if (restart) {
+      head = '先看看你学到哪了';
+      sub = a.lastKey
+        ? '你上次学习是 ' + fmtDate(a.lastKey, false) + '，到今天 ' + a.gap + ' 天。'
+        : '';
+    } else {
+      head = '学习档案';
+      sub = a.everStudied
+        ? (a.gap === 0 ? '今天学过。' : '上次学习是 ' + a.gap + ' 天前。')
+        : '还没有学习记录，从今天开始。';
+    }
+
+    var note = '';
+    if (restart && archDraft.info) {
+      note = '<div class="arch-note">中间那些天的旧计划已经清掉了，不用补。' +
+        (a.gap >= 8 ? '今天先按六成的量来，接上比补上重要。' : '今天先按八成的量来，找回手感。') + '</div>';
+    }
+
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal arch-modal">' +
+        '<div class="modal-title">' + esc(head) + '</div>' +
+        (sub ? '<div class="modal-msg">' + esc(sub) + '</div>' : '') +
+        note +
+
+        '<div class="arch-block">' +
+          '<div class="arch-h">听课</div>' + courseHtml +
+          (courseHidden ? '<div class="arch-more">……还有 ' + courseHidden + ' 个模块</div>' : '') +
+        '</div>' +
+
+        '<div class="arch-block">' +
+          '<div class="arch-h">刷题　<span class="arch-sum">累计 ' + a.questionTotal + ' 题</span></div>' +
+          (pracHtml || '<div class="arch-more">还没练过题</div>') +
+        '</div>' +
+
+        (reviewHtml
+          ? '<div class="arch-block">' +
+              '<div class="arch-h">建议先做这些　<span class="arch-sum">不想做的点掉</span></div>' +
+              reviewHtml +
+            '</div>'
+          : '') +
+
+        '<div class="row" style="gap:10px;margin-top:18px">' +
+          (restart ? '<button class="btn grow" data-act="arch-close">先不用</button>' : '') +
+          (!restart && reviewHtml ? '<button class="btn grow" data-act="arch-close">知道了</button>' : '') +
+          (reviewHtml
+            ? '<button class="btn primary grow" data-act="arch-yes">' +
+                (restart ? '就按这个来' : '加到今天') + '</button>'
+            : '<button class="btn primary grow" data-act="arch-close">知道了</button>') +
+        '</div>' +
+      '</div>';
+  }
+
+  /* 把选中的回顾项加成今天的任务。
+   * 加成"自己加的"：不进系统完成率，也不回头改后面的计划。 */
+  function addReviewTasks() {
+    var tk = todayKey();
+    var picks = archDraft.items.filter(function (it) { return it.on; }).map(function (it) { return it.item; });
+    if (!picks.length) return 0;
+
+    if (!state.days[tk]) E.ensureAhead(state, tk, 1);
+    var day = state.days[tk];
+    if (!day || day.isRest) return -1;
+
+    var added = 0;
+    picks.forEach(function (r) {
+      var dup = (day.tasks || []).some(function (t) { return t.review && t.moduleId === r.moduleId; });
+      if (dup) return;
+      /* 听课的回顾任务不能记成 kind='course'：
+       * 那样会被当成"又听了一节新课"，既占了节次编号，又把听课进度加了一节。
+       * 它只是把上一节回头看一遍，单独给一个 kind。 */
+      var isCourseReview = r.kind === 'course';
+      var t = {
+        id: 'review-' + Date.now() + '-' + added,
+        moduleId: r.moduleId,
+        moduleName: r.moduleName,
+        kind: isCourseReview ? 'review' : 'practice',
+        title: r.title,
+        detail: r.detail,
+        amounts: isCourseReview ? 1 : r.amount,
+        amountText: isCourseReview ? fmtMinutes(r.minutes) : r.amount + ' 题',
+        minutes: r.minutes,
+        status: 'todo',
+        actualMinutes: null,
+        userAdded: true,
+        review: true,
+      };
+      if (isCourseReview) t.noSeq = true;
+      else { t.amount = r.amount; t.sets = Math.round((r.amount / ((MODULE_BY_ID[r.moduleId] || {}).setSize || 20)) * 10) / 10; }
+      day.tasks.push(t);
+      added++;
+    });
+    return added;
   }
 
   /* 补记：把该模块未完成的课从前往后标记完成，不够的补一条记在今天。
@@ -503,6 +678,14 @@
       '</div>' +
       '<div class="param-note" style="margin-top:12px">当前日期：<b>' + todayKey() + '</b>' +
         (state.simDate ? '（真实今天是 ' + realTodayKey() + '）' : '') + '</div>' +
+      '<div class="param-head" style="margin-top:14px"><span class="param-label">模拟断更</span></div>' +
+      '<div class="chips" style="margin-top:6px">' +
+        '<button class="chip" data-act="sim-break" data-v="5">停 5 天后回来</button>' +
+        '<button class="chip" data-act="sim-break" data-v="12">停 12 天后回来</button>' +
+      '</div>' +
+      '<div class="param-note" style="margin-top:8px">' +
+        '直接跳到"断更 N 天之后"，看看回来那天自动弹出的学习档案、' +
+        '以及那些天没做完的东西是不是真的没被算成欠账。</div>' +
       (state.devBackup
         ? '<button class="btn ghost block" style="margin-top:10px" data-act="sim-restore">还原到快进前</button>'
         : '') +
@@ -656,6 +839,15 @@
   /* 每次打开时把过期没做完的任务顺延 / 砍掉，并保证未来两周已排好 */
   function dailyRoll() {
     var tk = todayKey();
+
+    /* 0. 断了很久回来：把断更期间"排了但一下都没碰"的日子清掉。
+     * 必须放在顺延之前，否则那些天没做完的东西会被顺延到未来，
+     * 用户一打开就是一屁股债——这正是他要卸载的时刻。 */
+    var ri = E.applyRestart(state, tk);
+    if (ri && state.ui.restartSeenOn !== tk) {
+      state.ui.restartSeenOn = tk;
+      pendingRestart = ri;
+    }
 
     /* 1. 如果跨进了新的一周，先按上周的实际表现重排本周还没开始的部分 */
     var roll = E.rollWeek(state, tk);
@@ -930,7 +1122,8 @@
       (taskDetail(t) ? '<div class="task-detail">' + esc(taskDetail(t)) + '</div>' : '') +
       ((t.carried || t.status === 'half' || t.userAdded)
         ? '<div class="task-meta">' +
-            (t.userAdded ? '<span class="pill plain">自己加的</span>' : '') +
+            (t.review ? '<span class="pill plain">回顾</span>'
+                      : (t.userAdded ? '<span class="pill plain">自己加的</span>' : '')) +
             (t.carried ? '<span class="pill warn">顺延</span>' : '') +
             (t.status === 'half' ? '<span class="pill">完成一半</span>' : '') +
           '</div>'
@@ -1484,6 +1677,7 @@
     var st = S.streak(state, tk);
     var timing = S.moduleTiming(state);
     var scores = state.scores || [];
+    var archQ = window.YT.archive.build(state, tk, (state.days[tk] || {}).stage || 'base');
 
     var rows = timing.map(function (r) {
       var med = r.medianPerQuestion === null ? '—' : (Math.round(r.medianPerQuestion * 10) / 10) + ' 分';
@@ -1508,6 +1702,19 @@
         '<div class="metric"><div class="v">' + st + '</div><div class="k">连续打卡</div></div>' +
         '<div class="metric"><div class="v">' + o.daysStudied + '</div><div class="k">学习天数</div></div>' +
         '<div class="metric"><div class="v">' + (o.planned ? pct(o.rate) : '—') + '</div><div class="k">完成任务</div></div>' +
+      '</div></div>' +
+
+      '<div class="section"><div class="card">' +
+        '<div class="row between">' +
+          '<div><div style="font-weight:600">学习档案</div>' +
+          '<div class="tiny muted" style="margin-top:2px">' +
+            (archQ.everStudied
+              ? (archQ.gap === 0 ? '今天学过' : '上次学习是 ' + archQ.gap + ' 天前') +
+                ' · 累计 ' + archQ.questionTotal + ' 题 · 听课 ' + archQ.courseTotal.done + '/' + archQ.courseTotal.need + ' 节'
+              : '还没有记录，打过一次卡这里就活了') +
+          '</div></div>' +
+          '<button class="btn sm" data-act="arch-open">查看</button>' +
+        '</div>' +
       '</div></div>' +
 
       '<div class="section"><div class="card">' +
@@ -1796,11 +2003,19 @@
     if (entering) {
       setTimeout(function () { app.classList.remove('entering'); }, 700);
     }
-    if (s === 'today') return renderToday();
-    if (s === 'plan') return renderPlan();
-    if (s === 'stats') return renderStats();
-    if (s === 'settings') return renderSettings();
-    return renderToday();
+    var out;
+    if (s === 'plan') out = renderPlan();
+    else if (s === 'stats') out = renderStats();
+    else if (s === 'settings') out = renderSettings();
+    else out = renderToday();
+
+    /* 断更回来自动弹出学习档案。等这一屏画完再弹，不然会被后面的渲染盖掉。 */
+    if (pendingRestart) {
+      var pr = pendingRestart;
+      pendingRestart = null;
+      openArchive('restart', pr);
+    }
+    return out;
   }
 
   /* ---------------------------------------------------------------------
@@ -2239,6 +2454,17 @@
       toast('已回到真实今天');
       return;
     }
+    /* 断更测试：直接跳到"上次学习结束 N 天之后"，走真实的重启逻辑 */
+    if (act === 'sim-break') {
+      var bd = Number(el.getAttribute('data-v')) || 8;
+      var lastK = E.lastActiveKey(state, todayKey()) || todayKey();
+      state.simDate = E.toKey(E.addDays(E.parseKey(lastK), bd));
+      state.ui.restartSeenOn = null;   // 让学习档案重新弹出来
+      dailyRoll();
+      save();
+      go('today');
+      return;
+    }
 
     /* ---- 设置 ---- */
     if (act === 'set-rest') {
@@ -2359,6 +2585,28 @@
       return;
     }
     if (act === 'ask-no') return closeAsk();
+
+    /* ---- 学习档案 ---- */
+    if (act === 'arch-open') return openArchive('view');
+    if (act === 'arch-close') { archDraft = null; return closeModal(); }
+    if (act === 'arch-toggle') {
+      if (!archDraft) return;
+      var ai = Number(el.getAttribute('data-i'));
+      if (archDraft.items[ai]) archDraft.items[ai].on = !archDraft.items[ai].on;
+      return renderArchive();
+    }
+    if (act === 'arch-yes') {
+      if (!archDraft) return closeModal();
+      var nAdded = addReviewTasks();
+      archDraft = null;
+      /* 今天是休息日：不硬把他从休息日里拽起来 */
+      if (nAdded < 0) { closeModal(); return toast('今天是休息日，先歇着，明天再按这个来'); }
+      save();
+      closeModal();
+      go('today');
+      toast(nAdded ? '加到今天了，这些不算在完成率里' : '今天已经有这些了');
+      return;
+    }
 
     if (act === 'confirm-yes') {
       var cb = confirmCb;

@@ -831,6 +831,7 @@ window.YT = window.YT || {};
 
     var projected = courseProgress(state, todayKey);
     var mf = moodFactor(state, todayKey);
+    var ri = restartInfo(state, todayKey);
     var d = parseKey(todayKey);
     var made = 0;
     var guard = 0;
@@ -846,11 +847,15 @@ window.YT = window.YT || {};
         var day = state.days[k];
         if (!day) {
           var rf = reflowForDate(state, k, todayKey);
+          /* 断更回来的第一天，只按重启系数排。
+           * 再叠一层"上周完成率低"的话，0.6 × 0.6 = 0.36，
+           * 等于回来第一天就给三成任务——那不叫接上，那叫劝退。 */
+          var dayFactor = (ri.active && k === todayKey) ? ri.factor : rf.factor;
           day = {
             date: k, isRest: false, stage: stageOf(k, roadmap),
             tasks: buildTasks(d, k, state, roadmap, {
               progress: projected,
-              factor: rf.factor,
+              factor: dayFactor,
               moodFactor: mf.factor,
             }),
             mood: null, generatedAt: new Date().toISOString(),
@@ -946,6 +951,90 @@ window.YT = window.YT || {};
     });
 
     return { rule: rule, factor: rule ? rule.factor : 1, ws: ws, moduleAdjust: moduleAdjust };
+  }
+
+  /* ---------------------------------------------------------------------
+   * 断更与重启（C1b）
+   *
+   * 停 2 天内：正常继续。
+   * 停 3–7 天：回来第一天按 80% 排。
+   * 停 8 天以上：按 60% 排，并且不补落下的内容，直接按剩下的时间重排。
+   *
+   * 原则是"先接上，再补"。停了十天的人打开看到"待完成 87 项"就直接卸载了。
+   * ------------------------------------------------------------------- */
+
+  /* 今天之前最后一个"真正动过"的日子（打过卡、哪怕只打了半个） */
+  function lastActiveKey(state, beforeKey) {
+    var keys = Object.keys(state.days || {}).sort();
+    for (var i = keys.length - 1; i >= 0; i--) {
+      var k = keys[i];
+      if (k >= beforeKey) continue;
+      var day = state.days[k];
+      if (!day || day.isRest) continue;
+      var touched = (day.tasks || []).some(function (t) { return t.status !== 'todo'; });
+      if (touched) return k;
+    }
+    return null;
+  }
+
+  /* 今天算不算"断了之后回来的第一天" */
+  function restartInfo(state, todayKey) {
+    var today = state.days[todayKey];
+    if (today && !today.isRest) {
+      var busy = today.mood || (today.tasks || []).some(function (t) {
+        return t.status !== 'todo';
+      });
+      if (busy) return { active: false, gap: 0, factor: 1, level: 'none', lastKey: null };
+    }
+    var last = lastActiveKey(state, todayKey);
+    if (!last) return { active: false, gap: null, factor: 1, level: 'none', lastKey: null };
+    var gap = dayDiff(last, todayKey);
+    if (gap <= 2) return { active: false, gap: gap, factor: 1, level: 'none', lastKey: last };
+    return {
+      active: true,
+      gap: gap,
+      lastKey: last,
+      factor: gap >= 8 ? 0.6 : 0.8,
+      level: gap >= 8 ? 'long' : 'short',
+    };
+  }
+
+  /* 一天"还没动过"的定义：没有任何状态变化、没选感受、也没自己加过东西。
+   * 自己加过的任务必须保住——那是用户亲手写的，不能替他清掉。 */
+  function untouched(day) {
+    if (!day || day.isRest) return false;
+    if (day.mood) return false;
+    return !(day.tasks || []).some(function (t) {
+      return t.status !== 'todo' || t.userAdded;
+    });
+  }
+
+  /* 断更之后回来：清掉断更期间"排了但一下都没碰"的日子，
+   * 再把今天重排一遍（按重启系数）。
+   * 不清的话，那些天会全部算成"没完成"，用户一打开就是一屁股债。 */
+  function applyRestart(state, todayKey) {
+    var info = restartInfo(state, todayKey);
+    if (!info.active) return null;
+
+    var cleared = 0;
+    Object.keys(state.days).forEach(function (k) {
+      if (k >= todayKey || k <= info.lastKey) return;
+      var day = state.days[k];
+      if (!day || day.isRest || day.mood) return;
+      /* 打过卡的、动过的不碰 */
+      if ((day.tasks || []).some(function (t) { return t.status !== 'todo'; })) return;
+      if (!(day.tasks || []).length) return;
+      /* 自己加的任务是他亲手写的，留着；只清系统排的那部分 */
+      day.tasks = day.tasks.filter(function (t) { return t.userAdded; });
+      day.cleared = true;   // 留个痕，方便调试时看出这天是被清过的
+      cleared++;
+    });
+
+    /* 今天如果还是原封不动的旧计划，删掉重排，让它带上重启系数 */
+    if (untouched(state.days[todayKey])) delete state.days[todayKey];
+
+    info.clearedDays = cleared;
+    return info;
   }
 
   /* 每日感受换算成的量调整系数。
@@ -1120,6 +1209,9 @@ window.YT = window.YT || {};
     computeReflow: computeReflow,
     moodFactor: moodFactor,
     errorRateFor: errorRateFor,
+    lastActiveKey: lastActiveKey,
+    restartInfo: restartInfo,
+    applyRestart: applyRestart,
     reflowForDate: reflowForDate,
     rollWeek: rollWeek,
     carryOver: carryOver,
