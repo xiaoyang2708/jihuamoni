@@ -843,11 +843,23 @@ html, body {
   border-radius: var(--radius);
   box-shadow: 0 14px 44px rgba(30,28,25,.18);
   padding: 22px 20px 18px;
-  max-width: 340px;
+  max-width: 400px;
   width: 100%;
 }
 .modal-title { font-size: 17px; font-weight: 650; }
 .modal-msg { margin-top: 8px; font-size: 13.5px; color: var(--ink-2); line-height: 1.65; }
+
+/* 改动对比清单 */
+.chg-list { margin-top: 10px; max-height: 300px; overflow-y: auto; }
+.chg-row {
+  padding: 9px 0; border-bottom: 1px solid var(--line);
+  font-size: 12px; line-height: 1.5;
+}
+.chg-row:last-child { border-bottom: 0; }
+.chg-date { font-weight: 650; color: var(--ink); margin-bottom: 3px; }
+.chg-before { color: var(--ink-3); text-decoration: line-through; text-decoration-color: #d8d2c7; }
+.chg-after { color: var(--primary); }
+.chg-after::before { content: "→ "; color: var(--ink-3); }
 
 /* ---------- 小屏 ---------- */
 

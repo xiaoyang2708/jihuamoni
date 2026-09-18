@@ -151,6 +151,105 @@
     }
   }
 
+  /* 反过来：把已听的课退回一部分。从后往前退，补记出来的那条直接删掉。 */
+  function markCourseUndo(moduleId, removeUnits) {
+    var left = removeUnits;
+    var keys = Object.keys(state.days).sort().reverse();
+    for (var i = 0; i < keys.length && left > 0.001; i++) {
+      var day = state.days[keys[i]];
+      var tasks = day.tasks || [];
+      for (var j = tasks.length - 1; j >= 0 && left > 0.001; j--) {
+        var t = tasks[j];
+        if (t.kind !== 'course' || t.moduleId !== moduleId) continue;
+        if (t.status === 'todo') continue;
+        var u = t.units || 1;
+        if (t.noSeq) {
+          /* 补记出来的那条，直接删掉 */
+          day.tasks.splice(j, 1);
+          left -= u;
+        } else if (t.status === 'done' && u <= left) {
+          t.status = 'todo';
+          t.actualMinutes = null;
+          left -= u;
+        }
+      }
+    }
+    return left;
+  }
+
+  /* ---------------------------------------------------------------------
+   * 改动可视化
+   * 任何结构性的改动（删任务、补记、重排）都会重排后面几天，
+   * 但用户看不到"哪里变了"。所以每次改完都给一张对比清单 + 撤销。
+   * ------------------------------------------------------------------- */
+
+  var lastUndo = null;
+
+  function takeSnapshot() {
+    return {
+      days: JSON.parse(JSON.stringify(state.days)),
+      weeklyLog: JSON.parse(JSON.stringify(state.weeklyLog || [])),
+      weekMark: JSON.parse(JSON.stringify(state.weekMark || {})),
+    };
+  }
+
+  function dayLine(day) {
+    if (!day) return '';
+    if (day.isRest) return '休息';
+    return (day.tasks || []).map(function (t) {
+      var d = (t.kind === 'course' && !t.noSeq && courseLabels[t.id]) ? courseLabels[t.id]
+            : (t.amountText || t.detail || '');
+      return t.title + ' ' + d;
+    }).join('　/　');
+  }
+
+  function diffDays(before, after) {
+    var keys = {};
+    Object.keys(before).forEach(function (k) { keys[k] = 1; });
+    Object.keys(after).forEach(function (k) { keys[k] = 1; });
+    var out = [];
+    Object.keys(keys).sort().forEach(function (k) {
+      var a = dayLine(before[k]), b = dayLine(after[k]);
+      if (a !== b) out.push({ date: k, before: a, after: b });
+    });
+    return out;
+  }
+
+  function finishChange(before, title) {
+    rebuildCourseLabels();
+    var diff = diffDays(before.days, state.days);
+    lastUndo = before;
+    save();
+    render();
+    if (!diff.length) { toast(title); return; }
+    showChangePanel(title, diff);
+  }
+
+  function showChangePanel(title, diff) {
+    var shown = diff.slice(0, 4);
+    var more = diff.length - shown.length;
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal">' +
+        '<div class="modal-title">' + esc(title) + '</div>' +
+        '<div class="modal-msg">影响到了 ' + diff.length + ' 天：</div>' +
+        '<div class="chg-list">' +
+          shown.map(function (d) {
+            return '<div class="chg-row">' +
+              '<div class="chg-date">' + fmtDate(d.date, false) + ' ' + weekdayName(d.date) + '</div>' +
+              '<div class="chg-before">' + (d.before ? esc(d.before) : '（本来没有）') + '</div>' +
+              '<div class="chg-after">' + (d.after ? esc(d.after) : '（现在没有）') + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+        (more > 0 ? '<div class="modal-msg">…还有 ' + more + ' 天</div>' : '') +
+        '<div class="row" style="gap:10px;margin-top:16px">' +
+          '<button class="btn grow" data-act="chg-undo">撤销</button>' +
+          '<button class="btn primary grow" data-act="chg-ok">知道了</button>' +
+        '</div>' +
+      '</div>';
+  }
+
   function save() { store.save(state); }
 
   function reRender() { render(); }
@@ -1695,6 +1794,7 @@
         '「' + removed.title + '」' +
         (removed.kind === 'course' ? '——这节课会顺延到后面。' : '——不影响后面的安排。'),
         function () {
+          var before = takeSnapshot();
           var dd2 = state.days[ddk];
           if (!dd2) return;
           if (removed.kind === 'course') {
@@ -1709,13 +1809,11 @@
               if (!touched) delete state.days[k];
             });
             E.ensureAhead(state, todayKey(), 14);
-            toast('已删掉，这节课顺延到后面');
+            finishChange(before, '已删除「' + removed.title + '」，后面的课顺延');
           } else {
             dd2.tasks = dd2.tasks.filter(function (t) { return t.id !== dtid; });
-            toast('已删掉');
+            finishChange(before, '已删除「' + removed.title + '」');
           }
-          save();
-          render();
         });
     }
     if (act === 'extra-open') {
@@ -1770,8 +1868,10 @@
         function (v) {
           if (v === null || isNaN(v)) return;
           var want = Math.max(0, Math.min(mupNeed, Math.round(v * 2) / 2));
-          if (want <= mupDone) { toast('没有变化'); return; }
-          markCourseDone(mupId, want - mupDone, todayKey());
+          if (want === mupDone) { toast('没有变化'); return; }
+          var before = takeSnapshot();
+          if (want > mupDone) markCourseDone(mupId, want - mupDone, todayKey());
+          else markCourseUndo(mupId, mupDone - want);
           /* 补完重排后面没动过的天，课程接着往下排 */
           Object.keys(state.days).forEach(function (k) {
             if (k <= todayKey()) return;
@@ -1780,9 +1880,7 @@
             if (!touched) delete state.days[k];
           });
           E.ensureAhead(state, todayKey(), 14);
-          save();
-          toast('已补记到 ' + want + ' 节');
-          render();
+          finishChange(before, '已把「' + mupMod.short + '」的听课进度改成 ' + want + ' 节');
         });
     }
     if (act === 'extra-quick') {
@@ -2049,6 +2147,20 @@
     }
 
     /* ---- 弹窗 ---- */
+    if (act === 'chg-undo') {
+      if (!lastUndo) return closeModal();
+      state.days = lastUndo.days;
+      state.weeklyLog = lastUndo.weeklyLog;
+      state.weekMark = lastUndo.weekMark;
+      lastUndo = null;
+      save();
+      closeModal();
+      render();
+      toast('已撤销');
+      return;
+    }
+    if (act === 'chg-ok') { lastUndo = null; return closeModal(); }
+
     if (act === 'ask-yes') {
       var icb = inputCb;
       var iel = document.getElementById('ask-input');
