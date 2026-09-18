@@ -814,36 +814,39 @@
   function renderTask(t, dateKey) {
     var cls = t.status === 'done' ? 'done' : t.status === 'half' ? 'half' : '';
     var rowCls = t.status === 'done' ? ' is-done' : '';
-    var html = '<div class="task' + rowCls + '">' +
-      '<button class="tick ' + cls + '" data-act="cycle" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" aria-label="标记完成"></button>' +
-      '<div class="task-body">' +
-        '<div class="task-title">' + esc(t.title) +
-          '<button class="del" data-act="del-task" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" title="删掉这项">×</button>' +
-        '</div>' +
-        (taskDetail(t) ? '<div class="task-detail">' + esc(taskDetail(t)) + '</div>' : '') +
-        '<div class="task-meta">' +
-          '<span>' + esc(t.amountText || '') + '</span>' +
-          '<span>约 ' + fmtMinutes(t.minutes) + '</span>' +
-          (t.carried ? '<span class="pill warn">顺延</span>' : '') +
-          (t.status === 'half' ? '<span class="pill">完成一半</span>' : '') +
-        '</div>';
+    var body =
+      '<div class="task-top">' +
+        '<span class="task-title">' + esc(t.title) + '</span>' +
+        '<span class="task-min">' + fmtMinutes(t.minutes) + '</span>' +
+      '</div>' +
+      (taskDetail(t) ? '<div class="task-detail">' + esc(taskDetail(t)) + '</div>' : '') +
+      ((t.carried || t.status === 'half' || t.userAdded)
+        ? '<div class="task-meta">' +
+            (t.userAdded ? '<span class="pill plain">自己加的</span>' : '') +
+            (t.carried ? '<span class="pill warn">顺延</span>' : '') +
+            (t.status === 'half' ? '<span class="pill">完成一半</span>' : '') +
+          '</div>'
+        : '');
 
     var canTime = (t.kind === 'practice' || t.kind === 'essay' || t.kind === 'paperset');
     if (t.status === 'done' && canTime) {
       if (t.actualMinutes) {
-        html += '<div class="task-meta"><span class="pill plain">实际 ' + fmtMinutes(t.actualMinutes) + '</span></div>';
+        body += '<div class="task-meta"><span class="pill plain">实际 ' + fmtMinutes(t.actualMinutes) + '</span></div>';
       } else {
-        html += '<div class="actual"><div class="hint">实际用了多久？点一下就行，不点也没关系</div><div class="chips">';
+        body += '<div class="actual"><div class="hint">实际用了多久？点一下就行，不点也没关系</div><div class="chips">';
         actualOptions(t.minutes).forEach(function (v) {
-          html += '<button class="chip" data-act="set-actual" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" data-min="' + v + '">' + v + ' 分</button>';
+          body += '<button class="chip" data-act="set-actual" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" data-min="' + v + '">' + v + ' 分</button>';
         });
-        html += '<button class="chip" data-act="skip-actual" data-date="' + dateKey + '" data-task="' + esc(t.id) + '">跳过</button>';
-        html += '</div></div>';
+        body += '<button class="chip" data-act="skip-actual" data-date="' + dateKey + '" data-task="' + esc(t.id) + '">跳过</button>';
+        body += '</div></div>';
       }
     }
 
-    html += '</div></div>';
-    return html;
+    return '<div class="task' + rowCls + '">' +
+      '<button class="tick ' + cls + '" data-act="cycle" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" aria-label="标记完成"></button>' +
+      '<div class="task-body">' + body + '</div>' +
+      '<button class="del" data-act="del-task" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" title="删掉这项">×</button>' +
+    '</div>';
   }
 
   function renderToday() {
@@ -859,29 +862,16 @@
     }
 
     var st = S.streak(state, tk);
-    var STAGE_SUB = {
-      base: '打基础，把方法学明白',
-      strengthen: '分模块刷题，开始提速',
-      sprint: '限时套卷，查漏补缺',
-    };
-    /* 色带右边挂一行小字，让用户每次打开都知道课程整体走到哪了 */
-    var bandProg = E.courseProgress(state);
-    var bandDone = 0, bandNeed = 0;
-    MODULES.forEach(function (m) {
-      var n = E.targetUnits(m, profile);
-      if (n <= 0) return;
-      bandNeed += n;
-      bandDone += Math.min(n, bandProg[m.id] || 0);
-    });
-    var band = '<div class="stage-band">' + stageLabel(day.stage) +
-      '<span>' + (STAGE_SUB[day.stage] || '') + '</span>' +
-      (bandNeed > 0 ? '<i>课 ' + bandDone + '/' + bandNeed + '</i>' : '') +
-      '</div>';
-
-    var head = band + '<div class="today-head">' +
-      '<div class="date">' + fmtDate(tk, true) + ' · ' + weekdayName(tk) + '</div>' +
-      '<h1>' + (day.isRest ? '今天休息' : stageLabel(day.stage)) + '</h1>' +
-      (st > 0 ? '<div class="date" style="margin-top:6px">连续 ' + st + ' 天</div>' : '') +
+    var doneCount = (day.tasks || []).filter(function (t) { return t.status === 'done'; }).length;
+    var totalCount = (day.tasks || []).length;
+    var head = '<div class="today-head">' +
+      '<div class="date">' + fmtDate(tk, true) + '　' + weekdayName(tk) + '</div>' +
+      '<h1>' + (day.isRest ? '今天休息' : '今天') + '</h1>' +
+      '<div class="state">' +
+        '<i>' + stageLabel(day.stage) + '</i>' +
+        (totalCount ? ' · 已完成 <b>' + doneCount + ' / ' + totalCount + '</b> 项' : '') +
+        (st > 1 ? ' · 连续 <b>' + st + '</b> 天' : '') +
+      '</div>' +
       '</div>';
 
     if (day.isRest) {
@@ -921,31 +911,16 @@
 
     app.innerHTML = '<div class="screen">' + head +
       (staleHtml ? '<div class="section">' + staleHtml + '</div>' : '') +
-      '<div class="section">' +
-        '<div class="card">' +
-          '<div class="row between" style="margin-bottom:2px">' +
-            '<span class="tiny muted">今日基础任务</span>' +
-            '<span class="tiny muted">' + pct(s.rate) + '</span>' +
-          '</div>' +
-          '<div class="daybar"><i style="width:' + Math.round(s.rate * 100) + '%"></i></div>' +
-          '<div class="daybar-meta"><span>计划 ' + fmtMinutes(s.planned) + '</span>' +
-          '<span>已完成 ' + fmtMinutes(s.done) +
-          (s.extraPlanned ? '　· 自己加 ' + fmtMinutes(s.extraPlanned) : '') + '</span></div>' +
-        '</div>' +
-      '</div>' +
+      (allDone ? '<div class="section"><div class="done-note">今天全部完成</div></div>' : '') +
 
-      (allDone ? '<div class="section"><div class="card" style="background:var(--primary-s);box-shadow:none">' +
-        '<div style="font-weight:600;color:var(--primary)">今天全部完成 ✓</div>' +
-        '<div class="tiny muted" style="margin-top:3px">这就是节奏感。明天见。</div></div></div>' : '') +
-
-      '<div class="section"><p class="section-title">今日任务</p><div class="card">' + tasksHtml + '</div></div>' +
+      '<div class="section"><div class="card tasks">' + tasksHtml + '</div></div>' +
 
       '<div class="section">' + freeHtml + extraFormHtml() +
         (state.ui.addingExtra ? '' :
-          '<button class="btn block ghost" data-act="extra-open">＋ 我自己加一项</button>') +
+          '<button class="btn block ghost" data-act="extra-open">加一项</button>') +
       '</div>' +
 
-      '<div class="section"><p class="section-title">今天感觉怎么样</p>' +
+      '<div class="section"><p class="section-title">今天感觉</p>' +
         '<div class="moods">' +
           moodBtn('easy', '太轻松', day.mood) +
           moodBtn('ok', '刚好', day.mood) +
@@ -953,7 +928,6 @@
           moodBtn('hard', '太难了', day.mood) +
         '</div>' +
         moodPreviewHtml() +
-        '<div class="footnote">选完立刻生效：还没开始的那些天会按最近几次的感受重排，已经打过卡的日子不动。</div>' +
       '</div>' +
       '</div>';
     renderTabbar('today');
@@ -1449,20 +1423,6 @@
   function renderSettings() {
     var p = state.profile;
 
-    var curStyle = state.ui.style || 'classic';
-    var STYLES = [
-      { id: 'classic',  name: '经典',     desc: '暖纸背景 · 深青绿', c: '#2f6b5e', bg: '#f7f5f1' },
-      { id: 'ios',      name: 'Apple 浅色', desc: '系统蓝 · 毛玻璃',   c: '#007aff', bg: '#f2f2f7' },
-      { id: 'iosdark',  name: 'Apple 深色', desc: '纯黑 · 夜用',       c: '#0a84ff', bg: '#1c1c1e' },
-    ];
-    var styleRow = '<div class="style-picker">' + STYLES.map(function (s) {
-      return '<button class="style-opt ' + (curStyle === s.id ? 'on' : '') + '" data-act="set-style" data-v="' + s.id + '">' +
-        '<span class="sw" style="background:' + s.bg + '"><i style="background:' + s.c + '"></i></span>' +
-        '<span class="nm">' + s.name + '</span>' +
-        '<span class="ds">' + s.desc + '</span>' +
-      '</button>';
-    }).join('') + '</div>';
-
     var restPicker = '<div class="daypicker">';
     for (var i = 0; i < 7; i++) {
       var on = p.restDays.indexOf(i) !== -1;
@@ -1490,12 +1450,6 @@
 
     app.innerHTML = '<div class="screen">' +
       '<div class="top"><h1>设置</h1><div class="sub">改完以后，点最下面那个按钮重排后面的计划</div></div>' +
-
-      '<div class="section"><p class="section-title">外观</p><div class="card">' +
-        styleRow +
-        '<div class="footnote" style="margin-top:12px">三套外观随时能换，只影响长相，不影响数据和计划。' +
-        'Apple 那两套用了系统蓝和毛玻璃，动画是弹性的。</div>' +
-      '</div></div>' +
 
       '<div class="section"><p class="section-title">考试与时间</p><div class="card">' +
         '<div class="field"><label>考试日期</label>' +
@@ -1660,6 +1614,13 @@
    * ------------------------------------------------------------------- */
 
   function renderTabbar(active) {
+    /* 图标用内联 SVG：比 CSS 拼出来的方块精致得多，也不占内存 */
+    var ICON = {
+      today: '<circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/>',
+      plan: '<path d="M4.5 7h15M4.5 12h15M4.5 17h9"/>',
+      stats: '<path d="M6 19v-6M12 19V5.5M18 19v-9"/>',
+      settings: '<path d="M4 8.5h8M17 8.5h3M4 15.5h3M12 15.5h8"/><circle cx="14.5" cy="8.5" r="2.2"/><circle cx="9.5" cy="15.5" r="2.2"/>',
+    };
     var tabs = [
       { id: 'today', label: '今日' },
       { id: 'plan', label: '计划' },
@@ -1668,7 +1629,9 @@
     ];
     var html = '<div class="tabbar">' + tabs.map(function (t) {
       return '<button class="tab ' + (t.id === active ? 'on' : '') + '" data-act="goto" data-to="' + t.id + '">' +
-             '<span class="dot"></span>' + t.label + '</button>';
+             '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+             'stroke-linecap="round" stroke-linejoin="round">' + ICON[t.id] + '</svg>' +
+             t.label + '</button>';
     }).join('') + '</div>';
     app.insertAdjacentHTML('beforeend', html);
   }
@@ -1681,8 +1644,7 @@
     if (!state.profile) { app.className = ''; renderOnboarding(); return; }
     var rtk = todayKey();
     var rstage = (state.days[rtk] || {}).stage || 'base';
-    var rstyle = state.ui.style || 'classic';
-    app.className = (rstyle === 'classic' ? '' : 'style-' + rstyle + ' ') + 'stage-' + rstage;
+    app.className = 'stage-' + rstage;
     rebuildCourseLabels();
     var s = state.ui.screen || 'today';
     if (s === 'today') return renderToday();
@@ -2043,11 +2005,6 @@
     if (act === 'set-essay-start') {
       state.profile.tuning = state.profile.tuning || {};
       state.profile.tuning.essayStartStage = el.getAttribute('data-v');
-      save();
-      return reRender();
-    }
-    if (act === 'set-style') {
-      state.ui.style = el.getAttribute('data-v');
       save();
       return reRender();
     }

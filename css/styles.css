@@ -2,31 +2,35 @@
  * 备考节奏 —— 样式
  * 手机优先，最大宽度 480px 居中。桌面打开就是个手机形状的窗口。
  *
- * 三套外观，用 #app 上的 class 切换：
- *   style-classic   经典（默认，暖纸背景 + 深青绿）
- *   style-ios       Apple 浅色（系统蓝 + #F2F2F7 背景 + 毛玻璃）
- *   style-iosdark   Apple 深色
- * 动画只动 transform / opacity，毛玻璃只用在导航栏和阶段条两处，
- * 别的地方一律用纯色——backdrop-filter 每个都会占一块 GPU 内存。
+ * 设计原则，改样式前先看这几条：
+ *   1. 减元素。能用一行字说清的，不要做成一张卡。
+ *   2. 留白分层次。靠间距和字号拉开主次，不靠边框和阴影。
+ *   3. 颜色只给"状态"——打卡、进度、当前选择。其余一律灰阶。
+ *   4. 动画只动 transform / opacity，毛玻璃只用在底部导航一处。
  * ========================================================================= */
 
 :root {
-  --bg:        #f7f5f1;
+  /* 灰阶：文字全部用黑色加透明度做层级，不用不同的灰 */
+  --bg:        #f2f2f7;
   --card:      #ffffff;
-  --ink:       #1e1c19;
-  --ink-2:     #6b655c;
-  --ink-3:     #a49d91;
-  --line:      #e9e4db;
-  --primary:   #2f6b5e;
-  --primary-s: #e7f0ed;
-  --accent:    #c9752f;
-  --accent-s:  #fbeee1;
-  --danger:    #b4443a;
-  --done:      #2f6b5e;
-  --half:      #c9932f;
-  --radius:    14px;
-  --radius-s:  10px;
-  --shadow:    0 1px 2px rgba(30,28,25,.05), 0 6px 18px rgba(30,28,25,.05);
+  --ink:       #000000;
+  --ink-2:     rgba(60, 60, 67, .60);
+  --ink-3:     rgba(60, 60, 67, .32);
+  --line:      rgba(60, 60, 67, .12);
+  /* 彩色：只出现在"状态"上 */
+  --primary:   #007aff;
+  --primary-s: rgba(0, 122, 255, .10);
+  --accent:    #ff9500;
+  --accent-s:  rgba(255, 149, 0, .12);
+  --danger:    #ff3b30;
+  --done:      #007aff;
+  --half:      #ff9500;
+  --radius:    18px;
+  --radius-s:  12px;
+  --shadow:    none;
+  /* 弹性曲线，全局统一 */
+  --spring:    cubic-bezier(.34, 1.4, .64, 1);
+  --ease:      cubic-bezier(.32, .72, 0, 1);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -34,11 +38,11 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: #eceae5;
+  background: #e5e5ea;
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
-               "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
-  font-size: 15px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  font-size: 17px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
@@ -48,6 +52,7 @@ html, body {
   margin: 0 auto;
   min-height: 100vh;
   background: var(--bg);
+  color: var(--ink);
   position: relative;
   padding-bottom: 84px;
 }
@@ -58,44 +63,73 @@ html, body {
 
 .screen { padding: 0 0 24px; }
 
+/* 页面进入：淡入上移，不触发重排 */
+.screen { animation: pageIn .38s var(--ease); }
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 列表逐条浮现。纯 CSS，没有 JS 参与，错开 35 毫秒 */
+.task, .plan-day, .prog, .metric, .stage { animation: rowIn .42s var(--ease) both; }
+.task:nth-child(1), .plan-day:nth-child(1), .prog:nth-child(1), .metric:nth-child(1), .stage:nth-child(1) { animation-delay: 0s; }
+.task:nth-child(2), .plan-day:nth-child(2), .prog:nth-child(2), .metric:nth-child(2), .stage:nth-child(2) { animation-delay: .035s; }
+.task:nth-child(3), .plan-day:nth-child(3), .prog:nth-child(3), .metric:nth-child(3), .stage:nth-child(3) { animation-delay: .07s; }
+.task:nth-child(4), .plan-day:nth-child(4), .prog:nth-child(4) { animation-delay: .105s; }
+.task:nth-child(n+5), .plan-day:nth-child(n+5), .prog:nth-child(n+5) { animation-delay: .14s; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.done-note {
+  font-size: 15px; font-weight: 600; color: var(--primary);
+  background: var(--primary-s);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  animation: rowIn .42s var(--ease) both;
+}
+
 .top {
-  padding: 22px 20px 14px;
+  padding: 14px 20px 6px;
   background: var(--bg);
-  position: sticky;
-  top: 0;
-  z-index: 5;
 }
 
 .top h1 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 650;
-  letter-spacing: -.2px;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -.5px;
+  line-height: 1.2;
 }
 
 .top .sub {
-  margin-top: 3px;
-  font-size: 13px;
+  margin-top: 2px;
+  font-size: 15px;
   color: var(--ink-2);
+  letter-spacing: -.1px;
 }
 
-.section { padding: 0 20px; margin-top: 22px; }
+.section { padding: 0 16px; margin-top: 26px; }
 
 .section-title {
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: .08em;
-  color: var(--ink-3);
-  margin: 0 0 10px;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  color: var(--ink-2);
+  margin: 0 0 8px;
+  padding-left: 4px;
 }
 
 .card {
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: 18px;
 }
+
+/* 装列表的卡片：上下不留太多，让每行自己去撑 */
+.card.tasks { padding: 3px 18px; }
 
 .card + .card { margin-top: 10px; }
 
@@ -110,17 +144,18 @@ html, body {
 
 .btn {
   appearance: none;
-  border: 1px solid var(--line);
-  background: var(--card);
+  border: 0;
+  background: rgba(120,120,128,.12);
   color: var(--ink);
   font: inherit;
   font-size: 15px;
-  padding: 11px 16px;
-  border-radius: var(--radius-s);
+  font-weight: 600;
+  padding: 12px 16px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: transform .06s ease, background .15s ease;
+  transition: transform .18s var(--spring), opacity .18s ease, background .18s ease;
 }
-.btn:active { transform: scale(.985); }
+.btn:active { transform: scale(.96); opacity: .75; }
 
 .btn.primary {
   background: var(--primary);
@@ -130,10 +165,11 @@ html, body {
 }
 
 .btn.ghost { background: transparent; }
+.btn.ghost { color: var(--primary); }
 .btn.block { display: block; width: 100%; text-align: center; }
 .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 8px; }
 
-.btn.danger { color: var(--danger); border-color: #e8d5d2; }
+.btn.danger { background: rgba(255,59,48,.10); color: var(--danger); }
 
 /* ---------- 底部导航 ---------- */
 
@@ -145,9 +181,10 @@ html, body {
   width: 100%;
   max-width: 480px;
   display: flex;
-  background: rgba(255,255,255,.94);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--line);
+  background: rgba(249,249,249,.84);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-top: .5px solid rgba(60,60,67,.18);
   padding-bottom: env(safe-area-inset-bottom);
   z-index: 20;
 }
@@ -157,54 +194,52 @@ html, body {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 500;
   color: var(--ink-3);
-  padding: 9px 0 11px;
+  padding: 7px 0 10px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
+  transition: color .18s ease;
 }
+.tab:active .dot { transform: scale(.86); }
 
-.tab .dot {
-  width: 20px; height: 20px;
-  border-radius: 6px;
-  border: 1.6px solid currentColor;
-  position: relative;
+.tab .ico {
+  width: 24px; height: 24px;
+  transition: transform .24s var(--spring);
 }
+.tab:active .ico { transform: scale(.86); }
 
 .tab.on { color: var(--primary); font-weight: 600; }
-
-/* 四个 tab 的图标用简单形状区分 */
-.tab[data-to="today"]  .dot::after { content:""; position:absolute; inset:5px 4px 4px; border-left:2px solid currentColor; border-bottom:2px solid currentColor; }
-.tab[data-to="plan"]   .dot::after { content:""; position:absolute; left:4px; right:4px; top:6px; height:2px; background:currentColor; box-shadow:0 4px 0 currentColor; }
-.tab[data-to="stats"]  .dot::after { content:""; position:absolute; left:4px; right:4px; bottom:4px; height:8px; background:currentColor; clip-path: polygon(0 100%, 0 60%, 30% 60%, 30% 30%, 65% 30%, 65% 0, 100% 0, 100% 100%); }
-.tab[data-to="settings"] .dot::after { content:""; position:absolute; inset:6px; border:2px solid currentColor; border-radius:50%; }
 
 /* ---------- 任务卡 ---------- */
 
 .task {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 13px 0;
-  border-bottom: 1px solid var(--line);
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(60,60,67,.10);
+  animation: rowIn .42s var(--ease) both;
 }
 .task:last-child { border-bottom: 0; }
 
 .tick {
   flex: 0 0 auto;
-  width: 26px; height: 26px;
+  width: 24px; height: 24px;
   border-radius: 50%;
-  border: 2px solid #d8d2c7;
+  border: 1.5px solid rgba(60,60,67,.28);
   background: transparent;
   cursor: pointer;
   padding: 0;
   position: relative;
-  margin-top: 1px;
-  transition: all .15s ease;
+  margin-top: 2px;
+  transition: transform .22s var(--spring), background .2s ease, border-color .2s ease;
 }
+.tick:active { transform: scale(.85); }
 
 .tick.done {
   border-color: var(--done);
@@ -213,8 +248,8 @@ html, body {
 .tick.done::after {
   content: "";
   position: absolute;
-  left: 7px; top: 3px;
-  width: 6px; height: 11px;
+  left: 6.5px; top: 3px;
+  width: 6px; height: 10px;
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
@@ -227,24 +262,31 @@ html, body {
 
 .task-body { flex: 1; min-width: 0; }
 
-.task-title { font-weight: 550; font-size: 15px; }
-
-/* 删掉某一项 */
-.del {
-  float: right;
-  width: 20px; height: 20px; line-height: 1;
-  border: 0; background: none; padding: 0;
-  color: #c9c2b6; font-size: 15px; cursor: pointer;
-  border-radius: 6px;
+.task-top { display: flex; align-items: baseline; gap: 8px; }
+.task-title { flex: 1; min-width: 0; font-weight: 500; font-size: 17px; letter-spacing: -.2px; }
+.task-min {
+  flex: 0 0 auto; font-size: 15px; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  transition: opacity .2s ease;
 }
-.del:hover { background: #f2efe9; color: var(--danger); }
+
+/* 删掉某一项：平时很淡，不抢视线 */
+.del {
+  flex: 0 0 auto; align-self: flex-start;
+  width: 22px; height: 22px; line-height: 1;
+  border: 0; background: none; padding: 0;
+  color: rgba(60,60,67,.22); font-size: 17px; cursor: pointer;
+  border-radius: 50%;
+  transition: transform .18s var(--spring), color .18s ease;
+}
+.del:active { transform: scale(.85); color: var(--danger); }
 .pd-task .del { flex: 0 0 auto; margin-left: 2px; }
-.task-detail { font-size: 13px; color: var(--ink-2); margin-top: 1px; }
+.task-detail { font-size: 15px; color: var(--ink-2); margin-top: 1px; letter-spacing: -.1px; }
 
 .task-meta {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-3);
-  margin-top: 3px;
+  margin-top: 4px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -261,8 +303,8 @@ html, body {
 .pill.warn { background: var(--accent-s); color: var(--accent); }
 .pill.plain { background: #f0ede8; color: var(--ink-2); }
 
-.task.is-done .task-title { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
-.task.is-done .task-detail, .task.is-done .task-meta { color: #bdb7ac; }
+.task.is-done .task-title { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.task.is-done .task-detail, .task.is-done .task-meta { color: var(--ink-3); }
 
 /* 实际用时快选 */
 .actual {
@@ -278,34 +320,51 @@ html, body {
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .chip {
-  border: 1px solid var(--line);
-  background: #fff;
+  border: 0;
+  background: rgba(120,120,128,.10);
   border-radius: 20px;
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
   font-family: inherit;
   color: var(--ink-2);
   cursor: pointer;
+  transition: transform .16s var(--spring), background .18s ease, color .18s ease;
 }
-.chip.on { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+.chip:active { transform: scale(.94); }
+.chip.on { background: var(--primary); color: #fff; font-weight: 600; }
 
 /* ---------- 今日头部 ---------- */
 
 .today-head {
-  padding: 22px 20px 16px;
+  padding: 8px 20px 0;
 }
 
-.today-head .date { font-size: 13px; color: var(--ink-2); }
-.today-head h1 { margin: 2px 0 0; font-size: 24px; font-weight: 650; letter-spacing: -.3px; }
+.today-head .date {
+  font-size: 13px; font-weight: 500; color: var(--ink-2);
+  letter-spacing: .02em;
+}
+.today-head h1 {
+  margin: 2px 0 0;
+  font-size: 34px; font-weight: 700; letter-spacing: -.9px; line-height: 1.15;
+}
+.today-head .state {
+  margin-top: 6px; font-size: 15px; color: var(--ink-2); letter-spacing: -.1px;
+}
+.today-head .state b { font-weight: 600; color: var(--ink); }
+.today-head .state i { font-style: normal; font-weight: 600; color: var(--ink); }
 
 .daybar {
-  margin-top: 14px;
-  height: 7px;
-  background: #eae5dd;
+  margin-top: 12px;
+  height: 6px;
+  background: rgba(120,120,128,.16);
   border-radius: 20px;
   overflow: hidden;
 }
-.daybar > i { display: block; height: 100%; background: var(--primary); border-radius: 20px; transition: width .3s ease; }
+.daybar > i {
+  display: block; height: 100%; background: var(--primary); border-radius: 20px;
+  transition: width .45s var(--ease);
+}
 
 .daybar-meta {
   display: flex; justify-content: space-between;
@@ -356,16 +415,19 @@ html, body {
 .moods { display: flex; gap: 6px; margin-top: 2px; }
 .mood {
   flex: 1;
-  border: 1px solid var(--line);
-  background: #fff;
-  border-radius: var(--radius-s);
-  padding: 9px 4px;
+  border: 0;
+  background: rgba(120,120,128,.10);
+  border-radius: 11px;
+  padding: 11px 4px;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--ink-2);
   cursor: pointer;
+  transition: transform .18s var(--spring), background .2s ease, color .2s ease;
 }
-.mood.on { border-color: var(--primary); background: var(--primary-s); color: var(--primary); font-weight: 600; }
+.mood:active { transform: scale(.95); }
+.mood.on { background: var(--primary-s); color: var(--primary); font-weight: 600; }
 
 /* 改完感受立刻看到计划怎么变 */
 .mood-preview {
@@ -452,9 +514,9 @@ html, body {
 
 .segmented {
   display: flex;
-  background: #ece8e1;
-  border-radius: 10px;
-  padding: 3px;
+  background: rgba(120,120,128,.12);
+  border-radius: 9px;
+  padding: 2px;
   gap: 2px;
 }
 .segmented button {
@@ -463,16 +525,18 @@ html, body {
   background: transparent;
   font: inherit;
   font-size: 13px;
-  padding: 7px 0;
-  border-radius: 8px;
+  font-weight: 500;
+  padding: 6px 0;
+  border-radius: 7px;
   color: var(--ink-2);
   cursor: pointer;
+  transition: background .2s ease, box-shadow .2s ease, color .2s ease;
 }
 .segmented button.on {
   background: #fff;
   color: var(--ink);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(30,28,25,.08);
+  box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.04);
 }
 
 .range-note {
@@ -736,25 +800,6 @@ html, body {
 
 /* ---------- 高级参数 ---------- */
 
-.style-picker { display: flex; gap: 8px; }
-.style-opt {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
-  border: 1.5px solid var(--line); background: var(--card);
-  border-radius: var(--radius-s); padding: 10px 4px;
-  font: inherit; cursor: pointer;
-  transition: transform .16s cubic-bezier(.34,1.4,.64,1), border-color .2s ease;
-}
-.style-opt:active { transform: scale(.96); }
-.style-opt.on { border-color: var(--primary); }
-.style-opt .sw {
-  width: 34px; height: 34px; border-radius: 11px;
-  display: flex; align-items: center; justify-content: center;
-  border: .5px solid var(--line);
-}
-.style-opt .sw i { width: 13px; height: 13px; border-radius: 50%; display: block; }
-.style-opt .nm { font-size: 12px; font-weight: 600; }
-.style-opt .ds { font-size: 9.5px; color: var(--ink-3); text-align: center; line-height: 1.3; }
-
 .param-toggle {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   width: 100%; border: 0; background: none; font: inherit; font-size: 14px;
@@ -893,232 +938,3 @@ html, body {
   .numlist { grid-template-columns: 1fr; }
   .table { font-size: 12px; }
 }
-
-/* =========================================================================
- * Apple 风格（浅色）
- * ========================================================================= */
-
-#app.style-ios {
-  color: var(--ink);
-  --bg:        #f2f2f7;
-  --card:      #ffffff;
-  --ink:       #000000;
-  --ink-2:     rgba(60, 60, 67, .6);
-  --ink-3:     rgba(60, 60, 67, .32);
-  --line:      rgba(60, 60, 67, .14);
-  --primary:   #007aff;
-  --primary-s: rgba(0, 122, 255, .1);
-  --accent:    #ff9500;
-  --accent-s:  rgba(255, 149, 0, .12);
-  --danger:    #ff3b30;
-  --half:      #ff9500;
-  --radius:    20px;
-  --radius-s:  14px;
-  --shadow:    none;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Text",
-               "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
-}
-
-/* 卡片靠"白底 + 大圆角"分层，不靠阴影和描边 */
-#app.style-ios .card,
-#app.style-ios .metric,
-#app.style-ios .mood-preview,
-#app.style-ios .extra-form,
-#app.style-ios .preview-card {
-  box-shadow: none;
-  border-radius: var(--radius);
-}
-#app.style-ios .card + .card { margin-top: 12px; }
-
-/* 大标题：iOS 的 Large Title */
-#app.style-ios .top h1 { font-size: 30px; font-weight: 700; letter-spacing: -.6px; }
-#app.style-ios .today-head h1 { font-size: 32px; font-weight: 700; letter-spacing: -.8px; }
-
-/* 分隔线做成"内缩"式，两端不顶到边 */
-#app.style-ios .task { border-bottom-color: rgba(60,60,67,.1); }
-#app.style-ios .task:last-child { border-bottom: 0; }
-#app.style-ios .prog-sum { border-bottom-color: rgba(60,60,67,.1); }
-
-/* 按钮：填充式主按钮 + 纯文字次按钮，就是 iOS 那套 */
-#app.style-ios .btn {
-  border: 0;
-  background: rgba(120, 120, 128, .12);
-  border-radius: 12px;
-  font-weight: 600;
-  transition: transform .18s cubic-bezier(.34,1.4,.64,1), opacity .18s ease;
-}
-#app.style-ios .btn:active { transform: scale(.96); opacity: .7; }
-#app.style-ios .btn.primary { background: var(--primary); }
-#app.style-ios .btn.ghost {
-  background: transparent;
-  color: var(--primary);
-  border: 0;
-}
-#app.style-ios .btn.danger { background: rgba(255,59,48,.1); color: var(--danger); }
-
-/* 分段控件：iOS 那个灰底 + 白色滑块 */
-#app.style-ios .segmented {
-  background: rgba(120, 120, 128, .12);
-  border-radius: 9px;
-  padding: 2px;
-}
-#app.style-ios .segmented button {
-  border-radius: 7px;
-  font-weight: 600;
-  font-size: 13px;
-  transition: background .2s ease, box-shadow .2s ease, color .2s ease;
-}
-#app.style-ios .segmented button.on {
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.04);
-}
-
-/* 打卡圆圈：iOS 的勾选样式 */
-#app.style-ios .tick {
-  border-color: rgba(60,60,67,.2);
-  transition: transform .2s cubic-bezier(.34,1.5,.64,1), background .2s ease, border-color .2s ease;
-}
-#app.style-ios .tick:active { transform: scale(.88); }
-#app.style-ios .tick.done { border-color: var(--primary); background: var(--primary); }
-#app.style-ios .tick.half { border-color: var(--half); background: linear-gradient(to right, var(--half) 0 50%, transparent 50% 100%); }
-
-/* chips / mood：圆角胶囊，选中有色 */
-#app.style-ios .chip,
-#app.style-ios .mood,
-#app.style-ios .prog-fix {
-  border: 0;
-  background: rgba(120,120,128,.12);
-  border-radius: 20px;
-  transition: transform .16s cubic-bezier(.34,1.4,.64,1), background .18s ease, color .18s ease;
-}
-#app.style-ios .chip:active,
-#app.style-ios .mood:active { transform: scale(.95); }
-#app.style-ios .chip.on { background: var(--primary); color: #fff; }
-#app.style-ios .mood.on { background: var(--primary-s); color: var(--primary); }
-
-/* 导航栏：唯一用毛玻璃的地方 */
-#app.style-ios .tabbar {
-  background: rgba(249, 249, 249, .82);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-top: .5px solid rgba(60,60,67,.18);
-}
-#app.style-ios .tab.on { color: var(--primary); }
-
-/* 阶段条：第二个也是最后一个用毛玻璃的地方 */
-#app.style-ios .stage-band {
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  font-weight: 600;
-}
-
-/* 进度条更细更圆，像 iOS 的容量条 */
-#app.style-ios .daybar,
-#app.style-ios .prog-bar,
-#app.style-ios .wd-bar { height: 6px; background: rgba(120,120,128,.16); }
-#app.style-ios .daybar > i,
-#app.style-ios .prog-bar > i { border-radius: 6px; }
-
-/* 页面切换：只做淡入上移，不触发重排 */
-#app.style-ios .screen { animation: iosPageIn .34s cubic-bezier(.32,.72,0,1); }
-@keyframes iosPageIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: none; }
-}
-
-/* 任务行依次浮现，间隔很短，看着有质感又不拖沓 */
-#app.style-ios .task,
-#app.style-ios .plan-day,
-#app.style-ios .prog,
-#app.style-ios .metric {
-  animation: iosRowIn .38s cubic-bezier(.32,.72,0,1) both;
-}
-#app.style-ios .task:nth-child(1), #app.style-ios .plan-day:nth-child(1), #app.style-ios .prog:nth-child(1), #app.style-ios .metric:nth-child(1) { animation-delay: .01s; }
-#app.style-ios .task:nth-child(2), #app.style-ios .plan-day:nth-child(2), #app.style-ios .prog:nth-child(2), #app.style-ios .metric:nth-child(2) { animation-delay: .04s; }
-#app.style-ios .task:nth-child(3), #app.style-ios .plan-day:nth-child(3), #app.style-ios .prog:nth-child(3), #app.style-ios .metric:nth-child(3) { animation-delay: .07s; }
-#app.style-ios .task:nth-child(4), #app.style-ios .plan-day:nth-child(4), #app.style-ios .prog:nth-child(4) { animation-delay: .1s; }
-#app.style-ios .task:nth-child(n+5), #app.style-ios .plan-day:nth-child(n+5), #app.style-ios .prog:nth-child(n+5) { animation-delay: .13s; }
-@keyframes iosRowIn {
-  from { opacity: 0; transform: translateY(7px); }
-  to   { opacity: 1; transform: none; }
-}
-
-/* 弹窗：iOS 的 sheet 感觉 */
-#app.style-ios + .overlay .modal,
-.overlay .modal { transition: none; }
-#app.style-ios .modal, .modal {
-  border-radius: 22px;
-}
-
-/* =========================================================================
- * Apple 风格（深色）
- * ========================================================================= */
-
-#app.style-iosdark {
-  color: var(--ink);
-  --bg:        #000000;
-  --card:      #1c1c1e;
-  --ink:       #ffffff;
-  --ink-2:     rgba(235, 235, 245, .6);
-  --ink-3:     rgba(235, 235, 245, .3);
-  --line:      rgba(235, 235, 245, .14);
-  --primary:   #0a84ff;
-  --primary-s: rgba(10, 132, 255, .18);
-  --accent:    #ff9f0a;
-  --accent-s:  rgba(255, 159, 10, .16);
-  --danger:    #ff453a;
-  --half:      #ff9f0a;
-  --radius:    20px;
-  --radius-s:  14px;
-  --shadow:    none;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Text",
-               "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
-}
-
-#app.style-iosdark .card, #app.style-iosdark .metric, #app.style-iosdark .mood-preview,
-#app.style-iosdark .extra-form, #app.style-iosdark .preview-card {
-  box-shadow: none;
-  border-radius: var(--radius);
-}
-#app.style-iosdark .card + .card { margin-top: 12px; }
-#app.style-iosdark .top h1 { font-size: 30px; font-weight: 700; letter-spacing: -.6px; }
-#app.style-iosdark .today-head h1 { font-size: 32px; font-weight: 700; letter-spacing: -.8px; }
-#app.style-iosdark .footnote, #app.style-iosdark .free-note, #app.style-iosdark .param-toggle {
-  background: #1c1c1e; color: var(--ink-2);
-}
-#app.style-iosdark .btn {
-  border: 0; background: rgba(120,120,128,.24); border-radius: 12px; font-weight: 600;
-  transition: transform .18s cubic-bezier(.34,1.4,.64,1), opacity .18s ease;
-}
-#app.style-iosdark .btn:active { transform: scale(.96); opacity: .7; }
-#app.style-iosdark .btn.primary { background: var(--primary); }
-#app.style-iosdark .btn.ghost { background: transparent; color: var(--primary); }
-#app.style-iosdark .btn.danger { background: rgba(255,69,58,.16); color: var(--danger); }
-#app.style-iosdark .segmented { background: rgba(120,120,128,.24); border-radius: 9px; padding: 2px; }
-#app.style-iosdark .segmented button { border-radius: 7px; font-weight: 600; }
-#app.style-iosdark .segmented button.on { background: #48484a; box-shadow: none; }
-#app.style-iosdark .tick { border-color: rgba(235,235,245,.3); transition: transform .2s cubic-bezier(.34,1.5,.64,1), background .2s ease; }
-#app.style-iosdark .tick:active { transform: scale(.88); }
-#app.style-iosdark .tick.done { border-color: var(--primary); background: var(--primary); }
-#app.style-iosdark .chip, #app.style-iosdark .mood, #app.style-iosdark .prog-fix {
-  border: 0; background: rgba(120,120,128,.24); border-radius: 20px;
-  transition: transform .16s cubic-bezier(.34,1.4,.64,1), background .18s ease, color .18s ease;
-}
-#app.style-iosdark .chip:active, #app.style-iosdark .mood:active { transform: scale(.95); }
-#app.style-iosdark .chip.on { background: var(--primary); color: #fff; }
-#app.style-iosdark .mood.on { background: var(--primary-s); color: var(--primary); }
-#app.style-iosdark .input, #app.style-iosdark .numlist .item,
-#app.style-iosdark .param-input input, #app.style-iosdark .tr-fields input,
-#app.style-iosdark .ef-qty input { background: #2c2c2e; border-color: transparent; color: var(--ink); }
-#app.style-iosdark .tabbar {
-  background: rgba(28,28,30,.82);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-top: .5px solid rgba(235,235,245,.16);
-}
-#app.style-iosdark .daybar, #app.style-iosdark .prog-bar, #app.style-iosdark .wd-bar { height: 6px; background: rgba(120,120,128,.32); }
-#app.style-iosdark .screen { animation: iosPageIn .34s cubic-bezier(.32,.72,0,1); }
-#app.style-iosdark .task, #app.style-iosdark .plan-day, #app.style-iosdark .prog, #app.style-iosdark .metric {
-  animation: iosRowIn .38s cubic-bezier(.32,.72,0,1) both;
-}
-#app.style-iosdark .modal { border-radius: 22px; }
