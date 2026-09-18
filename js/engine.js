@@ -977,6 +977,23 @@ window.YT = window.YT || {};
     return null;
   }
 
+  /* 中间漏掉的"学习日"有多少个——休息日不算。
+   * 用户的话：周日休息的人，不该因为跨了个周日就被算成断更。
+   * 比如周五学完，周一周二没学周三回来：日历上隔了 5 天，
+   * 但中间只有 3 个该学习的日子，按 3 算。 */
+  function missedStudyDays(profile, fromKey, toKey2) {
+    if (!fromKey || !toKey2) return 0;
+    var d = addDays(parseKey(fromKey), 1);
+    var end = parseKey(toKey2);
+    var n = 0, guard = 0;
+    while (d < end && guard < 400) {
+      guard++;
+      if (!isRest(d, profile)) n++;
+      d = addDays(d, 1);
+    }
+    return n;
+  }
+
   /* 今天算不算"断了之后回来的第一天" */
   function restartInfo(state, todayKey) {
     var today = state.days[todayKey];
@@ -984,18 +1001,22 @@ window.YT = window.YT || {};
       var busy = today.mood || (today.tasks || []).some(function (t) {
         return t.status !== 'todo';
       });
-      if (busy) return { active: false, gap: 0, factor: 1, level: 'none', lastKey: null };
+      if (busy) return { active: false, gap: 0, missed: 0, factor: 1, level: 'none', lastKey: null };
     }
     var last = lastActiveKey(state, todayKey);
-    if (!last) return { active: false, gap: null, factor: 1, level: 'none', lastKey: null };
-    var gap = dayDiff(last, todayKey);
-    if (gap <= 2) return { active: false, gap: gap, factor: 1, level: 'none', lastKey: last };
+    if (!last) return { active: false, gap: null, missed: null, factor: 1, level: 'none', lastKey: null };
+    var gap = dayDiff(last, todayKey);                                          // 日历天，用来显示"上次学习是几天前"
+    var missed = missedStudyDays(state.profile, last, todayKey);                // 学习日，用来判断断没断
+    if (missed <= 2) {
+      return { active: false, gap: gap, missed: missed, factor: 1, level: 'none', lastKey: last };
+    }
     return {
       active: true,
       gap: gap,
+      missed: missed,
       lastKey: last,
-      factor: gap >= 8 ? 0.6 : 0.8,
-      level: gap >= 8 ? 'long' : 'short',
+      factor: missed >= 8 ? 0.6 : 0.8,
+      level: missed >= 8 ? 'long' : 'short',
     };
   }
 
@@ -1211,6 +1232,7 @@ window.YT = window.YT || {};
     errorRateFor: errorRateFor,
     lastActiveKey: lastActiveKey,
     restartInfo: restartInfo,
+    missedStudyDays: missedStudyDays,
     applyRestart: applyRestart,
     reflowForDate: reflowForDate,
     rollWeek: rollWeek,

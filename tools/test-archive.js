@@ -145,7 +145,9 @@ console.log('\n【4】学习档案的内容');
     arch.courses.every(c => typeof c.lessonText === 'string' && c.lessonText.length > 0), '');
   check('刷题累计大于 0', arch.questionTotal > 0, arch.questionTotal);
   check('有回顾建议', arch.review.length > 0, '');
-  check('回顾建议最多 3 条', arch.review.length <= 3, arch.review.length);
+  check('回顾清单里每个模块只出现一次',
+    Object.keys(arch.review.reduce((m, r) => (m[r.moduleId] = (m[r.moduleId] || 0) + 1, m), {}))
+      .every(k => arch.review.filter(r => r.moduleId === k).length === 1), '');
   console.log('     累计做了 ' + arch.questionTotal + ' 题；建议：');
   arch.review.forEach(r => console.log('       · ' + r.title + '　' + r.detail + '　' + r.minutes + ' 分钟'));
   console.log('     听课进度：' + arch.courses.slice(0, 4).map(c =>
@@ -178,6 +180,69 @@ console.log('\n【6】断更期间自己加过任务的那天，不能被清掉'
   const left = s.days['2026-09-05'].tasks || [];
   check('自己加的任务还在', left.filter(t => t.userAdded).length === 1, JSON.stringify(left));
   check('系统排的那几条被清掉了', left.filter(t => !t.userAdded).length === 0, JSON.stringify(left));
+}
+
+/* ======================= 7. 休息日不算断更 ======================= */
+console.log('\n【7】休息日不该算进"断了几天"');
+{
+  /* 只在周末休息的人：周五学完，周一回来——中间只有周末，等于没断 */
+  const p2 = Object.assign({}, profile, { restDays: [0, 6] });
+  const s = { profile: p2, roadmap: null, days: {}, scores: [] };
+  s.roadmap = E.buildRoadmap(p2, '2026-09-04');
+  E.ensureAhead(s, '2026-09-04', 30);
+  s.days['2026-09-04'].tasks.forEach(t => { t.status = 'done'; });
+
+  const info = E.restartInfo(s, '2026-09-07');   // 周一
+  check('日历上隔了 3 天', info.gap === 3, info.gap);
+  check('但一个学习日都没漏', info.missed === 0, info.missed);
+  check('不触发断更', info.active === false, JSON.stringify(info));
+
+  /* 反过来：只有周日休息的人，周一到周三都没学，就该算断更 */
+  const p3 = Object.assign({}, profile, { restDays: [0] });
+  const s3 = { profile: p3, roadmap: null, days: {}, scores: [] };
+  s3.roadmap = E.buildRoadmap(p3, '2026-09-04');
+  E.ensureAhead(s3, '2026-09-04', 30);
+  s3.days['2026-09-04'].tasks.forEach(t => { t.status = 'done'; });
+  const info3 = E.restartInfo(s3, '2026-09-09');   // 下周三
+  check('该算断更的时候要算', info3.active === true, JSON.stringify(info3));
+  check('漏掉的学习日 = 3', info3.missed === 3, info3.missed);
+  console.log('     ' + info3.lastKey + ' → ' + '2026-09-09' +
+              '：日历 ' + info3.gap + ' 天，学习日 ' + info3.missed + ' 天，系数 ' + info3.factor);
+}
+
+/* ======================= 8. 复习清单要给全 ======================= */
+console.log('\n【8】复习清单：该给的都要给出来（界面超过 5 条才折叠）');
+{
+  const s = { profile, roadmap: null, days: {}, scores: [] };
+  s.roadmap = E.buildRoadmap(profile, '2026-09-01');
+  const mk = (id, i, minutes) => {
+    const m = YT.MODULE_BY_ID[id];
+    return {
+      id: 't' + i, moduleId: id, moduleName: m.name, kind: 'practice',
+      title: m.short + ' · 刷题', detail: '', amounts: 1, amount: (m.setSize || 20),
+      amountText: (m.setSize || 20) + ' 题', minutes: minutes, status: 'done', actualMinutes: null,
+    };
+  };
+  /* 六个模块：两周前练过一次，之后再没碰 */
+  const old = { date: '2026-09-01', isRest: false, stage: 'base', tasks: [], mood: null };
+  ['zlfx', 'pdlj', 'pdtx', 'pddl', 'zzll', 'cs'].forEach((id, i) => old.tasks.push(mk(id, i, 50)));
+  s.days['2026-09-01'] = old;
+  /* 言语昨天刚练，但正确率离目标差得远 */
+  s.days['2026-09-13'] = { date: '2026-09-13', isRest: false, stage: 'base',
+    tasks: [mk('yy', 90, 54)], mood: null };
+  s.scores = [{ date: '2026-09-13', source: '模考', rates: { yy: 0.45 } }];
+
+  const arch = A.build(s, '2026-09-14');
+  const ids = arch.review.map(r => r.moduleId);
+  check('太久没练的六个模块都列出来了', ['zlfx', 'pdlj', 'pdtx', 'pddl', 'zzll', 'cs'].every(x => ids.indexOf(x) >= 0), ids.join(','));
+  check('正确率差的单独出一条「补短板」', arch.review.some(r => r.moduleId === 'yy' && r.title.indexOf('补短板') >= 0),
+    JSON.stringify(arch.review.filter(r => r.moduleId === 'yy')));
+  check('一共 7 条（会被界面折起来 2 条）', arch.review.length === 7, arch.review.length);
+  check('没有重复模块', new Set(ids).size === ids.length, ids.join(','));
+  check('正确率信息带在里面', (arch.review.find(r => r.moduleId === 'yy') || {}).detail.indexOf('45%') >= 0,
+    JSON.stringify(arch.review.find(r => r.moduleId === 'yy')));
+  console.log('     清单 ' + arch.review.length + ' 条：');
+  arch.review.forEach(r => console.log('       · ' + r.title + '　' + r.detail));
 }
 
 console.log('\n' + (fail ? '有 ' + fail + ' 条没过 ❌' : '全部通过 ✅'));

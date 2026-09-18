@@ -186,6 +186,7 @@
    * ------------------------------------------------------------------- */
 
   var archDraft = null;
+  var ARCH_FOLD_AT = 5;   // 超过这个条数才折叠——一天做 5 项对全职备考是正常的
 
   function barWidth(done, need) {
     if (!need) return 0;
@@ -200,7 +201,10 @@
       mode: mode || 'view',
       info: info || null,
       arch: arch,
-      items: (arch.review || []).map(function (r) { return { on: true, item: r }; }),
+      showAll: false,
+      items: (arch.review || []).map(function (r, i) {
+        return { on: i < ARCH_FOLD_AT, item: r };   // 折叠起来的那几条默认不勾
+      }),
     };
     renderArchive();
   }
@@ -245,20 +249,34 @@
         '<span class="av">' + a.papers + ' 套</span></div>';
     }
 
-    /* ---- 建议先回顾这些 ---- */
-    var reviewHtml = archDraft.items.map(function (it, i) {
+    /* ---- 建议先回顾这些 ----
+     * 5 条以内全摊开；超过 5 条，先给 5 条，剩下的折起来。
+     * 折起来的默认不勾——不然点一下"就按这个来"等于一天干十件事。 */
+    var headItems = archDraft.items.slice(0, ARCH_FOLD_AT);
+    var tailItems = archDraft.items.slice(ARCH_FOLD_AT);
+
+    function itemHtml(it, i) {
       return '<button class="arch-item' + (it.on ? ' on' : '') + '" data-act="arch-toggle" data-i="' + i + '">' +
         '<span class="box">' + (it.on ? '✓' : '') + '</span>' +
         '<span class="at"><b>' + esc(it.item.title) + '</b>' +
           '<span class="ad">' + esc(it.item.detail) + ' · ' + fmtMinutes(it.item.minutes) + '</span></span>' +
       '</button>';
-    }).join('');
+    }
+
+    var listHtml = headItems.map(itemHtml).join('');
+    if (tailItems.length) {
+      listHtml += archDraft.showAll
+        ? tailItems.map(function (it, i) { return itemHtml(it, i + ARCH_FOLD_AT); }).join('') +
+          '<button class="arch-fold" data-act="arch-more">收起 ▴</button>'
+        : '<button class="arch-fold" data-act="arch-more">还有 ' + tailItems.length + ' 项，看看 ▾</button>';
+    }
+    var reviewHtml = listHtml;
 
     var head, sub;
     if (restart) {
       head = '先看看你学到哪了';
-      sub = a.lastKey
-        ? '你上次学习是 ' + fmtDate(a.lastKey, false) + '，到今天 ' + a.gap + ' 天。'
+      sub = (a.lastKey && archDraft.info)
+        ? '你上次学习是 ' + fmtDate(a.lastKey, false) + '，中间隔了 ' + archDraft.info.missed + ' 个学习日。'
         : '';
     } else {
       head = '学习档案';
@@ -270,7 +288,9 @@
     var note = '';
     if (restart && archDraft.info) {
       note = '<div class="arch-note">中间那些天的旧计划已经清掉了，不用补。' +
-        (a.gap >= 8 ? '今天先按六成的量来，接上比补上重要。' : '今天先按八成的量来，找回手感。') + '</div>';
+        (archDraft.info.level === 'long'
+          ? '今天先按六成的量来，接上比补上重要。'
+          : '今天先按八成的量来，找回手感。') + '</div>';
     }
 
     overlay.className = 'overlay';
@@ -292,7 +312,9 @@
 
         (reviewHtml
           ? '<div class="arch-block">' +
-              '<div class="arch-h">建议先做这些　<span class="arch-sum">不想做的点掉</span></div>' +
+              '<div class="arch-h">' +
+                (tailItems.length && !archDraft.showAll ? '今天先做这些' : '建议先做这些') +
+                '　<span class="arch-sum">不想做的点掉</span></div>' +
               reviewHtml +
             '</div>'
           : '') +
@@ -844,7 +866,9 @@
      * 必须放在顺延之前，否则那些天没做完的东西会被顺延到未来，
      * 用户一打开就是一屁股债——这正是他要卸载的时刻。 */
     var ri = E.applyRestart(state, tk);
-    if (ri && state.ui.restartSeenOn !== tk) {
+    /* 休息日不弹：这天本来就没任务，"今天先按六成来"是句废话。
+     * 不记 restartSeenOn，下一个学习日会正常弹出来。 */
+    if (ri && !E.isRest(E.parseKey(tk), state.profile) && state.ui.restartSeenOn !== tk) {
       state.ui.restartSeenOn = tk;
       pendingRestart = ri;
     }
@@ -2596,6 +2620,11 @@
       if (!archDraft) return;
       var ai = Number(el.getAttribute('data-i'));
       if (archDraft.items[ai]) archDraft.items[ai].on = !archDraft.items[ai].on;
+      return renderArchive();
+    }
+    if (act === 'arch-more') {
+      if (!archDraft) return;
+      archDraft.showAll = !archDraft.showAll;
       return renderArchive();
     }
     if (act === 'arch-yes') {

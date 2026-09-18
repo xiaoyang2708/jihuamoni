@@ -30,6 +30,20 @@ window.YT = window.YT || {};
     return 0;
   }
 
+  /* 每个模块最近一次录入的正确率（没录过的没有这个键） */
+  function latestRates(state) {
+    var out = {};
+    (state.scores || []).forEach(function (sc) {
+      Object.keys(sc.rates || {}).forEach(function (k) {
+        var v = sc.rates[k];
+        if (v === null || v === undefined || v === '') return;
+        var n = Number(v);
+        if (isFinite(n)) out[k] = n;
+      });
+    });
+    return out;
+  }
+
   /* ---------------------------------------------------------------------
    * 主体：把散在每天里的打卡记录，汇成一份"学习档案"
    * ------------------------------------------------------------------- */
@@ -100,35 +114,41 @@ window.YT = window.YT || {};
     Object.keys(qBy).forEach(function (k) { questionTotal += qBy[k]; });
 
     /* ---- 建议先回顾这些 ----
-     * 最多三条。注意这里给的是"回顾"，不是"接着听新课"——
-     * 新课今天的计划里已经排好了，再列一条等于让人一天听两节，
-     * 而且两份内容还是一样的。 */
+     * 这里是**完整清单**，由界面决定哪几条放"今天先做"、剩下的折叠起来。
+     * 每个模块最多出一条，按这个优先级：
+     *   听到一半的课 → 太久没练的 → 正确率没到目标的
+     *
+     * 注意给的是"回顾"，不是"接着听新课"——新课今天已经排好了，
+     * 再列一条等于让人一天听两节，而且两份内容还是一样的。 */
     var review = [];
-    var partial = courses.filter(function (c) {
+    var used = {};
+    var effLesson = E.effectiveLesson(profile);
+
+    courses.filter(function (c) {
       return c.done > 0.001 && c.done < c.need - 0.001;
     }).sort(function (a, b) {
       return (b.lastKey || '') > (a.lastKey || '') ? 1 : -1;
-    });
-    if (partial.length) {
-      var pc = partial[0];
-      var sinceCourse = (pc.lastKey && todayKey) ? E.dayDiff(pc.lastKey, todayKey) : null;
+    }).forEach(function (c) {
+      used[c.id] = true;
+      var since = (c.lastKey && todayKey) ? E.dayDiff(c.lastKey, todayKey) : null;
       review.push({
         kind: 'course',
-        moduleId: pc.id,
-        moduleName: pc.name,
-        short: pc.short,
-        title: pc.short + ' · 回顾上一节',
-        detail: pc.lessonText + (sinceCourse ? '，隔了 ' + sinceCourse + ' 天' : '') + '，先把笔记过一遍',
+        moduleId: c.id,
+        moduleName: c.name,
+        short: c.short,
+        title: c.short + ' · 回顾上一节',
+        detail: c.lessonText + (since ? '，隔了 ' + since + ' 天' : '') + '，先把笔记过一遍',
         units: 1,
-        minutes: Math.max(20, Math.round(E.effectiveLesson(profile) * 0.25)),
+        minutes: Math.max(20, Math.round(effLesson * 0.25)),
       });
-    }
+    });
 
-    practices.slice().sort(function (a, b) {
+    practices.filter(function (p) {
+      return !used[p.id] && p.gap !== null && p.gap >= 5;
+    }).sort(function (a, b) {
       return (b.gap || 0) - (a.gap || 0);
-    }).filter(function (p) {
-      return p.gap !== null && p.gap >= 5;
-    }).slice(0, review.length ? 1 : 2).forEach(function (p) {
+    }).forEach(function (p) {
+      used[p.id] = true;
       var m = YT.MODULE_BY_ID[p.id];
       review.push({
         kind: 'practice',
@@ -139,6 +159,38 @@ window.YT = window.YT || {};
         detail: '最后练是 ' + p.gap + ' 天前，先做 10 道',
         amount: 10,
         minutes: Math.max(10, Math.round(YT.unitMinutesFor(m, stage || 'base', profile) * 10)),
+      });
+    });
+
+    /* 录过成绩的：低于目标 10 个百分点以上才算短板，不然天天挂着 */
+    var rates = latestRates(state);
+    practices.filter(function (p) {
+      if (used[p.id]) return false;
+      var r = rates[p.id];
+      if (r === null || r === undefined) return false;
+      var m = YT.MODULE_BY_ID[p.id];
+      var tgt = YT.moduleParam(m, profile, 'targetRate');
+      return tgt !== null && tgt !== undefined && r < tgt - 0.10;
+    }).sort(function (a, b) {
+      var ma = YT.MODULE_BY_ID[a.id], mb = YT.MODULE_BY_ID[b.id];
+      var da = (YT.moduleParam(ma, profile, 'targetRate') || 0) - rates[a.id];
+      var db = (YT.moduleParam(mb, profile, 'targetRate') || 0) - rates[b.id];
+      return db - da;
+    }).forEach(function (p) {
+      used[p.id] = true;
+      var m = YT.MODULE_BY_ID[p.id];
+      var tgt = YT.moduleParam(m, profile, 'targetRate');
+      var oneSet = p.questions > 0 ? '再刷一组' : '先刷一组';
+      review.push({
+        kind: 'practice',
+        moduleId: p.id,
+        moduleName: p.name,
+        short: p.short,
+        title: p.short + ' · 补短板',
+        detail: '上次正确率 ' + Math.round(rates[p.id] * 100) + '%，目标 ' +
+                Math.round(tgt * 100) + '%，' + oneSet,
+        amount: m.setSize || 20,
+        minutes: Math.max(20, Math.round(YT.unitMinutesFor(m, stage || 'base', profile) * (m.setSize || 20))),
       });
     });
 
@@ -159,12 +211,13 @@ window.YT = window.YT || {};
       practices: practices.sort(function (a, b) { return b.questions - a.questions; }),
       questionTotal: Math.round(questionTotal),
       papers: Math.round(papers * 10) / 10,
-      review: review.slice(0, 3),
+      review: review,
     };
   }
 
   YT.archive = {
     build: build,
     lessonWhere: lessonWhere,
+    latestRates: latestRates,
   };
 })(window.YT);
