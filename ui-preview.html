@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>结构样稿 · 备考节奏</title>
+<!--
+  这是一份**结构样稿**，不是正式界面。
+  目的：先把导航分层和页面主次定下来，再动正式版。
+  数据全是假的，改这里不会影响正式版（index.html）。
+-->
+<style>
+:root {
+  --bg: #f6f4f1; --card: #fff;
+  --ink: #1a1815;
+  --ink-2: rgba(58,53,46,.62);
+  --ink-3: rgba(58,53,46,.34);
+  --line: rgba(58,53,46,.10);
+  --primary: #ab8752; --primary-s: rgba(171,135,82,.13);
+  --done: #ab8752; --half: #cf9a3e;
+  --radius: 18px; --radius-s: 12px;
+  --spring: cubic-bezier(.34,1.4,.64,1);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; background: #e5e5ea; color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+}
+#app {
+  max-width: 480px; margin: 0 auto; min-height: 100vh;
+  background: var(--bg); position: relative; padding-bottom: 92px;
+}
+.draft-bar {
+  max-width: 480px; margin: 0 auto; background: #26231f; color: #f0e6d6;
+  font-size: 12px; padding: 6px 16px; text-align: center; letter-spacing: .02em;
+}
+
+/* ---------- 通用 ---------- */
+.top { padding: 22px 20px 4px; }
+.top h1 { margin: 0; font-size: 30px; font-weight: 650; letter-spacing: -.5px; }
+.top .sub { margin-top: 4px; font-size: 13.5px; color: var(--ink-2); }
+.section { padding: 0 16px; margin-top: 14px; }
+.card { background: var(--card); border-radius: var(--radius); padding: 14px 16px; }
+.section-title {
+  margin: 0 0 8px 4px; font-size: 12.5px; color: var(--ink-3); letter-spacing: .04em;
+}
+.row { display: flex; align-items: center; }
+.between { justify-content: space-between; }
+.muted { color: var(--ink-3); }
+.tiny { font-size: 12px; }
+.footnote { margin: 8px 4px 0; font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
+
+/* ---------- 可点进去的条目 ---------- */
+.nav-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 13px 0; border: 0; background: none; font: inherit;
+  text-align: left; color: var(--ink); cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+.nav-row:last-child { border-bottom: 0; }
+.nav-row .nt { flex: 1; min-width: 0; font-size: 15px; }
+.nav-row .nv { font-size: 13px; color: var(--ink-3); }
+.nav-row .na { font-size: 15px; color: var(--ink-3); }
+.nav-row:active { background: #faf8f5; }
+
+/* ---------- 主页任务 ---------- */
+.task { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.task:last-child { border-bottom: 0; }
+.tick { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid rgba(60,60,67,.28); margin-top: 3px; }
+.tick.done { background: var(--done); border-color: var(--done); }
+.tick.half { background: linear-gradient(to right, var(--half) 0 50%, transparent 50% 100%); border-color: var(--half); }
+.tname { font-size: 16px; }
+.tmeta { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+.tmin { margin-left: auto; font-size: 13px; color: var(--ink-3); }
+
+.moods { display: flex; gap: 6px; margin-top: 4px; }
+.mood {
+  flex: 1; padding: 11px 4px; border: 0; border-radius: 11px;
+  background: rgba(120,120,128,.10); font: inherit; font-size: 13px;
+  color: var(--ink-2); cursor: pointer;
+}
+.mood.on { background: var(--primary-s); color: var(--primary); font-weight: 600; }
+
+/* ---------- 概览卡片 ---------- */
+.overview { display: block; width: 100%; text-align: left; border: 0; cursor: pointer; }
+.overview .ol1 { font-size: 12.5px; color: var(--primary); font-weight: 600; }
+.overview .ol2 { font-size: 16px; margin-top: 6px; }
+.overview .ol3 { font-size: 12.5px; color: var(--ink-3); margin-top: 4px; }
+.overview .ol4 { margin-top: 12px; font-size: 13.5px; color: var(--primary); font-weight: 600; }
+
+/* ---------- 数字 ---------- */
+.metrics { display: flex; background: var(--card); border-radius: var(--radius); padding: 16px 8px; }
+.metric { flex: 1; text-align: center; }
+.metric .v { font-size: 26px; font-weight: 650; letter-spacing: -.5px; }
+.metric .k { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+
+/* ---------- 热力图 ---------- */
+.heatmap { display: flex; gap: 3px; overflow-x: auto; padding: 2px 0 4px; }
+.hm-col { display: flex; flex-direction: column; gap: 3px; }
+.hm-cell { width: 11px; height: 11px; border-radius: 3px; background: #efeae1; }
+.hm-cell.lv1 { background: #e6d5b4; }
+.hm-cell.lv2 { background: #c8a874; }
+.hm-cell.lv3 { background: #ab8752; }
+.hm-cell.lv4 { background: #8b6b3d; }
+
+/* ---------- 阶段 ---------- */
+.stage { display: flex; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.stage:last-child { border-bottom: 0; }
+.stage .sn { flex: 0 0 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: rgba(120,120,128,.10); color: var(--ink-2); font-size: 12px; font-weight: 600; }
+.stage.cur .sn { background: var(--primary); color: #fff; }
+.stage .st { font-size: 15px; }
+.stage .sd { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+
+/* ---------- 档位 ---------- */
+.lv-row { display: flex; align-items: baseline; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.lv-row:last-child { border-bottom: 0; }
+.lv-n { flex: 0 0 58px; font-size: 13.5px; }
+.lv-b { flex: 0 0 auto; font-size: 11.5px; padding: 2px 8px; border-radius: 20px; background: rgba(120,120,128,.10); color: var(--ink-2); }
+.lv-b.lv2 { background: var(--primary-s); color: var(--primary); }
+.lv-b.lv3 { background: var(--primary); color: #fff; }
+.lv-b.lv4 { background: var(--done); color: #fff; }
+.lv-s { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-3); }
+
+/* ---------- 底部导航 ---------- */
+.tabbar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 480px; display: flex;
+  background: rgba(249,249,249,.94); border-top: 1px solid var(--line);
+  padding: 6px 0 10px;
+}
+.tab {
+  flex: 1; border: 0; background: none; font: inherit; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 10.5px; color: var(--ink-3); padding: 4px 0;
+}
+.tab.on { color: var(--primary); font-weight: 600; }
+.tab svg { width: 22px; height: 22px; }
+
+/* ---------- 二级页 ---------- */
+.subpage { position: fixed; inset: 0; z-index: 40; background: var(--bg); overflow-y: auto; }
+.subpage-inner { max-width: 480px; margin: 0 auto; padding-bottom: 40px; min-height: 100vh; background: var(--bg); }
+.subhead {
+  position: sticky; top: 0; z-index: 2; background: var(--bg);
+  display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.back {
+  border: 0; background: none; font: inherit; font-size: 15px; color: var(--primary);
+  cursor: pointer; padding: 6px 8px; border-radius: 10px;
+}
+.subhead .sh-t { font-size: 16px; font-weight: 600; }
+.subpage .top { padding-top: 12px; }
+
+.seg { display: flex; background: rgba(120,120,128,.10); border-radius: 11px; padding: 3px; }
+.seg button { flex: 1; border: 0; background: none; font: inherit; font-size: 13px; padding: 7px 0; border-radius: 9px; color: var(--ink-2); cursor: pointer; }
+.seg button.on { background: #fff; color: var(--ink); font-weight: 600; }
+
+.list-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.list-item:last-child { border-bottom: 0; }
+.list-item .li-t { flex: 1; }
+.list-item .li-v { color: var(--ink-3); font-size: 12.5px; }
+
+.danger-note {
+  margin-top: 10px; background: rgba(181,87,74,.08); color: #b5574a;
+  border-radius: var(--radius-s); padding: 10px 12px; font-size: 12px; line-height: 1.6;
+}
+.btn { border: 0; font: inherit; border-radius: 12px; padding: 11px 16px; cursor: pointer; font-size: 14.5px; font-weight: 600; background: rgba(120,120,128,.12); color: var(--ink); }
+.btn.primary { background: var(--primary); color: #fff; }
+.btn.block { display: block; width: 100%; }
+.btn.ghost { background: transparent; color: var(--primary); }
+
+@media (min-width: 820px) {
+  /* 平板竖屏：宽一点，但仍单栏 */
+  #app, .tabbar, .subpage-inner, .draft-bar { max-width: 720px; }
+}
+</style>
+</head>
+<body>
+<div class="draft-bar">结构样稿 · 假数据 · 不是正式界面</div>
+<div id="app"></div>
+<div id="sub"></div>
+<script>
+'use strict';
+
+var ICON = {
+  home: '<circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/>',
+  plan: '<path d="M4.5 7h15M4.5 12h15M4.5 17h9"/>',
+  results: '<rect x="3.6" y="5" width="16.8" height="15" rx="3"/><path d="M8 9.5h8M8 13h8M8 16.5h5"/>',
+  status: '<path d="M6 19v-6M12 19V5.5M18 19v-9"/>',
+  settings: '<path d="M4 8.5h8M17 8.5h3M4 15.5h3M12 15.5h8"/><circle cx="14.5" cy="8.5" r="2.2"/><circle cx="9.5" cy="15.5" r="2.2"/>'
+};
+var TABS = [
+  { id: 'home', label: '主页' },
+  { id: 'plan', label: '总计划' },
+  { id: 'results', label: '成果' },
+  { id: 'status', label: '状态' },
+  { id: 'settings', label: '设置' }
+];
+
+var state = { tab: 'home', page: null };
+var app = document.getElementById('app');
+var sub = document.getElementById('sub');
+
+function tabbar() {
+  return '<div class="tabbar">' + TABS.map(function (t) {
+    return '<button class="tab ' + (t.id === state.tab && !state.page ? 'on' : '') + '" data-go="' + t.id + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+      ICON[t.id] + '</svg>' + t.label + '</button>';
+  }).join('') + '</div>';
+}
+function card(inner) { return '<div class="section"><div class="card">' + inner + '</div></div>'; }
+function secTitle(t) { return '<div class="section"><div class="section-title">' + t + '</div></div>'; }
+function navRow(t, v, go) {
+  return '<button class="nav-row" data-page="' + go + '"><span class="nt">' + t + '</span>' +
+    (v ? '<span class="nv">' + v + '</span>' : '') + '<span class="na">›</span></button>';
+}
+
+/* ---------------- 主页 ---------------- */
+function renderHome() {
+  return '<div class="top"><div class="sub">2026年11月18日 周三</div><h1>今天</h1>' +
+      '<div class="sub">强化期 · 已完成 0 / 3 项 · 连续 30 天</div></div>' +
+
+    card(
+      '<div class="task"><span class="tick"></span><div><div class="tname">申论 · 小题</div>' +
+        '<div class="tmeta">认真写完 2 道，对照参考答案改</div></div><span class="tmin">1 小时 20 分</span></div>' +
+      '<div class="task"><span class="tick"></span><div><div class="tname">资料 · 刷题</div>' +
+        '<div class="tmeta">2 组 · 40 题</div></div><span class="tmin">40 分钟</span></div>' +
+      '<div class="task"><span class="tick"></span><div><div class="tname">错题复盘</div>' +
+        '<div class="tmeta">把今天做错的题重做一遍</div></div><span class="tmin">30 分钟</span></div>'
+    ) +
+
+    '<div class="section"><div class="card"><div class="tiny muted" style="margin-bottom:6px">今天感觉</div>' +
+      '<div class="moods">' +
+        '<button class="mood" data-mood>太轻松</button><button class="mood on" data-mood>刚好</button>' +
+        '<button class="mood" data-mood>有点累</button><button class="mood" data-mood>太难了</button>' +
+      '</div></div></div>' +
+
+    secTitle('接着去哪') +
+    '<div class="section"><button class="card overview" data-go="plan">' +
+      '<div class="ol1">强化期 · 距离考试 53 天</div>' +
+      '<div class="ol2">今天晚上开始练套卷</div>' +
+      '<div class="ol3">课还剩 1.75 节 · 专项训练有 37 个学习日</div>' +
+      '<div class="ol4">看详细计划 ›</div>' +
+    '</button></div>' +
+
+    '<div class="section"><div class="card" style="padding:6px 16px">' +
+      navRow('行测工具', '待定', 'tools') +
+      '<div class="list-item" style="border:0;padding:6px 0"><span class="li-t tiny muted">' +
+        '以后每个模块的小工具（速算练习、图形速判之类）都从这儿进</span></div>' +
+    '</div></div>';
+}
+
+/* ---------------- 总计划 ---------------- */
+function renderPlan() {
+  return '<div class="top"><h1>总计划</h1><div class="sub">距离 2027年1月19日 还有 53 个学习日</div></div>' +
+
+    card(
+      '<div class="stage"><span class="sn">1</span><div><div class="st">基础期</div>' +
+        '<div class="sd">11月19日 – 11月21日 · 3 个学习日</div></div></div>' +
+      '<div class="stage cur"><span class="sn">2</span><div><div class="st">强化期 · 进行中</div>' +
+        '<div class="sd">11月22日 – 1月3日 · 37 个学习日</div></div></div>' +
+      '<div class="stage"><span class="sn">3</span><div><div class="st">冲刺期</div>' +
+        '<div class="sd">1月4日 – 1月19日 · 14 个学习日</div></div></div>'
+    ) +
+
+    card('<div class="tiny" style="color:var(--ink-2)">按现在的进度：<b>11月21日</b> 听完所有课，' +
+      '<b>1月4日</b> 开始刷套卷，之后有 <b>13</b> 个学习日做套卷。</div>' +
+      '<div class="tiny muted" style="margin-top:6px">学得快就提前，学得慢就往后推</div>') +
+
+    secTitle('点进去看') +
+    '<div class="section"><div class="card" style="padding:6px 16px">' +
+      navRow('日程安排', '本周', 'plan-days') +
+      navRow('听课进度', '27.3 / 29 节', 'plan-course') +
+      navRow('课时建议', '排得下', 'plan-lesson') +
+      navRow('计划设置', '考试日期、你的基础…', 'plan-settings') +
+    '</div></div>';
+}
+
+function pagePlanDays() {
+  var h = '';
+  var days = [['周四 11/19', '2 小时 45 分', '申论 · 言语 · 定义类比 · 复盘'],
+              ['周五 11/20', '2 小时 52 分', '申论 · 言语 · 资料 · 复盘'],
+              ['周六 11/21', '7 小时 1 分', '申论 · 资料 · 言语 · 逻辑 · 图形 · 定义类比 · 复盘'],
+              ['周日 11/22', '7 小时 13 分', '申论 · 逻辑 · 图形 · 定义类比 · 政治 · 复盘'],
+              ['周一 11/23', '休息', ''],
+              ['周二 11/24', '2 小时 30 分', '申论 · 数量 · 资料 · 复盘']];
+  days.forEach(function (d) {
+    h += '<div class="list-item"><span class="li-t">' + d[0] + '</span><span class="li-v">' + d[1] + '</span></div>' +
+      (d[2] ? '<div class="tiny muted" style="padding:0 0 8px">' + d[2] + '</div>' : '');
+  });
+  return '<div class="top"><h1>日程安排</h1><div class="sub">本周 / 两周 / 30 天</div></div>' +
+    '<div class="section"><div class="seg"><button class="on">本周</button><button>两周</button><button>30 天</button></div></div>' +
+    card(h) +
+    '<div class="section"><button class="btn block ghost">批量排几周</button></div>';
+}
+
+function pagePlanCourse() {
+  var mods = [['资料', '0 节'], ['言语', '0.75 节'], ['判推逻辑', '0 节'], ['判推图形', '0 节'],
+              ['定义类比', '0 节'], ['政治理论', '0 节'], ['数量', '0 节'], ['常识', '0 节'], ['申论', '0 节']];
+  var h = '<div class="list-item"><span class="li-t">共 29 节 · 已听 27.25 节</span><span class="li-v">还剩 1.75 节</span></div>';
+  mods.forEach(function (m) {
+    h += '<div class="list-item"><span class="li-t">' + m[0] + '</span><span class="li-v">剩 ' + m[1] + '</span>' +
+      '<button class="btn ghost" style="padding:4px 8px;font-size:12.5px">补记</button></div>';
+  });
+  return '<div class="top"><h1>听课进度</h1></div>' + card(h);
+}
+
+function pagePlanLesson() {
+  return '<div class="top"><h1>课时建议</h1></div>' +
+    card('<div style="font-size:14px">课时量排得下</div>' +
+      '<div class="tiny muted" style="margin-top:4px">听课 43 小时，专项训练有 37 个学习日</div>') +
+    card('<div style="font-size:14px;color:var(--primary)">如果时间不够，先砍课</div>' +
+      '<div class="tiny muted" style="margin-top:4px">刷题是提分主力，课是输入。' +
+      '把每科课节数砍掉约 30%，专项训练能从 5 天变成 12 天。</div>' +
+      '<button class="btn primary block" style="margin-top:12px">帮我砍</button>');
+}
+
+function pagePlanSettings() {
+  return '<div class="top"><h1>计划设置</h1></div>' +
+    secTitle('考试与时间') +
+    card('<div class="list-item"><span class="li-t">考试日期</span><span class="li-v">2027-01-19</span></div>' +
+      '<div class="list-item"><span class="li-t">工作日每天可用</span><span class="li-v">2–4 小时</span></div>' +
+      '<div class="list-item"><span class="li-t">周末每天可用</span><span class="li-v">6–8 小时</span></div>' +
+      '<div class="list-item"><span class="li-t">每周休息日</span><span class="li-v">周三、周日</span></div>') +
+
+    secTitle('你的基础') +
+    card('<div class="list-item"><span class="li-t">完全零基础</span><span class="li-v">没系统学过，要从头看课</span></div>' +
+      '<div class="list-item"><span class="li-t">看过一轮课</span><span class="li-v">课听过了，题没怎么做</span></div>' +
+      '<div class="list-item"><span class="li-t">刷过题</span><span class="li-v">有一定题量，想系统提分</span></div>' +
+      '<div class="list-item"><span class="li-t">考过，想补弱项</span><span class="li-v">有考试经验，知道短板在哪</span></div>' +
+      '<div class="danger-note">改这一项等于重新做一遍问卷：<b>所有打卡记录、成绩、学习档案都会清空</b>，' +
+      '计划从今天重新排。<br>只有刚上手填错了才需要动它。</div>' +
+      '<button class="btn primary block" style="margin-top:12px">改基础，重新开始</button>');
+}
+
+/* ---------------- 成果 ---------------- */
+function renderResults() {
+  return '<div class="top"><h1>成果</h1><div class="sub">你已经坚持了 48 天，从 9月19日 开始</div></div>' +
+
+    '<div class="section"><div class="metrics">' +
+      '<div class="metric"><div class="v">972</div><div class="k">累计做题</div></div>' +
+      '<div class="metric"><div class="v">27.8</div><div class="k">听课节数</div></div>' +
+      '<div class="metric"><div class="v">111</div><div class="k">学习小时</div></div>' +
+    '</div>' +
+    '<div class="footnote">现在连续 30 天。听课大约 46 小时。</div></div>' +
+
+    secTitle('最近三个月') +
+    card('<div class="heatmap">' + heatCells(120) + '</div>' +
+      '<div class="tiny muted" style="margin-top:6px">每一格是一天，颜色越深学的越久。' +
+      '浅色的日子是休息或没学——都是正常的。</div>') +
+
+    secTitle('点进去看') +
+    '<div class="section"><div class="card" style="padding:6px 16px">' +
+      navRow('按天记录', '往前翻日历', 'results-days') +
+      navRow('打卡记录', '连续 30 天', 'results-streak') +
+    '</div></div>';
+}
+
+function heatCells(n) {
+  var seed = 7;
+  function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+  var cols = '';
+  for (var c = 0; c < Math.ceil(n / 7); c++) {
+    var cells = '';
+    for (var w = 0; w < 7; w++) {
+      var r = rnd();
+      var lv = r < .18 ? 0 : r < .38 ? 1 : r < .6 ? 2 : r < .82 ? 3 : 4;
+      cells += '<span class="hm-cell' + (lv ? ' lv' + lv : '') + '"></span>';
+    }
+    cols += '<span class="hm-col">' + cells + '</span>';
+  }
+  return cols;
+}
+
+function pageResultsDays() {
+  var h = '<div class="list-item"><span class="li-t">11月1日 周日</span><span class="li-v">5.2 小时</span></div>' +
+    '<div class="list-item"><span class="li-t">11月2日 周一</span><span class="li-v">2.1 小时</span></div>' +
+    '<div class="list-item"><span class="li-t">11月3日 周二</span><span class="li-v">2.7 小时</span></div>' +
+    '<div class="list-item"><span class="li-t">11月4日 周三</span><span class="li-v">休息</span></div>';
+  return '<div class="top"><h1>按天记录</h1><div class="sub">2026 年 11 月</div></div>' +
+    kindSeg() + card(h) +
+    secTitle('点某天') +
+    card('<div class="tiny muted">11月1日 周日　学了 5 小时 14 分</div>' +
+      '<div class="list-item"><span class="li-t">✓ 申论 · 小题</span><span class="li-v">1 小时 20 分</span></div>' +
+      '<div class="list-item"><span class="li-t">✓ 数量 · 听课</span><span class="li-v">1 小时 40 分</span></div>' +
+      '<div class="list-item"><span class="li-t">◐ 言语 · 刷题</span><span class="li-v">27 分钟</span></div>' +
+      '<div class="list-item"><span class="li-t">○ 错题复盘</span><span class="li-v">1 小时</span></div>');
+}
+function pageResultsStreak() {
+  return '<div class="top"><h1>打卡记录</h1></div>' +
+    '<div class="section"><div class="metrics">' +
+      '<div class="metric"><div class="v">30</div><div class="k">现在连续</div></div>' +
+      '<div class="metric"><div class="v">48</div><div class="k">累计学习天数</div></div>' +
+      '<div class="metric"><div class="v">55</div><div class="k">最长连续</div></div>' +
+    '</div><div class="footnote">休息日不算断。断过也没关系，接着走就行。</div></div>';
+}
+function kindSeg() {
+  return '<div class="section"><div class="seg"><button>周</button><button class="on">月</button><button>年</button></div></div>';
+}
+
+/* ---------------- 状态 ---------------- */
+function renderStatus() {
+  var rows = [
+    ['资料', '专项强化', 2, '还差 12 个点到 85%'],
+    ['言语', '限时提速', 3, '已经到目标，可以开始压时间了'],
+    ['判推逻辑', '保持手感', 4, '连续两次稳在目标以上'],
+    ['判推图形', '专项强化', 2, '还没录过正确率，先按练的量走'],
+    ['定义类比', '认识题型', 1, '先把题型认全、别急着掐表'],
+    ['政治理论', '认识题型', 1, '离目标还有 25 个点'],
+    ['数量', '认识题型', 1, '这科没设目标，按练的量走']
+  ];
+  var h = rows.map(function (r) {
+    return '<div class="lv-row"><span class="lv-n">' + r[0] + '</span>' +
+      '<span class="lv-b lv' + r[2] + '">' + r[1] + '</span>' +
+      '<span class="lv-s">' + r[3] + '</span></div>';
+  }).join('');
+
+  return '<div class="top"><h1>状态</h1><div class="sub">这些数字用来把计划调得越来越贴合你</div></div>' +
+    secTitle('各科在哪一档') +
+    card(h) +
+    '<div class="footnote">只是告诉你现在在哪一档、下一步干什么，不是关卡。</div>' +
+
+    secTitle('点进去看') +
+    '<div class="section"><div class="card" style="padding:6px 16px">' +
+      navRow('按成绩给的调整建议', '2 条', 'status-advice') +
+      navRow('做题速度', '已记录 5 科', 'status-speed') +
+      navRow('成绩记录', '记了 2 次', 'status-scores') +
+    '</div></div>';
+}
+
+function pageStatusAdvice() {
+  return '<div class="top"><h1>调整建议</h1><div class="sub">按你录的成绩算的，一次最多说三条</div></div>' +
+    card('<div style="font-size:13.5px;line-height:1.6">资料最近一次 60%，目标 85%。差得有点多，要不要给它多排点题？</div>' +
+      '<button class="btn primary block" style="margin-top:10px">多排点</button>') +
+    card('<div style="font-size:13.5px;line-height:1.6">言语连着三次都在 66% 附近没动。' +
+      '这多半不是练得少，是方法没对上——回去把这部分的课重听一遍，比再刷一百题管用。</div>' +
+      '<div class="tiny muted" style="margin-top:8px">记着这一条就行</div>') +
+    '<div class="footnote">方法问题不给一键按钮——加量解决不了方法问题。</div>';
+}
+
+function pageStatusSpeed() {
+  var rows = [['资料', '17 次', '2.1 分'], ['言语', '17 次', '1.6 分'], ['判推逻辑', '20 次', '1.7 分'],
+              ['判推图形', '13 次', '2.0 分'], ['政治理论', '7 次', '0.8 分']];
+  var h = rows.map(function (r) {
+    return '<div class="list-item"><span class="li-t">' + r[0] + '</span>' +
+      '<span class="li-v">记 ' + r[1] + '　你做一题 ' + r[2] + '</span></div>';
+  }).join('');
+  return '<div class="top"><h1>做题速度</h1><div class="sub">打卡时顺手填一下实际用时，攒够 5 次就能用你自己的速度排题</div></div>' + card(h);
+}
+
+function pageStatusScores() {
+  return '<div class="top"><h1>成绩记录</h1></div>' +
+    card('<div class="list-item"><span class="li-t">11月18日 · 模考</span></div>' +
+      '<div class="tiny muted" style="padding-bottom:6px">资料 60%</div>' +
+      '<div class="list-item"><span class="li-t">11月18日 · 模块刷题</span></div>' +
+      '<div class="tiny muted">言语 50%</div>') +
+    '<div class="section"><button class="btn primary block">记录一次成绩</button></div>';
+}
+
+/* ---------------- 设置 ---------------- */
+function renderSettings() {
+  return '<div class="top"><h1>设置</h1><div class="sub">点进去改，改完返回时会问一次要不要重排</div></div>' +
+    '<div class="section"><div class="card" style="padding:6px 16px">' +
+      navRow('怎么用它', '半自动', 'set-mode') +
+      navRow('考试与时间', '', 'last') +
+      navRow('听课', '150 分钟 · 1.5 倍', 'last') +
+      navRow('各模块强度', '', 'last') +
+      navRow('学习顺序', '', 'last') +
+      navRow('高级参数', '默认值就是推荐值', 'last') +
+      navRow('数据', '导出 / 导入 / 清空', 'last') +
+      navRow('开发者工具', '只有你能看', 'last') +
+    '</div></div>' +
+    '<div class="footnote">设置改成分页之后，一页里改五项也只重排一次——返回时统一问。</div>';
+}
+
+function pageSimple(title, extra) {
+  return '<div class="top"><h1>' + title + '</h1></div>' + (extra || '') +
+    '<div class="footnote">（样稿里这一页先占位，结构定了再填内容）</div>';
+}
+function pageTools() {
+  return '<div class="top"><h1>行测工具</h1><div class="sub">每个模块的小工具，以后都从这儿进</div></div>' +
+    secTitle('资料') + card(navRow('速算练习', '待定', 'last') + navRow('增长率专项', '待定', 'last')) +
+    secTitle('判断') + card(navRow('图形速判', '待定', 'last')) +
+    '<div class="footnote">这一块还没想好，先留位置。</div>';
+}
+
+function renderTab() {
+  var out;
+  if (state.tab === 'home') out = renderHome();
+  else if (state.tab === 'plan') out = renderPlan();
+  else if (state.tab === 'results') out = renderResults();
+  else if (state.tab === 'status') out = renderStatus();
+  else out = renderSettings();
+  app.innerHTML = out + tabbar();
+}
+
+function renderPage() {
+  if (!state.page) { sub.innerHTML = ''; return; }
+  var title = '', body = '';
+  if (state.page === 'plan-days') { title = '日程安排'; body = pagePlanDays(); }
+  else if (state.page === 'plan-course') { title = '听课进度'; body = pagePlanCourse(); }
+  else if (state.page === 'plan-lesson') { title = '课时建议'; body = pagePlanLesson(); }
+  else if (state.page === 'plan-settings') { title = '计划设置'; body = pagePlanSettings(); }
+  else if (state.page === 'results-days') { title = '按天记录'; body = pageResultsDays(); }
+  else if (state.page === 'results-streak') { title = '打卡记录'; body = pageResultsStreak(); }
+  else if (state.page === 'status-advice') { title = '调整建议'; body = pageStatusAdvice(); }
+  else if (state.page === 'status-speed') { title = '做题速度'; body = pageStatusSpeed(); }
+  else if (state.page === 'status-scores') { title = '成绩记录'; body = pageStatusScores(); }
+  else if (state.page === 'tools') { title = '行测工具'; body = pageTools(); }
+  else { title = '设置项'; body = pageSimple('设置项'); }
+  sub.innerHTML = '<div class="subpage"><div class="subpage-inner">' +
+    '<div class="subhead"><button class="back" data-back>‹ 返回</button>' +
+    '<span class="sh-t">' + title + '</span></div>' + body + '</div></div>';
+  sub.querySelector('.subpage').scrollTop = 0;
+}
+
+function render() { renderTab(); renderPage(); }
+
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-go],[data-page],[data-back],[data-mood]');
+  if (!el) return;
+  if (el.hasAttribute('data-go')) {
+    state.tab = el.getAttribute('data-go');
+    state.page = null;
+    window.scrollTo(0, 0);
+    return render();
+  }
+  if (el.hasAttribute('data-page')) {
+    state.page = el.getAttribute('data-page');
+    return renderPage();
+  }
+  if (el.hasAttribute('data-back')) {
+    state.page = null;
+    return renderPage();
+  }
+  if (el.hasAttribute('data-mood')) {
+    var sibs = el.parentNode.querySelectorAll('[data-mood]');
+    for (var i = 0; i < sibs.length; i++) sibs[i].classList.remove('on');
+    el.classList.add('on');
+  }
+});
+
+render();
+</script>
+</body>
+</html>
