@@ -221,6 +221,17 @@ html, body {
 .task-body { flex: 1; min-width: 0; }
 
 .task-title { font-weight: 550; font-size: 15px; }
+
+/* 删掉某一项 */
+.del {
+  float: right;
+  width: 20px; height: 20px; line-height: 1;
+  border: 0; background: none; padding: 0;
+  color: #c9c2b6; font-size: 15px; cursor: pointer;
+  border-radius: 6px;
+}
+.del:hover { background: #f2efe9; color: var(--danger); }
+.pd-task .del { flex: 0 0 auto; margin-left: 2px; }
 .task-detail { font-size: 13px; color: var(--ink-2); margin-top: 1px; }
 
 .task-meta {

@@ -234,10 +234,12 @@ window.YT = window.YT || {};
     var weekStart = parseKey(wk);
 
     var weekTotal = 0;
+    var weekDays = 0;
     for (var i = 0; i < 7; i++) {
       var d = addDays(weekStart, i);
       if (isRest(d, profile)) continue;
       weekTotal += isWeekend(d) ? profile.weekendMinutes : profile.weekdayMinutes;
+      weekDays++;
     }
     var target = Math.round(weekTotal * share);
 
@@ -251,7 +253,10 @@ window.YT = window.YT || {};
 
     var owed = Math.max(0, target - already);
     var cap = Math.round(total * C.essayDayCap);
-    return Math.max(0, Math.min(owed, cap, total));
+    /* 别把一周的申论预算堆在前两天——按本周学习日数均摊。
+     * 不然周一一次吃满 50% 的上限，把当天的刷题全挤掉了。 */
+    var dailyFair = weekDays > 0 ? Math.ceil(target / weekDays) : total;
+    return Math.max(0, Math.min(owed, cap, dailyFair, total));
   }
 
   /* 本周申论听了几次课、练了几次题 */

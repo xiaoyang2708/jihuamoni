@@ -172,6 +172,7 @@
     state.roadmap = b.roadmap;
     state.weeklyLog = b.weeklyLog;
     state.weekMark = b.weekMark;
+    if (b.onboarding && b.profile) state.profile = b.profile;
     state.devBackup = null;
     save();
     return true;
@@ -201,6 +202,9 @@
       (state.devBackup
         ? '<button class="btn ghost block" style="margin-top:10px" data-act="sim-restore">还原到快进前</button>'
         : '') +
+      '<button class="btn ghost block" style="margin-top:10px" data-act="sim-restart">重走一遍问卷</button>' +
+      '<div class="param-note">重走问卷会先自动备份，走完之后可以点上面的"还原"退回来。' +
+      '这样你就能反复看刚进项目的那几个界面了。</div>' +
     '</div>';
   }
 
@@ -614,7 +618,9 @@
     var html = '<div class="task' + rowCls + '">' +
       '<button class="tick ' + cls + '" data-act="cycle" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" aria-label="标记完成"></button>' +
       '<div class="task-body">' +
-        '<div class="task-title">' + esc(t.title) + '</div>' +
+        '<div class="task-title">' + esc(t.title) +
+          '<button class="del" data-act="del-task" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" title="删掉这项">×</button>' +
+        '</div>' +
         (t.detail ? '<div class="task-detail">' + esc(t.detail) + '</div>' : '') +
         '<div class="task-meta">' +
           '<span>' + esc(t.amountText || '') + '</span>' +
@@ -814,7 +820,7 @@
       sub +
       '<div class="row" style="gap:8px;margin-top:12px">' +
         '<button class="btn sm ghost" data-act="extra-cancel">取消</button>' +
-        '<button class="btn sm primary grow" data-act="extra-add"' + (canAdd ? '' : ' style="opacity:.4;pointer-events:none"') + '>加进来</button>' +
+        '<button class="btn sm primary grow" data-act="extra-add">加进来</button>' +
       '</div>' +
     '</div>';
   }
@@ -1025,6 +1031,7 @@
         '<span class="pd-t">' + mark + esc(t.title) + '</span>' +
         '<span class="pd-d">' + esc(t.detail || t.amountText || '') + '</span>' +
         '<span class="pd-min">' + t.minutes + ' 分</span>' +
+        '<button class="del" data-act="del-task" data-date="' + day.date + '" data-task="' + esc(t.id) + '" title="删掉这项">×</button>' +
       '</div>';
     }).join('');
   }
@@ -1417,7 +1424,13 @@
       var day = state.days[dk];
       if (!day) return;
       var task = (day.tasks || []).filter(function (t) { return t.id === tid; })[0];
-      if (!task) return;
+      /* 没加成功要说清楚原因——原来这里是静默返回，
+       * 用户点"加进来"完全没反应，不知道哪里没填。 */
+      if (!task) {
+        if (!extraDraft.group) return toast('先选一个科目');
+        if (extraDraft.group === 'pd' && !extraDraft.moduleId) return toast('判断推理要再选具体哪一块（逻辑 / 图形 / 定义类比）');
+        return toast('这项加不进去，换个科目试试');
+      }
       task.status = task.status === 'todo' ? 'done' : task.status === 'done' ? 'half' : 'todo';
       if (task.status !== 'done') task.actualMinutes = null;
       save();
@@ -1469,6 +1482,37 @@
     }
 
     /* ---- 自己加任务 ---- */
+    if (act === 'del-task') {
+      var ddk = el.getAttribute('data-date');
+      var dtid = el.getAttribute('data-task');
+      var dday = state.days[ddk];
+      if (!dday) return;
+      var di = -1;
+      (dday.tasks || []).forEach(function (t, i) { if (t.id === dtid) di = i; });
+      if (di < 0) return;
+      var removed = dday.tasks[di];
+
+      if (removed.kind === 'course') {
+        /* 删了课，同一天同一模块的课全一起去掉——不然"下半节"会挂在
+         * "上半节"已经删掉的情况下，顺序就断了。后面的天重排，课自然往后延。 */
+        dday.tasks = dday.tasks.filter(function (t) {
+          return !(t.kind === 'course' && t.moduleId === removed.moduleId);
+        });
+        Object.keys(state.days).forEach(function (k) {
+          if (k <= ddk) return;
+          var dd = state.days[k];
+          var touched = dd.mood || (dd.tasks || []).some(function (t) { return t.status !== 'todo'; });
+          if (!touched) delete state.days[k];
+        });
+        E.ensureAhead(state, todayKey(), 14);
+        toast('已删掉，这节课顺延到后面');
+      } else {
+        dday.tasks.splice(di, 1);
+        toast('已删掉');
+      }
+      save();
+      return reRender();
+    }
     if (act === 'extra-open') {
       state.ui.addingExtra = true;
       state.ui.extraDate = tk;
@@ -1632,6 +1676,26 @@
     if (act === 'sim-restore') {
       if (restoreDev()) { toast('已还原'); go('today'); }
       else toast('没有可还原的快照');
+      return;
+    }
+    if (act === 'sim-restart') {
+      state.devBackup = JSON.stringify({
+        simDate: state.simDate, days: state.days, roadmap: state.roadmap,
+        weeklyLog: state.weeklyLog, weekMark: state.weekMark,
+        profile: state.profile, onboarding: true,
+      });
+      state.profile = null;
+      state.days = {};
+      state.roadmap = null;
+      state.weeklyLog = [];
+      state.weekMark = {};
+      state.simDate = null;
+      state.ui.onboardStep = 0;
+      state.ui.screen = 'today';
+      draft = null;
+      save();
+      render();
+      toast('已重置，可以重新走问卷');
       return;
     }
 
