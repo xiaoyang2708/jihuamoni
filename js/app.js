@@ -2457,7 +2457,10 @@
     /* 断更测试：直接跳到"上次学习结束 N 天之后"，走真实的重启逻辑 */
     if (act === 'sim-break') {
       var bd = Number(el.getAttribute('data-v')) || 8;
-      var lastK = E.lastActiveKey(state, todayKey()) || todayKey();
+      /* 边界要放到"明天"，否则今天本来就是学习日时会被跳过，
+       * 结果是点了「停 5 天」却只断了 4 天——按钮上的字和实际对不上。 */
+      var tomorrowK = E.toKey(E.addDays(E.parseKey(todayKey()), 1));
+      var lastK = E.lastActiveKey(state, tomorrowK) || todayKey();
       state.simDate = E.toKey(E.addDays(E.parseKey(lastK), bd));
       state.ui.restartSeenOn = null;   // 让学习档案重新弹出来
       dailyRoll();
