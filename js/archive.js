@@ -215,9 +215,45 @@ window.YT = window.YT || {};
     };
   }
 
+  /* 一轮备考的整体成绩。封存的时候算一次存下来，
+   * 历史轮次就不用每次重新扫一遍几百天。 */
+  function roundSummary(days, profile) {
+    var E = YT.engine;
+    var planned = 0, done = 0, questions = 0, studied = 0, papers = 0;
+    var first = null, last = null;
+    Object.keys(days || {}).forEach(function (k) {
+      if (!first || k < first) first = k;
+      if (!last || k > last) last = k;
+      var day = days[k];
+      if (!day || day.isRest) return;
+      var st = E.dayStats(day);
+      if (st.planned) { planned += st.planned; done += st.done; }
+      if ((day.tasks || []).some(function (t) { return t.status !== 'todo'; })) studied++;
+      (day.tasks || []).forEach(function (t) {
+        var cr = credit(t.status);
+        if (!cr) return;
+        if (t.kind === 'practice') questions += (t.amount || 0) * cr;
+        else if (t.kind === 'essay') questions += (t.amounts || 1) * cr;
+        else if (t.kind === 'paperset') papers += cr;
+      });
+    });
+    return {
+      startKey: first,
+      endKey: last,
+      studiedDays: studied,
+      planned: Math.round(planned),
+      done: Math.round(done),
+      rate: planned > 0 ? done / planned : 0,
+      questions: Math.round(questions),
+      papers: Math.round(papers * 10) / 10,
+      course: E.courseProgress({ days: days, profile: profile }),
+    };
+  }
+
   YT.archive = {
     build: build,
     lessonWhere: lessonWhere,
     latestRates: latestRates,
+    roundSummary: roundSummary,
   };
 })(window.YT);

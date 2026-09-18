@@ -17,6 +17,7 @@ window.YT = window.YT || {};
       profile: null,
       roadmap: null,
       days: {},
+      rounds: [],        // 已经考完并封存的历史轮次
       weeklyLog: [],
       ui: { screen: 'today', onboardStep: 0 },
       createdAt: new Date().toISOString(),

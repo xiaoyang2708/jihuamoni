@@ -177,6 +177,150 @@
   }
 
   /* ---------------------------------------------------------------------
+   * 换一场考试
+   *
+   * 考公很少有人只考一次，所以这一步要给两条路：
+   *   接着这轮学    —— 只是把考试日期挪到新的，学过的不重来
+   *   开启新一轮    —— 这轮封存进学习档案，新一轮从今天重新排
+   * 不管哪条路，上一轮听过的课都不会让人重听。
+   * ------------------------------------------------------------------- */
+
+  var switchDraft = null;
+
+  function openSwitchExam() {
+    var p = state.profile;
+    var next = new Date();
+    next.setMonth(next.getMonth() + 4);
+    switchDraft = {
+      mode: null,
+      examDate: p.examDate > todayKey() ? p.examDate : E.toKey(next),
+      name: '',
+      weekdayMinutes: p.weekdayMinutes,
+      weekendMinutes: p.weekendMinutes,
+    };
+    renderSwitchExam();
+  }
+
+  function renderSwitchExam() {
+    if (!switchDraft) return;
+    var d = switchDraft;
+    var rounds = (state.rounds || []).length;
+
+    var optHtml = [
+      { v: 'continue', t: '接着这轮学', s: '只把考试日期改到新的。打过卡的日子、课程进度、成绩记录都留着。连着考、时间紧就选这个。' },
+      { v: 'new', t: '开启新一轮', s: '这一轮封存进学习档案，新一轮从今天重新排。上一轮听过的课不用重听。' },
+    ].map(function (o) {
+      return '<button class="arch-item' + (d.mode === o.v ? ' on' : '') + '" data-act="switch-mode" data-v="' + o.v + '">' +
+        '<span class="box">' + (d.mode === o.v ? '✓' : '') + '</span>' +
+        '<span class="at"><b>' + o.t + '</b><span class="ad">' + o.s + '</span></span></button>';
+    }).join('');
+
+    var form = '';
+    if (d.mode) {
+      form =
+        '<div class="score-form" style="max-height:none">' +
+          '<div class="score-row"><span class="sr-name">考试日期</span>' +
+            '<input type="date" data-act="switch-date" value="' + esc(d.examDate) + '" style="width:auto;flex:1;text-align:left"></div>' +
+          (d.mode === 'new'
+            ? '<div class="score-row"><span class="sr-name">这轮叫</span>' +
+                '<input type="text" data-act="switch-name" value="' + esc(d.name) + '" placeholder="第 ' + (rounds + 2) + ' 轮（可不填）" ' +
+                'style="width:auto;flex:1;text-align:left;font-weight:400"></div>' +
+              '<div class="score-row"><span class="sr-name">工作日</span>' +
+                '<select class="input" data-act="switch-wd" style="width:auto;flex:1">' +
+                  window.YT.TIME_OPTIONS.map(function (o) {
+                    return '<option value="' + o.minutes + '"' + (d.weekdayMinutes === o.minutes ? ' selected' : '') + '>' + o.label + '</option>';
+                  }).join('') + '</select></div>' +
+              '<div class="score-row"><span class="sr-name">周末</span>' +
+                '<select class="input" data-act="switch-we" style="width:auto;flex:1">' +
+                  window.YT.TIME_OPTIONS.map(function (o) {
+                    return '<option value="' + o.minutes + '"' + (d.weekendMinutes === o.minutes ? ' selected' : '') + '>' + o.label + '</option>';
+                  }).join('') + '</select></div>'
+            : '') +
+        '</div>' +
+        (d.mode === 'new'
+          ? '<div class="arch-note">你会从今天开始一份新计划。上一轮听到哪，新课就从哪接着听；' +
+            '上一轮的成绩记录也留着，系统继续按你的真实正确率算复盘时间。</div>'
+          : '');
+    }
+
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal arch-modal" style="max-width:430px">' +
+        '<div class="modal-title">换一场考试</div>' +
+        '<div class="modal-msg">这场是 ' + fmtDate(state.profile.examDate, true) + '。接下来怎么安排？</div>' +
+        optHtml + form +
+        '<div class="row" style="gap:10px;margin-top:16px">' +
+          '<button class="btn grow" data-act="switch-cancel">取消</button>' +
+          '<button class="btn primary grow" data-act="switch-confirm">确定</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* 真正切换。keepStart=false 表示这是新一轮，一切从今天算起。 */
+  function applySwitch() {
+    var d = switchDraft;
+    var tk = todayKey();
+    var p = state.profile;
+
+    if (!d.mode) { toast('先选一种安排方式'); return false; }
+    if (!d.examDate || d.examDate <= tk) { toast('考试日期要在今天之后'); return false; }
+
+    if (d.mode === 'new') {
+      var A = window.YT.archive;
+      var sum = A.roundSummary(state.days, p);
+      var n = (state.rounds || []).length + 1;
+      state.rounds = state.rounds || [];
+      state.rounds.push({
+        id: 'r' + n,
+        index: n,
+        name: d.name || ('第 ' + n + ' 轮'),
+        examDate: p.examDate,
+        startKey: sum.startKey,
+        endKey: sum.endKey || p.examDate,
+        summary: sum,
+        /* 这一轮开始时，从更早那轮带过来的进度。回看这一轮时要用它，
+         * 否则课程进度条会和当时的节次编号对不上。 */
+        inherited: p.inheritedProgress || null,
+        days: state.days,
+        weeklyLog: state.weeklyLog || [],
+        archivedAt: new Date().toISOString(),
+      });
+      if (state.rounds.length > 6) state.rounds = state.rounds.slice(-6);
+
+      /* 听完的课带过去，别让人重听一遍 */
+      var carried = {};
+      Object.keys(sum.course || {}).forEach(function (id) {
+        if (sum.course[id] > 0.001) carried[id] = Math.round(sum.course[id] * 10) / 10;
+      });
+      p.inheritedProgress = carried;
+
+      state.days = {};
+      state.weekMark = {};
+      state.weeklyLog = [];
+      state.roadmap = null;
+    }
+
+    p.examDate = d.examDate;
+    p.weekdayMinutes = Number(d.weekdayMinutes);
+    p.weekendMinutes = Number(d.weekendMinutes);
+
+    var start = (d.mode === 'new') ? tk : ((state.roadmap && state.roadmap.startKey) || tk);
+    state.roadmap = E.buildRoadmap(p, start);
+    /* 今天及以后还没动过的，按新考试日期重排 */
+    Object.keys(state.days).forEach(function (k) {
+      if (k < tk) return;
+      var day = state.days[k];
+      var touched = day.mood || (day.tasks || []).some(function (t) { return t.status !== 'todo'; });
+      if (!touched) delete state.days[k];
+    });
+    state.weekMark = state.weekMark || {};
+    state.weekMark[E.weekKeyOf(tk)] = true;
+    E.ensureAhead(state, tk, 14);
+    save();
+    return true;
+  }
+
+  /* ---------------------------------------------------------------------
    * C1 学习档案
    *
    * 两个入口共用这一套：
@@ -193,16 +337,27 @@
     return Math.max(0, Math.min(100, Math.round(done / need * 100)));
   }
 
-  function openArchive(mode, info) {
+  function openArchive(mode, info, round) {
     var tk = todayKey();
     var stage = (state.days[tk] || {}).stage || 'base';
-    var arch = window.YT.archive.build(state, tk, stage);
+    var src = state, at = tk;
+    if (round) {
+      /* 看历史轮次：用那一轮开始时的进度口径，
+       * 而不是现在这份（换过两轮之后数字会对不上）。 */
+      var prof = {};
+      Object.keys(state.profile || {}).forEach(function (k) { prof[k] = state.profile[k]; });
+      prof.inheritedProgress = round.inherited || null;
+      src = { profile: prof, days: round.days || {}, scores: [] };
+      at = round.endKey || tk;
+    }
+    var arch = window.YT.archive.build(src, at, stage);
     archDraft = {
       mode: mode || 'view',
       info: info || null,
+      round: round || null,
       arch: arch,
       showAll: false,
-      items: (arch.review || []).map(function (r, i) {
+      items: (round ? [] : (arch.review || [])).map(function (r, i) {
         return { on: i < ARCH_FOLD_AT, item: r };   // 折叠起来的那几条默认不勾
       }),
     };
@@ -213,6 +368,7 @@
     if (!archDraft) return;
     var a = archDraft.arch;
     var restart = archDraft.mode === 'restart';
+    var past = archDraft.mode === 'round';
 
     /* ---- 听课 ---- */
     var courses = a.courses.slice().sort(function (x, y) {
@@ -273,7 +429,14 @@
     var reviewHtml = listHtml;
 
     var head, sub;
-    if (restart) {
+    if (past) {
+      var s = archDraft.round.summary || {};
+      head = archDraft.round.name || '上一轮';
+      sub = (archDraft.round.examDate ? fmtDate(archDraft.round.examDate, true) + '考完' : '') +
+        (s.studiedDays ? ' · 学了 ' + s.studiedDays + ' 天' : '') +
+        (s.questions ? ' · 累计 ' + s.questions + ' 题' : '') +
+        (s.planned ? ' · 完成 ' + pct(s.rate) : '');
+    } else if (restart) {
       head = '先看看你学到哪了';
       sub = (a.lastKey && archDraft.info)
         ? '你上次学习是 ' + fmtDate(a.lastKey, false) + '，中间隔了 ' + archDraft.info.missed + ' 个学习日。'
@@ -322,7 +485,9 @@
         '<div class="row" style="gap:10px;margin-top:18px">' +
           (restart ? '<button class="btn grow" data-act="arch-close">先不用</button>' : '') +
           (!restart && reviewHtml ? '<button class="btn grow" data-act="arch-close">知道了</button>' : '') +
-          (reviewHtml
+          (past
+            ? '<button class="btn primary grow" data-act="arch-close">知道了</button>'
+            : reviewHtml
             ? '<button class="btn primary grow" data-act="arch-yes">' +
                 (restart ? '就按这个来' : '加到今天') + '</button>'
             : '<button class="btn primary grow" data-act="arch-close">知道了</button>') +
@@ -567,6 +732,10 @@
   function rebuildCourseLabels() {
     var pos = {};
     courseLabels = {};
+    /* 换过考试的人，上一轮听过的节次不再编号。
+     * 从上一轮听到的地方往后接着编，否则新一轮又是"第 1 节"。 */
+    var inh = (state.profile && state.profile.inheritedProgress) || {};
+    MODULES.forEach(function (m) { pos[m.id] = Number(inh[m.id]) || 0; });
     Object.keys(state.days || {}).sort().forEach(function (k) {
       (state.days[k].tasks || []).forEach(function (t) {
         if (t.kind !== 'course' || t.noSeq) return;   // 补记的不占节次编号
@@ -1190,7 +1359,9 @@
 
     if (!day) {
       app.innerHTML = '<div class="screen"><div class="top"><h1>计划已结束</h1>' +
-        '<div class="sub">考试日已经过去了。去设置里改一下考试日期，我重新给你排。</div></div></div>';
+        '<div class="sub">考试日已经过去了。要备考下一场的话，点下面这个。</div>' +
+        '<button class="btn primary block" data-act="switch-open" style="margin-top:18px">备考下一场 →</button>' +
+        '</div></div>';
       return renderTabbar('today');
     }
 
@@ -1741,6 +1912,22 @@
         '</div>' +
       '</div></div>' +
 
+      ((state.rounds || []).length
+        ? '<div class="section"><p class="section-title">考过的</p><div class="card">' +
+            (state.rounds.slice().reverse().map(function (r) {
+              var s = r.summary || {};
+              return '<button class="round-row" data-act="round-open" data-v="' + esc(r.id) + '">' +
+                '<span class="rn">' + esc(r.name || '上一轮') + '</span>' +
+                '<span class="rd">' + (r.examDate ? fmtDate(r.examDate, false) + ' 考完' : '') +
+                  (s.studiedDays ? ' · 学 ' + s.studiedDays + ' 天' : '') +
+                  (s.questions ? ' · ' + s.questions + ' 题' : '') + '</span>' +
+                '<span class="rr">' + (s.planned ? pct(s.rate) : '') + '</span>' +
+              '</button>';
+            }).join('')) +
+            '<div class="footnote">换考试的时候会自动存一份。想看就看，不会混进这一轮的统计里。</div>' +
+          '</div></div>'
+        : '') +
+
       '<div class="section"><div class="card">' +
         '<div class="row between">' +
           '<div><div style="font-weight:600">成绩记录</div>' +
@@ -1828,6 +2015,8 @@
       '<div class="section"><p class="section-title">考试与时间</p><div class="card">' +
         '<div class="field"><label>考试日期</label>' +
         '<input class="input" type="date" data-act="set-exam" value="' + esc(p.examDate) + '"></div>' +
+        '<button class="btn ghost block" style="margin:-2px 0 12px" data-act="switch-open">' +
+          '考完了，换下一场 →</button>' +
         '<div class="field"><label>工作日每天可用</label>' +
         '<select class="input" data-act="set-wd">' +
           window.YT.TIME_OPTIONS.map(function (o) {
@@ -2615,7 +2804,32 @@
 
     /* ---- 学习档案 ---- */
     if (act === 'arch-open') return openArchive('view');
+    if (act === 'round-open') {
+      var rid = el.getAttribute('data-v');
+      var rr = (state.rounds || []).filter(function (x) { return x.id === rid; })[0];
+      if (rr) openArchive('round', null, rr);
+      return;
+    }
     if (act === 'arch-close') { archDraft = null; return closeModal(); }
+
+    /* ---- 换一场考试 ---- */
+    if (act === 'switch-open') return openSwitchExam();
+    if (act === 'switch-cancel') { switchDraft = null; return closeModal(); }
+    if (act === 'switch-mode') {
+      if (!switchDraft) return;
+      switchDraft.mode = el.getAttribute('data-v');
+      return renderSwitchExam();
+    }
+    if (act === 'switch-confirm') {
+      if (!switchDraft) return closeModal();
+      var mode0 = switchDraft.mode;
+      if (!applySwitch()) return;
+      switchDraft = null;
+      closeModal();
+      go('today');
+      toast(mode0 === 'new' ? '新一轮开始了，上一轮存在学习档案里' : '考试日期已更新，后面重排好了');
+      return;
+    }
     if (act === 'arch-toggle') {
       if (!archDraft) return;
       var ai = Number(el.getAttribute('data-i'));
@@ -2747,6 +2961,10 @@
     if (!el) return;
     var act = el.getAttribute('data-act');
     if (act === 'set-exam') { state.profile.examDate = el.value; save(); }
+    if (act === 'switch-date' && switchDraft) { switchDraft.examDate = el.value; }
+    if (act === 'switch-name' && switchDraft) { switchDraft.name = el.value; }
+    if (act === 'switch-wd' && switchDraft) { switchDraft.weekdayMinutes = Number(el.value); }
+    if (act === 'switch-we' && switchDraft) { switchDraft.weekendMinutes = Number(el.value); }
     /* 自己填的实际用时：输入完按回车或者点到别处就提交 */
     if (act === 'actual-custom') {
       var v = Number(el.value);

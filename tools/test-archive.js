@@ -245,5 +245,37 @@ console.log('\n【8】复习清单：该给的都要给出来（界面超过 5 �
   arch.review.forEach(r => console.log('       · ' + r.title + '　' + r.detail));
 }
 
+/* ======================= 9. 换考试：封存 + 进度带过去 ======================= */
+console.log('\n【9】换一场考试：上一轮封存，课不用重听');
+{
+  const s = makeState();
+  studyDays(s, ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04']);
+  const sum = A.roundSummary(s.days, s.profile);
+  check('算得出这轮学了几天', sum.studiedDays === 4, sum.studiedDays);
+  check('算得出累计题量', sum.questions > 0, sum.questions);
+  check('算得出课程进度', Object.keys(sum.course).some(k => sum.course[k] > 0),
+    JSON.stringify(sum.course));
+
+  /* 开启新一轮：日历清空，进度带过去 */
+  const before = Object.assign({}, s.profile, { inheritedProgress: sum.course });
+  const s2 = { profile: before, roadmap: null, days: {}, scores: [] };
+  const prog2 = E.courseProgress(s2);
+  check('新课的进度接着上一轮', prog2.zlfx === sum.course.zlfx, prog2.zlfx + ' vs ' + sum.course.zlfx);
+  check('换轮后不会从第 1 节重排',
+    E.currentCourseModule(before, prog2).id !== 'zlfx' || sum.course.zlfx < E.targetUnits(YT.MODULE_BY_ID.zlfx, before),
+    E.currentCourseModule(before, prog2).id);
+
+  /* 新一轮排出来的课，是接着上一轮往下听的 */
+  s2.roadmap = E.buildRoadmap(before, '2026-09-10');
+  E.ensureAhead(s2, '2026-09-10', 10);
+  const firstCourse = Object.keys(s2.days).sort()
+    .map(k => (s2.days[k].tasks || []).find(t => t.kind === 'course' && t.moduleId === 'zlfx'))
+    .find(Boolean);
+  console.log('     新一轮第一节资料课：' + (firstCourse ? firstCourse.detail : '（没有了）'));
+  check('不会又让人从第 1 节听起',
+    !firstCourse || firstCourse.detail.indexOf('第 1 节') < 0,
+    firstCourse && firstCourse.detail);
+}
+
 console.log('\n' + (fail ? '有 ' + fail + ' 条没过 ❌' : '全部通过 ✅'));
 process.exit(fail ? 1 : 0);

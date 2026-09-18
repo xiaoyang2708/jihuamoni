@@ -362,6 +362,16 @@ window.YT = window.YT || {};
         else if (t.status === 'half') prog[t.moduleId] += (t.units || 1) / 2;
       });
     });
+    /* 上一轮听过的不重来：换考试时把进度带过来，和这一轮听的累加。
+     * 单独存一个数，而不是塞一堆"补记"任务进去——
+     * 那样会在学习档案里凭空多出一堆记录，还得解释它们是怎么来的。 */
+    var inh = state.profile && state.profile.inheritedProgress;
+    if (inh) {
+      Object.keys(inh).forEach(function (id) {
+        if (prog[id] === undefined) return;
+        prog[id] += Number(inh[id]) || 0;
+      });
+    }
     return prog;
   }
 
