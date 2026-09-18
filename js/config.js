@@ -18,26 +18,26 @@ window.YT = window.YT || {};
 YT.MODULES = [
   /* weight = 刷题轮转里的权重。资料/言语/判断是提分主力，给高权重；
    * 数量、常识、政治理论靠积累，刷题收益低，权重压低。 */
-  { id: 'zlfx', name: '资料分析',      short: '资料',       order: 1, unitMinutes: 2.5, courseUnits: 4, weight: 2.5,
+  { id: 'zlfx', name: '资料分析',      short: '资料',       order: 1, unitMinutes: 2.5, courseUnits: 20, weight: 2.5,
     setSize: 20, examMinutes: 28, targetRate: 0.85 },
-  { id: 'yy',   name: '言语理解',      short: '言语',       order: 2, unitMinutes: 1.8, courseUnits: 5, weight: 2.5,
+  { id: 'yy',   name: '言语理解',      short: '言语',       order: 2, unitMinutes: 1.8, courseUnits: 20, weight: 2.5,
     setSize: 30, examMinutes: 28, targetRate: 0.75 },
-  { id: 'pdlj', name: '判断推理·逻辑', short: '判推逻辑',   order: 3, unitMinutes: 2.0, courseUnits: 4, weight: 2.5,
+  { id: 'pdlj', name: '判断推理·逻辑', short: '判推逻辑',   order: 3, unitMinutes: 2.0, courseUnits: 20, weight: 2.5,
     setSize: 10, examMinutes: 9,  targetRate: 0.75 },
-  { id: 'pdtx', name: '判断推理·图形', short: '判推图形',   order: 4, unitMinutes: 2.5, courseUnits: 3, weight: 2.5,
+  { id: 'pdtx', name: '判断推理·图形', short: '判推图形',   order: 4, unitMinutes: 2.5, courseUnits: 20, weight: 2.5,
     setSize: 5,  examMinutes: 4,  targetRate: 0.75 },
-  { id: 'pddl', name: '定义判断·类比', short: '定义类比',   order: 5, unitMinutes: 1.8, courseUnits: 2, weight: 2.5,
+  { id: 'pddl', name: '定义判断·类比', short: '定义类比',   order: 5, unitMinutes: 1.8, courseUnits: 20, weight: 2.5,
     setSize: 20, examMinutes: 16, targetRate: 0.75 },
-  { id: 'zzll', name: '政治理论',      short: '政治理论',   order: 6, unitMinutes: 1.0, courseUnits: 3, weight: 1.2,
+  { id: 'zzll', name: '政治理论',      short: '政治理论',   order: 6, unitMinutes: 1.0, courseUnits: 20, weight: 1.2,
     setSize: 20, examMinutes: 9,  targetRate: 0.60 },
   /* 数量：很多人直接放弃，不给默认正确率，让用户自己决定要不要设 */
-  { id: 'sl',   name: '数量关系',      short: '数量',       order: 7, unitMinutes: 3.0, courseUnits: 4, weight: 1,
+  { id: 'sl',   name: '数量关系',      short: '数量',       order: 7, unitMinutes: 3.0, courseUnits: 20, weight: 1,
     setSize: 15, examMinutes: 18, targetRate: null },
   /* 常识性价比最低，靠平时积累，专门刷题收益很小，很多人直接不学。
    * 权重压到最低，正确率也全靠蒙，不设目标。 */
-  { id: 'cs',   name: '常识判断',      short: '常识',       order: 8, unitMinutes: 0.8, courseUnits: 2, weight: 0.6,
+  { id: 'cs',   name: '常识判断',      short: '常识',       order: 8, unitMinutes: 0.8, courseUnits: 20, weight: 0.6,
     setSize: 15, examMinutes: 8,  targetRate: null },
-  { id: 'slw',  name: '申论',          short: '申论',       order: 9, unitMinutes: 40,  courseUnits: 6, weight: 0, essay: true,
+  { id: 'slw',  name: '申论',          short: '申论',       order: 9, unitMinutes: 40,  courseUnits: 20, weight: 0, essay: true,
     setSize: null, examMinutes: null, targetRate: null },
 ];
 

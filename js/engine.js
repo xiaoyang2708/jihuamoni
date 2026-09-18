@@ -542,7 +542,10 @@ window.YT = window.YT || {};
     var out = [];
     keys.forEach(function (k) {
       var b = baseBy[k] || 0, a = adjBy[k] || 0;
-      var useAdj = up ? (a >= b) : (a <= b);
+      /* 减量时还要保证"不让某一类任务整个消失"——
+       * 20% 的削减如果刚好把一组题挤掉，就会变成"太难了今天一道题都不做"，
+       * 那是过度反应。这一类宁可保持原样。 */
+      var useAdj = up ? (a >= b) : (a <= b && !(a === 0 && b > 0));
       (useAdj ? adj : base).forEach(function (t) {
         if (taskKey(t) === k) out.push(t);
       });
