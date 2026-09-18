@@ -16,9 +16,11 @@ YT.MODULES = [
   { id: 'pdlj', name: '判断推理·逻辑', short: '判推逻辑',   order: 3, unitMinutes: 1.5, courseUnits: 4, weight: 2.5 },
   { id: 'pdtx', name: '判断推理·图形', short: '判推图形',   order: 4, unitMinutes: 1.2, courseUnits: 3, weight: 2.5 },
   { id: 'pddl', name: '定义判断·类比', short: '定义类比',   order: 5, unitMinutes: 1.2, courseUnits: 2, weight: 2.5 },
-  { id: 'zzll', name: '政治理论',      short: '政治理论',   order: 6, unitMinutes: 1.2, courseUnits: 3, weight: 1.5 },
+  { id: 'zzll', name: '政治理论',      short: '政治理论',   order: 6, unitMinutes: 1.2, courseUnits: 3, weight: 1.2 },
   { id: 'sl',   name: '数量关系',      short: '数量',       order: 7, unitMinutes: 2.5, courseUnits: 4, weight: 1 },
-  { id: 'cs',   name: '常识判断',      short: '常识',       order: 8, unitMinutes: 1.0, courseUnits: 2, weight: 1 },
+  /* 常识性价比最低，靠平时积累，专门刷题收益很小，很多人直接不学。
+   * 权重压到最低，用户也可以在设置里一键设成"不学"。 */
+  { id: 'cs',   name: '常识判断',      short: '常识',       order: 8, unitMinutes: 1.0, courseUnits: 2, weight: 0.6 },
   { id: 'slw',  name: '申论',          short: '申论',       order: 9, unitMinutes: 40,  courseUnits: 6, weight: 0, essay: true },
 ];
 
@@ -90,8 +92,10 @@ YT.CONFIG = {
   moodFactorMax: 1.10,
 
   /* —— 题量取整 —— */
-  amountStep: 5,
-  amountMin: 5,
+  /* 步长必须是 1：用 5 的话，小幅调整（比如状态不好减 15%）会被取整吃掉，
+   * 出现"选了太难了但题目一道没少"的情况。 */
+  amountStep: 1,
+  amountMin: 3,
 };
 
 /* 感受的分数和显示名 */

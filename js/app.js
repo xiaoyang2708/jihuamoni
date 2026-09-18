@@ -298,6 +298,76 @@
     return d;
   }
 
+  /* 基础水平决定"你手上有多少课，实际要听多少"。
+   * 之前这个值定义了却从来没用过，导致选"我考过"照样排全部课程。 */
+  function applyBaseToUnits() {
+    var preset = window.YT.BASE_PRESET[draft.base] || window.YT.BASE_PRESET.zero;
+    var f = preset.courseFactor === undefined ? 1 : preset.courseFactor;
+    MODULES.forEach(function (m) {
+      draft.courseUnits[m.id] = Math.max(0, Math.round(m.courseUnits * f));
+    });
+  }
+
+  function baseFactor() {
+    var preset = window.YT.BASE_PRESET[draft.base] || window.YT.BASE_PRESET.zero;
+    return preset.courseFactor === undefined ? 1 : preset.courseFactor;
+  }
+
+  function baseLabel() {
+    var hit = window.YT.BASE_OPTIONS.filter(function (o) { return o.id === draft.base; })[0];
+    return hit ? hit.label : '';
+  }
+
+  /* 用当前问卷内容试算一遍，让用户看到"我的选择产生了什么结果" */
+  function previewPlan() {
+    var E2 = window.YT.engine;
+    var today = E2.toKey(new Date());
+    var p = {
+      examDate: draft.examDate || E2.toKey(E2.addDays(new Date(), 120)),
+      base: draft.base,
+      weekdayMinutes: draft.weekdayMinutes,
+      weekendMinutes: draft.weekendMinutes,
+      restDays: draft.restDays,
+      lessonMinutes: Number(draft.lessonMinutes) || 150,
+      speed: Number(draft.speed) || 1.5,
+      courseUnits: draft.courseUnits,
+      benchmarks: {},
+      strength: {},
+    };
+    MODULES.forEach(function (m) { p.strength[m.id] = 'normal'; });
+    try { return E2.buildRoadmap(p, today); } catch (e) { return null; }
+  }
+
+  function previewHtml() {
+    var rm = previewPlan();
+    if (!rm) return '';
+    var totalUnits = 0, totalMinutes = 0;
+    var E2 = window.YT.engine;
+    MODULES.forEach(function (m) {
+      var n = E2.targetUnits(m, {
+        courseUnits: draft.courseUnits, strength: { slw: 'normal' },
+      });
+      totalUnits += n;
+    });
+    totalMinutes = Math.round(totalUnits * (Number(draft.lessonMinutes) || 150) / (Number(draft.speed) || 1.5));
+
+    var st = rm.stages;
+    var f = baseFactor();
+    var note = f < 1
+      ? '因为你说「' + baseLabel() + '」，每科的课都按 ' + Math.round(f * 100) + '% 折算过了，你可以在这上面直接改。'
+      : '这些数字可以按你手上的课直接改。';
+
+    return '<div class="preview-card">' +
+      '<div class="pv-title">按现在的填写，你的计划会是这样</div>' +
+      '<div class="pv-row"><span>要听的课</span><b>' + totalUnits + ' 节 · 约 ' +
+        Math.round(totalMinutes / 60) + ' 小时</b></div>' +
+      '<div class="pv-row"><span>基础期</span><b>' + st[0].studyDays + ' 个学习日</b></div>' +
+      '<div class="pv-row"><span>强化期</span><b>' + st[1].studyDays + ' 个学习日</b></div>' +
+      '<div class="pv-row"><span>冲刺期</span><b>' + st[2].studyDays + ' 个学习日</b></div>' +
+      '<div class="pv-note">' + esc(note) + '</div>' +
+    '</div>';
+  }
+
   var ONBOARD_STEPS = 6;
 
   function renderOnboarding() {
@@ -371,7 +441,8 @@
               '<div class="item"><label>听课倍速</label>' +
               '<input type="number" min="1" max="3" step="0.1" data-act="set-speed" value="' + draft.speed + '"><span class="unit">倍</span></div>' +
               '</div>';
-      body += '<div class="footnote">每节课 2.5 小时、1.5 倍速听，实际约 100 分钟。这个数直接决定基础期要排多少天。</div>';
+      body += '<div id="ob-preview">' + previewHtml() + '</div>';
+      body += '<div class="footnote">每节课的时长和倍速决定一节课实际要花多久。这些数字直接决定基础期排多少天。</div>';
     }
 
     var prev = step > 0 ? '<button class="btn" data-act="ob-prev">上一步</button>' : '<span></span>';
@@ -1060,7 +1131,11 @@
       draft.examDate = E.toKey(d);
       return reRender();
     }
-    if (act === 'pick-base') { draft.base = el.getAttribute('data-v'); return reRender(); }
+    if (act === 'pick-base') {
+      draft.base = el.getAttribute('data-v');
+      applyBaseToUnits();
+      return reRender();
+    }
     if (act === 'pick-wd') { draft.weekdayMinutes = Number(el.getAttribute('data-v')); return reRender(); }
     if (act === 'pick-we') { draft.weekendMinutes = Number(el.getAttribute('data-v')); return reRender(); }
     if (act === 'toggle-rest') {
@@ -1265,7 +1340,12 @@
       var mid = el.getAttribute('data-m');
       var val = el.value === '' ? '' : Number(el.value);
       if (state.profile) { state.profile.courseUnits[mid] = val; save(); }
-      else if (draft) { draft.courseUnits[mid] = val; }
+      else if (draft) {
+        draft.courseUnits[mid] = val;
+        /* 不整页重渲染（会丢焦点），只把下面那块预览换掉 */
+        var pv = document.getElementById('ob-preview');
+        if (pv) pv.innerHTML = previewHtml();
+      }
       return;
     }
     if (act === 'set-param') {

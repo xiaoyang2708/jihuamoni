@@ -466,6 +466,10 @@ window.YT = window.YT || {};
     var budget = budgetFor(date, profile, stageKey);
     var factor = (opts && opts.factor) || 1;
     var moodF = (opts && opts.moodFactor) || 1;
+    /* 注意：moodF 不作用于 total，只作用于后面的"弹性部分"。
+     * 直接缩总量会导致分级分配重新洗牌——申论少排一项，
+     * 腾出的时间回流到刷题上，反而变成"选了太难了刷题更多"。
+     * 听课是刚性的（半节为单位），本来也缩不动。 */
     var total = Math.max(0, Math.round(budget.total * factor));
     var tasks = [];
     var dayIndex = dayDiff(roadmap.startKey || dateKey, dateKey);
@@ -544,10 +548,9 @@ window.YT = window.YT || {};
 
     /* ---- 剩下的时间：刷题 与 复盘 ---- */
     var remaining = Math.max(0, total - spent);
-    /* 感受只调整刷题和复盘这一块。
-     * 如果连听课一起缩放，会出现"选了太难了，刷题反而变多"——
-     * 因为听课按半节取整被砍掉一大块，腾出来的时间全回流到刷题上。
-     * 课程进度交给每周完成率那条规则去管，那里的信号更可靠。 */
+    /* 感受只调整刷题和复盘这一块——它们是弹性的，少做一点没影响；
+     * 听课是刚性的（按半节走），缩了会打乱课程进度。
+     * 配合题量步长改成 1，这里的增减能直接反映到题目数上，用户看得见。 */
     remaining = Math.round(remaining * moodF);
 
     /* 冲刺期：周末按模考日排，工作日按模块专练排 */
