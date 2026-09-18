@@ -121,18 +121,28 @@
 
   var scoreDraft = null;
 
-  function showScoreForm() {
+  /* 打开表单（初始化一次）和重画表单（保留已填内容）要分开。
+   * 之前点来源按钮会重新初始化，把刚选的和刚填的全冲掉了——
+   * 所以"模块刷题""真题套卷"看着像点不动。 */
+  function openScoreForm() {
     var last = (state.scores || [])[(state.scores || []).length - 1];
     scoreDraft = {
       date: todayKey(),
       source: (last && last.source) || '模考',
       rates: {},
     };
+    renderScoreForm();
+  }
+
+  function renderScoreForm() {
+    if (!scoreDraft) return;
     var rows = MODULES.filter(function (m) { return !m.essay; }).map(function (m) {
       var tgt = window.YT.moduleParam(m, state.profile, 'targetRate');
+      var cur = scoreDraft.rates[m.id];
+      var v = (cur === undefined || cur === null || cur === '') ? '' : Math.round(cur * 100);
       return '<div class="score-row">' +
         '<span class="sr-name">' + esc(m.short) + '</span>' +
-        '<input type="number" min="0" max="100" step="1" data-act="score-rate" data-m="' + m.id + '" value="" placeholder="—">' +
+        '<input type="number" min="0" max="100" step="1" data-act="score-rate" data-m="' + m.id + '" value="' + v + '" placeholder="—">' +
         '<span class="sr-pct">%</span>' +
         (tgt !== null && tgt !== undefined ? '<span class="sr-tgt">目标 ' + Math.round(tgt * 100) + '</span>' : '<span class="sr-tgt">未设目标</span>') +
       '</div>';
@@ -1053,7 +1063,7 @@
       '<div class="mp-sub">' + fmtDate(m.dateKey, false) + ' ' + weekdayName(m.dateKey) +
         '　' + fmtMinutes(m.totalBefore) + ' → ' + fmtMinutes(m.totalAfter) + '</div>' +
       '<div class="mp-rows">' + rowsHtml + '</div>' +
-      '<div class="mp-note">按最近 ' + m.samples + ' 天的感受算出来的，之后每天打卡都会重新评估。</div>' +
+      '<div class="mp-note">按你最近一次选的感受算的。改选别的会立刻重排。</div>' +
     '</div>';
   }
 
@@ -1467,16 +1477,15 @@
 
     var rows = timing.map(function (r) {
       var med = r.medianPerQuestion === null ? '—' : (Math.round(r.medianPerQuestion * 10) / 10) + ' 分';
-      var sug = r.suggestion === null ? '<span class="muted">数据不足</span>'
-        : (r.suggestion !== r.current
-            ? '<button class="chip" data-act="apply-bench" data-m="' + r.moduleId + '" data-v="' + r.suggestion + '">用 ' + r.suggestion + ' 分</button>'
-            : '<span class="muted">已是最新</span>');
+      var plan = (r.suggestion !== null && r.suggestion !== r.current)
+        ? '<button class="chip" data-act="apply-bench" data-m="' + r.moduleId + '" data-v="' + r.suggestion + '">' +
+            r.current + ' 分 → 改用 ' + r.suggestion + ' 分</button>'
+        : r.current + ' 分';
       return '<tr>' +
         '<td>' + esc(r.short) + '</td>' +
         '<td class="num">' + r.samples + '</td>' +
         '<td class="num">' + med + '</td>' +
-        '<td class="num right">' + r.current + ' 分</td>' +
-        '<td class="right">' + sug + '</td>' +
+        '<td class="num right">' + plan + '</td>' +
       '</tr>';
     }).join('');
 
@@ -1518,12 +1527,14 @@
         '<div class="card">' +
           (anySamples
             ? '<table class="table"><thead><tr>' +
-              '<th>模块</th><th>记录</th><th>每题中位</th><th class="right">当前基准</th><th class="right">建议</th>' +
+              '<th>模块</th><th>记录</th><th>你实际做一题</th><th class="right">计划按这个算</th>' +
               '</tr></thead><tbody>' + rows + '</tbody></table>'
             : '<div class="tiny muted">还没有记录。<br><br>打卡时如果顺手填一下实际用时，攒够 5 次我就能算出你自己做题的真实速度，然后用它来重排后面的任务量。别人拍脑袋定的计划，你可以用数据定。</div>'
           ) +
         '</div>' +
-        (anySamples ? '<div class="footnote">用中位数，避免某一次特殊情况把结果带偏。每项攒满 5 次记录才会给建议值。</div>' : '') +
+        (anySamples ? '<div class="footnote">排计划时，系统用"计划按这个算"那一列把时间换算成题量。' +
+          '你记录满 5 次之后，右边会出现按钮，点一下就能换成你自己实际的用时。' +
+          '（用中位数，避免某一次特殊情况把结果带偏。）</div>' : '') +
       '</div>' +
 
       '<div class="section">' +
@@ -2295,12 +2306,12 @@
     if (act === 'chg-ok') { lastUndo = null; return closeModal(); }
 
     /* ---- 成绩记录 ---- */
-    if (act === 'score-open') return showScoreForm();
+    if (act === 'score-open') return openScoreForm();
     if (act === 'score-cancel') { scoreDraft = null; return closeModal(); }
     if (act === 'score-source') {
       if (!scoreDraft) return;
       scoreDraft.source = el.getAttribute('data-v');
-      return showScoreForm();
+      return renderScoreForm();
     }
     if (act === 'score-save') {
       if (!scoreDraft) return closeModal();

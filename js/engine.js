@@ -575,6 +575,9 @@ window.YT = window.YT || {};
     /* 感受作用在当天总预算上——听课占了大头，只调刷题复盘的话
      * 用户根本感觉不到。变多/变少由外面的 mergeMonotone 保证。 */
     var total = Math.max(0, Math.round(budget.total * factor * moodF));
+    /* 不带感受的版本。套卷要按考试时限排，不能因为"太轻松"就加时间——
+     * 行测就是 120 分钟，而且这块只会越做越快。 */
+    var baseTotal = Math.max(0, Math.round(budget.total * factor));
     var tasks = [];
     var dayIndex = dayDiff(roadmap.startKey || dateKey, dateKey);
     var progress = opts && opts.progress ? opts.progress : courseProgress(state);
@@ -668,8 +671,8 @@ window.YT = window.YT || {};
     /* 冲刺期：周末按模考日排，工作日按模块专练排 */
     if (stageKey === 'sprint') {
       if (weekend) {
-        var rv = Math.min(T(profile, 'maxReviewMinutes'), Math.max(20, Math.round(total * 0.15)));
-        var pool = Math.max(0, total - rv);
+        /* 套卷用 baseTotal（不带感受），复盘用 total（带感受） */
+        var pool = Math.max(0, baseTotal);
         var paper = Math.min(C.sprintPaperMinutes, Math.round(pool * 0.42));
         var essayLeft = pool - paper;
 
@@ -691,6 +694,7 @@ window.YT = window.YT || {};
           lastPaper.minutes += essayLeft;
           lastPaper.amountText = lastPaper.minutes + ' 分钟';
         }
+        var rv = Math.min(T(profile, 'maxReviewMinutes'), Math.max(20, Math.round(total * 0.15)));
         if (rv >= 10) tasks.push(makeReview(dateKey, rv, true));
         return tasks;
       }
@@ -969,22 +973,23 @@ window.YT = window.YT || {};
     var keys = Object.keys(state.days || {}).filter(function (k) {
       return (!todayKey || k <= todayKey) && state.days[k].mood;
     }).sort();
+    if (!keys.length) return { factor: 1, samples: 0, avg: 0, latest: '', on: null };
 
-    var recent = keys.slice(-C.moodWindow);
-    if (!recent.length) return { factor: 1, samples: 0, avg: 0, latest: '' };
-
-    var sum = 0;
-    recent.forEach(function (k) { sum += (YT.MOOD_SCORE[state.days[k].mood] || 0); });
-
-    var avg = sum / recent.length;
-    var factor = 1 + avg * T(state.profile, 'moodWeight');
+    /* 只看最近一次选的感受，不做滚动平均。
+     * 平均的话会出现"我明明选了刚好，怎么还给我减量"——
+     * 因为前几天选的累还在拉低平均值，用户的直觉理解不了。 */
+    var lastKey = keys[keys.length - 1];
+    var last = state.days[lastKey].mood;
+    var score = YT.MOOD_SCORE[last] || 0;
+    var factor = 1 + score * T(state.profile, 'moodWeight');
     factor = Math.max(C.moodFactorMin, Math.min(C.moodFactorMax, factor));
 
     return {
       factor: Math.round(factor * 1000) / 1000,
-      samples: recent.length,
-      avg: Math.round(avg * 100) / 100,
-      latest: state.days[recent[recent.length - 1]].mood,
+      samples: 1,
+      avg: score,
+      latest: last,
+      on: lastKey,
     };
   }
 
