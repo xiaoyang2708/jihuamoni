@@ -17,6 +17,7 @@
   var app = document.getElementById('app');
   var overlay = document.getElementById('overlay');
   var draft = null;
+  var lastEnterKey = '';
 
   /* ---------------------------------------------------------------------
    * 小工具
@@ -1111,19 +1112,22 @@
     /* 听课体检 */
     var lc = rm.lessonCheck;
     var checkHtml = '';
+    /* 老数据里可能没有这个字段（那时候还没算强化期），先兜一下 */
+    var capH = isFinite(lc && lc.capacityMinutes) ? Math.round(lc.capacityMinutes / 60) : 0;
     if (lc && !lc.fit) {
       checkHtml = '<div class="section"><div class="card" style="background:var(--accent-s);box-shadow:none">' +
         '<div style="font-weight:600;color:var(--accent)">课时量偏大</div>' +
         '<div class="tiny" style="margin-top:4px;color:var(--ink-2)">' +
-        '按现在的节数和倍速，听课要 <b>' + Math.round(lc.totalMinutes / 60) + ' 小时</b>，' +
-        '但基础期加强化期一共只容得下 <b>' + Math.round(lc.capacityMinutes / 60) + ' 小时</b>。' +
-        '听不完，而且会挤压刷题时间。可以：提高倍速、减少要听的节数（比如数量关系只挑重点听），或者把每日时长调高。</div>' +
+        '听课要 <b>' + Math.round(lc.totalMinutes / 60) + ' 小时</b>，' +
+        '但基础期加强化期只放得下 <b>' + capH + ' 小时</b>。会挤压刷题。</div>' +
+        '<div class="tiny" style="margin-top:6px;color:var(--ink-3)">' +
+        '办法：提高倍速、少听几节、或者把每天的时间调高。</div>' +
         '<button class="btn sm ghost" style="margin-top:10px" data-act="goto" data-to="settings">去调整</button>' +
         '</div></div>';
     } else if (lc) {
       checkHtml = '<div class="section"><div class="card" style="background:var(--primary-s);box-shadow:none">' +
         '<div class="tiny" style="color:var(--primary)">课时量排得下：听课 ' + Math.round(lc.totalMinutes / 60) +
-        ' 小时，基础期加强化期容得下 ' + Math.round(lc.capacityMinutes / 60) + ' 小时。</div>' +
+        ' 小时，基础期加强化期放得下 ' + capH + ' 小时。</div>' +
         '</div></div>';
     }
 
@@ -1491,14 +1495,12 @@
               '<span class="unit">节</span>' + sub + '</div>';
           }).join('') +
         '</div>' +
-        '<div class="footnote">这是"这个模块你打算听多少节"，不是"你买了多少节"。' +
-        '听完一轮想再听新课或者重听一遍，就把数字往上加，点最下面重排——已经听过的进度不会被清掉，系统接着往下排。</div>' +
+        '<div class="footnote">填你打算听多少节，不是买了多少节。想加课就往上改，已经听过的不重来。</div>' +
       '</div></div>' +
 
       '<div class="section"><p class="section-title">各模块强度</p>' +
         '<div class="card" style="padding-top:4px;padding-bottom:4px">' + strengthRows + '</div>' +
-        '<div class="footnote">强度决定这一科整体占多少份量——同时影响听课节数和刷题量，不是只改听课。' +
-        '"减少"适合你本身有底子的模块，"不学"适合你打算放弃的（比如数量关系）。改完点最下面重排。</div>' +
+        '<div class="footnote">有底子的选「减少」，打算放弃的选「不学」（比如数量关系）。改完点最下面重排。</div>' +
       '</div>' +
 
       '<div class="section"><p class="section-title">高级参数</p><div class="card">' +
@@ -1561,7 +1563,7 @@
            row('moodWeight', '感受调整幅度', 100, '%', '8',
                '选一次"太轻松"或"太难了"，任务量变动多少。') +
            row('maxPracticePerModule', '单条任务最长', 1, '分钟', '120',
-               '一条刷题任务最多这么长，超了就切成几条。这是单条的长度，不是一天能刷多少的上限——想高强度刷题，系统会多切几条出来。') +
+               '超了就拆成几条。不影响一天总共能刷多少。') +
            row('maxLessonUnitsPerDay', '单日听课上限', 1, '节', '3', '一天最多听几节课。') +
            moduleParamRows() +
            '<button class="btn ghost block" style="margin-top:12px" data-act="reset-tuning">全部恢复推荐值</button>';
@@ -1602,10 +1604,10 @@
     return '<div class="param-row"><div class="param-head">' +
       '<span class="param-label">各模块训练参数</span>' +
       '<span class="param-rec">按国考量给的默认值</span></div>' +
-      '<div class="param-note">一组 = 真题套卷里这个模块有多少题，练习就按整组做。' +
-      '目标正确率是"这个模块练到多少算过关"。限时是考试时这个模块分配多少分钟，也是提速的终点。</div>' +
-      rows +
-      '<div class="param-note">数量和常识没有默认目标正确率——很多人直接放弃，或者全靠蒙。建议你自己设一个，或者把强度设成"不学"。</div>' +
+        '<div class="param-note">一组 = 套卷里这个模块有多少题。目标正确率是练到多少算过关，' +
+        '限时是考试时该分到多少分钟。</div>' +
+        rows +
+        '<div class="param-note">数量、常识没给默认正确率，这两个很多人直接放弃。你自己定。</div>' +
     '</div>';
   }
 
@@ -1644,9 +1646,16 @@
     if (!state.profile) { app.className = ''; renderOnboarding(); return; }
     var rtk = todayKey();
     var rstage = (state.days[rtk] || {}).stage || 'base';
-    app.className = 'stage-' + rstage;
     rebuildCourseLabels();
     var s = state.ui.screen || 'today';
+    /* 只在换页时播进入动画。勾个任务就重播一遍的话，看着像闪屏。 */
+    var enterKey = s + '|' + rtk;
+    var entering = enterKey !== lastEnterKey;
+    lastEnterKey = enterKey;
+    app.className = 'stage-' + rstage + (entering ? ' entering' : '');
+    if (entering) {
+      setTimeout(function () { app.classList.remove('entering'); }, 700);
+    }
     if (s === 'today') return renderToday();
     if (s === 'plan') return renderPlan();
     if (s === 'stats') return renderStats();
@@ -2260,6 +2269,10 @@
 
   function boot() {
     if (state.profile) {
+      /* 计划它是一份"算出来的"数据。用回原来的起点重建一遍，
+       * 免得配置文件改了之后，存下来的这份还是旧的、字段对不上。 */
+      var start = (state.roadmap && state.roadmap.startKey) || todayKey();
+      state.roadmap = E.buildRoadmap(state.profile, start);
       dailyRoll();
       save();
     }

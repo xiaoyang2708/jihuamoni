@@ -10,21 +10,21 @@
  * ========================================================================= */
 
 :root {
-  /* 灰阶：文字全部用黑色加透明度做层级，不用不同的灰 */
-  --bg:        #f2f2f7;
+  /* 底色偏暖，配香槟金才不会发灰 */
+  --bg:        #f6f4f1;
   --card:      #ffffff;
-  --ink:       #000000;
-  --ink-2:     rgba(60, 60, 67, .60);
-  --ink-3:     rgba(60, 60, 67, .32);
-  --line:      rgba(60, 60, 67, .12);
+  --ink:       #1a1815;
+  --ink-2:     rgba(58, 53, 46, .62);
+  --ink-3:     rgba(58, 53, 46, .34);
+  --line:      rgba(58, 53, 46, .10);
   /* 彩色：只出现在"状态"上 */
-  --primary:   #007aff;
-  --primary-s: rgba(0, 122, 255, .10);
-  --accent:    #ff9500;
-  --accent-s:  rgba(255, 149, 0, .12);
-  --danger:    #ff3b30;
-  --done:      #007aff;
-  --half:      #ff9500;
+  --primary:   #ab8752;   /* 香槟金 */
+  --primary-s: rgba(171, 135, 82, .13);
+  --accent:    #c07a3c;
+  --accent-s:  rgba(192, 122, 60, .12);
+  --danger:    #b5574a;
+  --done:      #ab8752;
+  --half:      #cf9a3e;   /* 半完成：比主色偏橙，一眼能区分 */
   --radius:    18px;
   --radius-s:  12px;
   --shadow:    none;
@@ -63,21 +63,12 @@ html, body {
 
 .screen { padding: 0 0 24px; }
 
-/* 页面进入：淡入上移，不触发重排 */
-.screen { animation: pageIn .38s var(--ease); }
+/* 只保留"换页时淡入"这一层动画。
+ * 列表逐条浮现做过一版，但每次重渲染都会重播，勾任务时整屏闪一下；
+ * 而且容易卡在动画的起始状态上（元素占着位置却看不见）。
+ * 收益不大、风险不小，去掉。 */
+#app.entering .screen { animation: pageIn .32s var(--ease); }
 @keyframes pageIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: none; }
-}
-
-/* 列表逐条浮现。纯 CSS，没有 JS 参与，错开 35 毫秒 */
-.task, .plan-day, .prog, .metric, .stage { animation: rowIn .42s var(--ease) both; }
-.task:nth-child(1), .plan-day:nth-child(1), .prog:nth-child(1), .metric:nth-child(1), .stage:nth-child(1) { animation-delay: 0s; }
-.task:nth-child(2), .plan-day:nth-child(2), .prog:nth-child(2), .metric:nth-child(2), .stage:nth-child(2) { animation-delay: .035s; }
-.task:nth-child(3), .plan-day:nth-child(3), .prog:nth-child(3), .metric:nth-child(3), .stage:nth-child(3) { animation-delay: .07s; }
-.task:nth-child(4), .plan-day:nth-child(4), .prog:nth-child(4) { animation-delay: .105s; }
-.task:nth-child(n+5), .plan-day:nth-child(n+5), .prog:nth-child(n+5) { animation-delay: .14s; }
-@keyframes rowIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
@@ -87,7 +78,6 @@ html, body {
   background: var(--primary-s);
   border-radius: var(--radius);
   padding: 14px 18px;
-  animation: rowIn .42s var(--ease) both;
 }
 
 .top {
@@ -222,8 +212,7 @@ html, body {
   align-items: flex-start;
   gap: 14px;
   padding: 14px 0;
-  border-bottom: 1px solid rgba(60,60,67,.10);
-  animation: rowIn .42s var(--ease) both;
+  border-bottom: 1px solid rgba(58,53,46,.10);
 }
 .task:last-child { border-bottom: 0; }
 
