@@ -386,5 +386,59 @@ console.log('\n【12】任务字段契约：排出来的任务，统计读得到
   check('学习档案的累计题量算得出来', arch.questionTotal > 0, arch.questionTotal);
 }
 
+/* ======================= 13. 正确率驱动的建议 ======================= */
+console.log('\n【13】有了成绩之后，建议要有依据、要能点');
+{
+  const base = () => ({ profile: Object.assign({}, profile), days: {}, scores: [] });
+
+  check('没录过成绩就不瞎说', A.advice(base(), '2026-10-01').length === 0, '');
+
+  const s1 = base();
+  s1.scores = [{ date: '2026-09-20', source: '模考', rates: { zlfx: 0.60 } }];
+  const a1 = A.advice(s1, '2026-10-01');
+  check('低于目标会建议加强',
+    a1.some(x => x.moduleId === 'zlfx' && x.action === 'set-strong'), JSON.stringify(a1));
+  check('建议里带上具体数字',
+    a1.length && a1[0].text.indexOf('60%') >= 0 && a1[0].text.indexOf('85%') >= 0, a1.length ? a1[0].text : '');
+
+  const s2 = base();
+  s2.profile.strength = { zlfx: 'strong' };
+  s2.scores = [{ date: '2026-09-20', source: '模考', rates: { zlfx: 0.92 } }];
+  const a2 = A.advice(s2, '2026-10-01');
+  check('超过目标又挂着加强 → 建议让出时间',
+    a2.some(x => x.moduleId === 'zlfx' && x.action === 'set-normal'), JSON.stringify(a2));
+
+  const s3 = base();
+  s3.scores = [
+    { date: '2026-09-01', source: '模考', rates: { yy: 0.66 } },
+    { date: '2026-09-10', source: '模考', rates: { yy: 0.67 } },
+    { date: '2026-09-20', source: '模考', rates: { yy: 0.66 } },
+  ];
+  const a3 = A.advice(s3, '2026-10-01');
+  const rel = a3.find(x => x.kind === 'relisten');
+  check('连续三次不动 → 提示回去重听课', !!rel, JSON.stringify(a3));
+  check('这种提示不给动作（不该一键改计划）', rel && rel.action === null, JSON.stringify(rel));
+
+  const s4 = base();
+  s4.scores = [
+    { date: '2026-09-05', source: '模块刷题', rates: { zlfx: 0.88 } },
+    { date: '2026-09-12', source: '模块刷题', rates: { zlfx: 0.90 } },
+    { date: '2026-09-20', source: '真题套卷', rates: { zlfx: 0.45 } },
+  ];
+  const a4 = A.advice(s4, '2026-10-01');
+  check('套卷比平时低一大截 → 提议练专项',
+    a4.some(x => x.kind === 'backToSpecial' && x.action === 'boost'), JSON.stringify(a4));
+
+  const s5 = base();
+  s5.scores = [{ date: '2026-09-20', source: '模考', rates: { sl: 0.20, cs: 0.30 } }];
+  check('没设目标的模块不产生建议', A.advice(s5, '2026-10-01').length === 0,
+    JSON.stringify(A.advice(s5, '2026-10-01')));
+
+  const s6 = base();
+  s6.scores = [{ date: '2026-09-20', source: '模考',
+    rates: { zlfx: 0.30, yy: 0.30, pdlj: 0.30, pdtx: 0.30, pddl: 0.30, zzll: 0.20 } }];
+  check('最多三条，不搞批斗会', A.advice(s6, '2026-10-01').length <= 3, A.advice(s6, '2026-10-01').length);
+}
+
 console.log('\n' + (fail ? '有 ' + fail + ' 条没过 ❌' : '全部通过 ✅'));
 process.exit(fail ? 1 : 0);

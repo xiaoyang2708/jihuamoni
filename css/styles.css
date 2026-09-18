@@ -1136,3 +1136,9 @@ html, body {
 .rec-row .rm { flex: 0 0 16px; color: var(--ink-3); }
 .rec-row .rt { flex: 1; min-width: 0; }
 .rec-row .rv { flex: 0 0 auto; color: var(--ink-3); font-size: 12px; }
+.adv-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 0; border-bottom: 1px solid var(--line);
+}
+.adv-row:last-child { border-bottom: 0; }
+.adv-row .adv-t { flex: 1; min-width: 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }

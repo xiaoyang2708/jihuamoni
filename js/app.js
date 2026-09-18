@@ -2558,6 +2558,7 @@
     var timing = S.moduleTiming(state);
     var scores = state.scores || [];
     var archQ = window.YT.archive.build(state, tk, (state.days[tk] || {}).stage || 'base');
+    var advRows = window.YT.archive.advice(state, tk);
 
     var rows = timing.map(function (r) {
       var med = r.medianPerQuestion === null ? '—' : (Math.round(r.medianPerQuestion * 10) / 10) + ' 分';
@@ -2634,6 +2635,20 @@
               '<div class="tiny muted" style="margin-top:2px">' + esc(parts.join(' · ')) + '</div></div>';
           }).join('') + '</div>' : '') +
       '</div></div>' +
+
+      (advRows.length
+        ? '<div class="section"><p class="section-title">按你的成绩看</p><div class="card">' +
+            advRows.map(function (a) {
+              var label = a.action === 'set-strong' ? '多排点' : a.action === 'set-normal' ? '让出时间' : '练专项';
+              return '<div class="adv-row">' +
+                '<div class="adv-t">' + esc(a.text) + '</div>' +
+                (a.action
+                  ? '<button class="btn sm primary" data-act="adv-do" data-a="' + a.action + '" data-m="' + a.moduleId + '">' + label + '</button>'
+                  : '<span class="tiny muted">记着这一条</span>') +
+              '</div>';
+            }).join('') +
+          '</div></div>'
+        : '') +
 
       '<div class="section">' +
         '<p class="section-title">做题速度</p>' +
@@ -3799,6 +3814,23 @@
 
     /* ---- 成绩记录 ---- */
     if (act === 'score-open') return openScoreForm();
+    /* 按建议调整：只动这一科的强度/权重，改完重排 */
+    if (act === 'adv-do') {
+      var aAct = el.getAttribute('data-a');
+      var aMid = el.getAttribute('data-m');
+      if (!aMid) return;
+      if (aAct === 'set-strong') {
+        state.profile.strength[aMid] = 'strong';
+      } else if (aAct === 'set-normal') {
+        state.profile.strength[aMid] = 'normal';
+      } else if (aAct === 'boost') {
+        state.profile.practiceBoost = state.profile.practiceBoost || {};
+        state.profile.practiceBoost[aMid] = 1.4;
+      }
+      save();
+      generateWithOverlay(function () { toast('已按建议调整，后面的安排重排好了'); });
+      return;
+    }
     if (act === 'score-cancel') { scoreDraft = null; return closeModal(); }
     if (act === 'score-source') {
       if (!scoreDraft) return;

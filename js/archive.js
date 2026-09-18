@@ -283,11 +283,108 @@ window.YT = window.YT || {};
       .sort(function (a, b) { return b.days - a.days; });
   }
 
+  /* ---------------------------------------------------------------------
+   * 正确率驱动的建议（D7 + C7b）
+   *
+   * 有了成绩数据之后，系统能说点有依据的话，而不是"多练练"。
+   * 四条规则，每条都必须带一个能点的动作——光说"你该加强资料"没用。
+   * ------------------------------------------------------------------- */
+
+  function pctText(v) { return Math.round(v * 100) + '%'; }
+
+  function advice(state, todayKey) {
+    var out = [];
+    var scores = state.scores || [];
+    if (!scores.length) return out;
+
+    var profile = state.profile || {};
+    /* 每个模块按时间顺序的成绩 */
+    var byMod = {};
+    scores.forEach(function (sc) {
+      Object.keys(sc.rates || {}).forEach(function (id) {
+        var v = sc.rates[id];
+        if (v === null || v === undefined || v === '') return;
+        (byMod[id] = byMod[id] || []).push({ date: sc.date, v: Number(v), src: sc.source || '' });
+      });
+    });
+
+    Object.keys(byMod).forEach(function (id) {
+      var m = YT.MODULE_BY_ID[id];
+      if (!m || m.essay) return;
+      var tgt = YT.moduleParam(m, profile, 'targetRate');
+      if (tgt === null || tgt === undefined) return;   // 数量和常识没设目标，不猜
+
+      var list = byMod[id];
+      var last = list[list.length - 1];
+      var cur = (profile.strength && profile.strength[id]) || 'normal';
+
+      /* 1）明显低于目标，而且还没加强过 → 建议加强 */
+      if (last.v < tgt - 0.10 && cur !== 'strong' && cur !== 'skip') {
+        out.push({
+          kind: 'strengthen', moduleId: id, short: m.short, action: 'set-strong',
+          text: m.short + '最近一次 ' + pctText(last.v) + '，目标 ' + pctText(tgt) +
+                '。差得有点多，要不要给它多排点题？',
+        });
+      }
+
+      /* 2）稳定超过目标，但强度还挂着"加强" → 把时间让出来 */
+      if (last.v >= tgt + 0.05 && cur === 'strong') {
+        out.push({
+          kind: 'lighten', moduleId: id, short: m.short, action: 'set-normal',
+          text: m.short + '已经稳定在 ' + pctText(last.v) + '，超过目标 ' + pctText(tgt) +
+                '。可以把它的时间让给别的科了。',
+        });
+      }
+
+      /* 3）连着三次几乎没动，而且没到目标 → 可能是方法问题，不是熟练度问题 */
+      if (list.length >= 3) {
+        var last3 = list.slice(-3);
+        var vals = last3.map(function (x) { return x.v; });
+        var mx = Math.max.apply(null, vals), mn = Math.min.apply(null, vals);
+        if (mx - mn <= 0.04 && mx < tgt - 0.05) {
+          out.push({
+            kind: 'relisten', moduleId: id, short: m.short, action: null,
+            text: m.short + '连着三次都在 ' + pctText(mx) + ' 附近没动。这多半不是练得少，' +
+                  '是方法没对上——回去把这部分的课重听一遍，比再刷一百题管用。',
+          });
+        }
+      }
+    });
+
+    /* 4）套卷里某一科明显掉链子 → 提议回炉（C7b） */
+    var papers = scores.filter(function (sc) { return sc.source === '真题套卷'; });
+    var lastPaper = papers[papers.length - 1];
+    if (lastPaper) {
+      Object.keys(lastPaper.rates || {}).forEach(function (id) {
+        var m = YT.MODULE_BY_ID[id];
+        if (!m || m.essay) return;
+        var v = lastPaper.rates[id];
+        if (v === null || v === undefined || v === '') return;
+        v = Number(v);
+        /* 跟平时比。平时 = 非套卷的记录 */
+        var base = (byMod[id] || []).filter(function (x) { return x.src !== '真题套卷'; });
+        if (base.length < 2) return;
+        var avg = base.reduce(function (a, x) { return a + x.v; }, 0) / base.length;
+        if (avg - v >= 0.15) {
+          out.push({
+            kind: 'backToSpecial', moduleId: id, short: m.short, action: 'boost',
+            text: '这次套卷' + m.short + '只有 ' + pctText(v) + '，比平时低了 ' +
+                  Math.round((avg - v) * 100) + ' 个点。要不要先回去练一阵专项，套卷往后放放？',
+          });
+        }
+      });
+    }
+
+    /* 一次最多说三条，不然成了批斗会 */
+    return out.slice(0, 3);
+  }
+
   YT.archive = {
     build: build,
     lessonWhere: lessonWhere,
     latestRates: latestRates,
     roundSummary: roundSummary,
     selfAddedByModule: selfAddedByModule,
+    advice: advice,
   };
 })(window.YT);
