@@ -89,6 +89,33 @@
 
   function reRender() { render(); }
 
+  /* ---------------------------------------------------------------------
+   * 课的"第几节"是算出来的，不是存下来的
+   * 任务的存储里只记"这个模块听 0.5 节"，编号在显示时按顺序推。
+   * 这样删掉中间一节、再插回来、或者在末尾接新课，编号都会自己对齐。
+   * ------------------------------------------------------------------- */
+
+  var courseLabels = {};
+
+  function rebuildCourseLabels() {
+    var pos = {};
+    courseLabels = {};
+    Object.keys(state.days || {}).sort().forEach(function (k) {
+      (state.days[k].tasks || []).forEach(function (t) {
+        if (t.kind !== 'course') return;
+        var from = pos[t.moduleId] || 0;
+        var units = t.units || 1;
+        courseLabels[t.id] = window.YT.engine.lessonLabel(from, units);
+        pos[t.moduleId] = from + units;
+      });
+    });
+  }
+
+  function taskDetail(t) {
+    if (t.kind === 'course' && courseLabels[t.id]) return courseLabels[t.id];
+    return t.detail || t.amountText || '';
+  }
+
   function go(screen) {
     state.ui.screen = screen;
     moodPreview = null;
@@ -542,8 +569,8 @@
       body += '</div><div class="footnote">建议至少留 1 天。休息日不算漏打卡，连续天数不会断。</div>';
 
     } else if (step === 5) {
-      body = '<h2>你手上的课有多少节？</h2>' +
-             '<p class="lead">按模块填，不知道就先留默认值，以后随时能改。</p>' +
+      body = '<h2>每个模块你打算听多少节课？</h2>' +
+             '<p class="lead">不是"你买了多少"，是"你打算听多少"。以后听完想加，把数字往上改就行。</p>' +
              '<div class="numlist">';
       MODULES.forEach(function (m) {
         var v = draft.courseUnits[m.id];
@@ -628,7 +655,7 @@
         '<div class="task-title">' + esc(t.title) +
           '<button class="del" data-act="del-task" data-date="' + dateKey + '" data-task="' + esc(t.id) + '" title="删掉这项">×</button>' +
         '</div>' +
-        (t.detail ? '<div class="task-detail">' + esc(t.detail) + '</div>' : '') +
+        (taskDetail(t) ? '<div class="task-detail">' + esc(taskDetail(t)) + '</div>' : '') +
         '<div class="task-meta">' +
           '<span>' + esc(t.amountText || '') + '</span>' +
           '<span>约 ' + fmtMinutes(t.minutes) + '</span>' +
@@ -826,7 +853,7 @@
     { id: 'slw',  name: '申论' },
   ];
 
-  var extraDraft = { group: null, moduleId: null, essayKind: 'small', type: 'practice' };
+  var extraDraft = { group: null, moduleId: null, type: 'practice' };
 
   /* 往哪一天加。今日页默认今天，计划页点某天的"＋"就指向那一天。 */
   function extraTargetDay() { return state.ui.extraDate || todayKey(); }
@@ -846,12 +873,26 @@
           return '<button class="chip ' + (extraDraft.moduleId === id ? 'on' : '') + '" data-act="extra-module" data-v="' + id + '">' + esc(m.short.replace('判推', '')) + '</button>';
         }).join('') + '</div>';
     }
-    /* 申论没有"几组"，用小题/大作文区分 */
+
+    /* 申论也有课，所以三种都要给：听课 / 小题 / 大作文 */
+    var typeRow = '';
     if (g === 'slw') {
-      sub += '<div class="chips" style="margin-top:8px">' +
-        '<button class="chip ' + (extraDraft.essayKind === 'small' ? 'on' : '') + '" data-act="extra-essay" data-v="small">小题 1 道</button>' +
-        '<button class="chip ' + (extraDraft.essayKind === 'big' ? 'on' : '') + '" data-act="extra-essay" data-v="big">大作文 1 篇</button>' +
+      typeRow = '<div class="chips" style="margin-top:10px">' +
+        typeChip('course', '听课') + typeChip('small', '小题') + typeChip('big', '大作文') +
       '</div>';
+    } else if (g) {
+      typeRow = '<div class="chips" style="margin-top:10px">' +
+        typeChip('practice', '刷题') + typeChip('course', '听课') +
+      '</div>';
+    }
+
+    if (g === 'slw') {
+      if (extraDraft.type === 'course') {
+        var effS = window.YT.engine.effectiveLesson(state.profile);
+        sub += '<div class="ef-qty"><label>听几节</label>' +
+          '<input type="number" min="0.5" step="0.5" value="1" data-act="extra-qty" data-per="' + effS + '" data-size="1">' +
+          '<span>节 · 约 <b id="ef-min">' + Math.round(effS) + '</b> 分钟</span></div>';
+      }
     } else if (g && (g !== 'pd' || extraDraft.moduleId)) {
       var m2 = MODULE_BY_ID[extraDraft.moduleId || g];
       var dstage = (state.days[extraTargetDay()] || {}).stage || 'base';
@@ -873,14 +914,6 @@
       }
     }
 
-    /* 刷题 / 听课 二选一（申论没有这个切换） */
-    var typeRow = (g && g !== 'slw')
-      ? '<div class="chips" style="margin-top:10px">' +
-          '<button class="chip ' + (extraDraft.type === 'practice' ? 'on' : '') + '" data-act="extra-type" data-v="practice">刷题</button>' +
-          '<button class="chip ' + (extraDraft.type === 'course' ? 'on' : '') + '" data-act="extra-type" data-v="course">听课</button>' +
-        '</div>'
-      : '';
-
     var canAdd = g && (g === 'slw' || extraDraft.moduleId || g !== 'pd');
     return '<div class="extra-form">' +
       '<div class="ef-title">我想加一项</div>' +
@@ -892,6 +925,10 @@
         '<button class="btn sm primary grow" data-act="extra-add">加进来</button>' +
       '</div>' +
     '</div>';
+  }
+
+  function typeChip(v, label) {
+    return '<button class="chip ' + (extraDraft.type === v ? 'on' : '') + '" data-act="extra-type" data-v="' + v + '">' + label + '</button>';
   }
 
   function stageLabel(key) {
@@ -1098,7 +1135,7 @@
                : t.status === 'half' ? '<i class="pd-mark half">◐</i>' : '';
       return '<div class="pd-task">' +
         '<span class="pd-t">' + mark + esc(t.title) + '</span>' +
-        '<span class="pd-d">' + esc(t.detail || t.amountText || '') + '</span>' +
+        '<span class="pd-d">' + esc(taskDetail(t)) + '</span>' +
         '<span class="pd-min">' + t.minutes + ' 分</span>' +
         '<button class="del" data-act="del-task" data-date="' + day.date + '" data-task="' + esc(t.id) + '" title="删掉这项">×</button>' +
       '</div>';
@@ -1291,7 +1328,8 @@
               '<span class="unit">节</span></div>';
           }).join('') +
         '</div>' +
-        '<div class="footnote">填你手上那套课的实际节数，不知道大概多少就先留默认值。改完点最下面重排，基础期长度会跟着变。</div>' +
+        '<div class="footnote">这是"这个模块你打算听多少节"，不是"你买了多少节"。' +
+        '听完一轮想再听新课或者重听一遍，就把数字往上加，点最下面重排——已经听过的进度不会被清掉，系统接着往下排。</div>' +
       '</div></div>' +
 
       '<div class="section"><p class="section-title">各模块强度</p>' +
@@ -1435,6 +1473,7 @@
     var rtk = todayKey();
     var rstage = (state.days[rtk] || {}).stage || 'base';
     app.className = 'stage-' + rstage;
+    rebuildCourseLabels();
     var s = state.ui.screen || 'today';
     if (s === 'today') return renderToday();
     if (s === 'plan') return renderPlan();
@@ -1594,7 +1633,7 @@
     if (act === 'extra-open') {
       state.ui.addingExtra = true;
       state.ui.extraDate = tk;
-      extraDraft = { group: null, moduleId: null, essayKind: 'small' };
+      extraDraft = { group: null, moduleId: null, type: 'practice' };
       return reRender();
     }
     if (act === 'extra-open-day') {
@@ -1606,7 +1645,7 @@
       }
       state.ui.addingExtra = true;
       state.ui.extraDate = od;
-      extraDraft = { group: null, moduleId: null, essayKind: 'small' };
+      extraDraft = { group: null, moduleId: null, type: 'practice' };
       return reRender();
     }
     if (act === 'extra-cancel') {
@@ -1626,10 +1665,6 @@
       extraDraft.moduleId = el.getAttribute('data-v');
       return reRender();
     }
-    if (act === 'extra-essay') {
-      extraDraft.essayKind = el.getAttribute('data-v');
-      return reRender();
-    }
     if (act === 'extra-type') {
       extraDraft.type = el.getAttribute('data-v');
       return reRender();
@@ -1639,7 +1674,7 @@
       var qm = el.getAttribute('data-m');
       state.ui.addingExtra = true;
       state.ui.extraDate = tk;
-      extraDraft = { group: qm, moduleId: qm, essayKind: 'small', type: 'practice' };
+      extraDraft = { group: qm, moduleId: qm, type: 'practice' };
       window.scrollTo(0, document.body.scrollHeight);
       return reRender();
     }
@@ -1655,8 +1690,22 @@
       /* 休息日上加了任务，就把它当成学习日 */
       if (dayX.isRest) dayX.isRest = false;
       var task = null;
-      if (extraDraft.group === 'slw') {
-        var big = extraDraft.essayKind === 'big';
+      if (extraDraft.group === 'slw' && extraDraft.type === 'course') {
+        var effS2 = window.YT.engine.effectiveLesson(state.profile);
+        var qe2 = document.querySelector('[data-act="extra-qty"]');
+        var su = Math.max(0.5, Math.round((Number(qe2 && qe2.value) || 1) * 2) / 2);
+        task = {
+          id: 'extra-' + Date.now(),
+          moduleId: 'slw', moduleName: '申论', kind: 'course',
+          title: '申论 · 听课（自己加的）',
+          detail: su + ' 节',
+          amounts: su, units: su,
+          amountText: su + ' 节',
+          minutes: Math.round(su * effS2),
+          status: 'todo', actualMinutes: null, userAdded: true,
+        };
+      } else if (extraDraft.group === 'slw') {
+        var big = extraDraft.type === 'big';
         task = {
           id: 'extra-' + Date.now(),
           moduleId: 'slw', moduleName: '申论', kind: 'essay',
@@ -1705,7 +1754,7 @@
       dayX.tasks.push(task);
       state.ui.addingExtra = false;
       state.ui.extraDate = null;
-      extraDraft = { group: null, moduleId: null, essayKind: 'small' };
+      extraDraft = { group: null, moduleId: null, type: 'practice' };
       save();
       toast('加进去了。这个不算在系统完成率里');
       return reRender();

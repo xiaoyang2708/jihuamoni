@@ -1069,6 +1069,7 @@ window.YT = window.YT || {};
     studyableModules: studyableModules,
     strengthFactor: strengthFactor,
     buildTasks: buildTasks,
+    lessonLabel: lessonLabel,
     ensureAhead: ensureAhead,
     dayStats: dayStats,
     weekStats: weekStats,
