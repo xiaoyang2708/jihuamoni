@@ -440,5 +440,58 @@ console.log('\n【13】有了成绩之后，建议要有依据、要能点');
   check('最多三条，不搞批斗会', A.advice(s6, '2026-10-01').length <= 3, A.advice(s6, '2026-10-01').length);
 }
 
+/* ======================= 14. 各科档位（只显示，不锁） ======================= */
+console.log('\n【14】档位是导航，不是关卡');
+{
+  const base = () => ({ profile: Object.assign({}, profile), days: {}, scores: [] });
+
+  const l0 = A.moduleLevels(base(), '2026-10-01');
+  check('没数据时不会瞎给档位', l0.every(x => x.level === 0), JSON.stringify(l0.map(x => x.level)));
+
+  const s1 = base();
+  s1.days['2026-09-01'] = { date: '2026-09-01', isRest: false, stage: 'base', mood: null,
+    tasks: [{ id: 'p1', moduleId: 'zlfx', moduleName: '资料分析', kind: 'practice',
+      title: '资料 · 刷题', amount: 400, sets: 20, minutes: 500, status: 'done' }] };
+  const l1 = A.moduleLevels(s1, '2026-10-01').filter(x => x.moduleId === 'zlfx')[0];
+  check('光练不录成绩也能进第二档', l1.level === 2, JSON.stringify(l1));
+
+  const s2 = base();
+  s2.scores = [{ date: '2026-09-20', source: '模考', rates: { zlfx: 0.86 } }];
+  const l2 = A.moduleLevels(s2, '2026-10-01').filter(x => x.moduleId === 'zlfx')[0];
+  check('到目标就进"限时提速"档', l2.level === 3, JSON.stringify(l2));
+  check('这一档说人话', l2.note.indexOf('压时间') >= 0, l2.note);
+
+  const s3 = base();
+  s3.scores = [
+    { date: '2026-09-10', source: '模考', rates: { zlfx: 0.90 } },
+    { date: '2026-09-20', source: '模考', rates: { zlfx: 0.92 } },
+  ];
+  const l3 = A.moduleLevels(s3, '2026-10-01').filter(x => x.moduleId === 'zlfx')[0];
+  check('连续两次稳在目标上 → 保持手感', l3.level === 4, JSON.stringify(l3));
+
+  const s4 = base();
+  s4.scores = [{ date: '2026-09-20', source: '模考', rates: { zlfx: 0.78 } }];
+  const l4 = A.moduleLevels(s4, '2026-10-01').filter(x => x.moduleId === 'zlfx')[0];
+  check('差一点 → 第二档', l4.level === 2, JSON.stringify(l4));
+  check('把差距说成数字', l4.gap === 7, l4.gap);
+
+  const s5 = base();
+  s5.scores = [
+    { date: '2026-09-01', source: '模考', rates: { yy: 0.66 } },
+    { date: '2026-09-10', source: '模考', rates: { yy: 0.67 } },
+    { date: '2026-09-20', source: '模考', rates: { yy: 0.66 } },
+  ];
+  const l5 = A.moduleLevels(s5, '2026-10-01').filter(x => x.moduleId === 'yy')[0];
+  check('平台期不会卡在某一档不动', l5.level >= 2, JSON.stringify(l5));
+  check('平台期说的是"该换练法"',
+    l5.note.indexOf('换练法') >= 0 && l5.note.indexOf('别再加量') >= 0, l5.note);
+
+  const s6 = base();
+  s6.profile.strength = { sl: 'skip' };
+  const l6 = A.moduleLevels(s6, '2026-10-01').map(x => x.moduleId);
+  check('标记"不学"的科目不出现', l6.indexOf('sl') === -1, l6.join(','));
+  check('申论不参与（它不按正确率算）', l6.indexOf('slw') === -1, l6.join(','));
+}
+
 console.log('\n' + (fail ? '有 ' + fail + ' 条没过 ❌' : '全部通过 ✅'));
 process.exit(fail ? 1 : 0);

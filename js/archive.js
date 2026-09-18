@@ -379,6 +379,93 @@ window.YT = window.YT || {};
     return out.slice(0, 3);
   }
 
+  /* ---------------------------------------------------------------------
+   * 模块档位（B 方案：只显示"你在哪一档"，不锁任何东西）
+   *
+   * 刻意不做成"达标才能升级"的门票：
+   *   没录成绩 → 按练了多少组估档位（不录数据的人照样能往下走）
+   *   录了成绩 → 按最近正确率算
+   *   平台期   → 档位不会卡死，提示换成"该换练法了"（降档不等于惩罚）
+   * ------------------------------------------------------------------- */
+
+  var LEVEL_NAME = ['还没开始', '认识题型', '专项强化', '限时提速', '保持手感'];
+
+  function moduleLevels(state, todayKey) {
+    var E2 = YT.engine;
+    var profile = state.profile || {};
+    var sets = E2.moduleSets(state);
+    var need = YT.CONFIG.levelSets || 12;
+
+    /* 每个模块的正确率序列（按录入顺序） */
+    var seq = {};
+    (state.scores || []).forEach(function (sc) {
+      Object.keys(sc.rates || {}).forEach(function (id) {
+        var v = sc.rates[id];
+        if (v === null || v === undefined || v === '') return;
+        (seq[id] = seq[id] || []).push(Number(v));
+      });
+    });
+
+    return YT.MODULES.filter(function (m) {
+      /* 不学的模块不列出来 */
+      return !m.essay && E2.targetUnits(m, profile) > 0;
+    }).map(function (m) {
+      var tgt = YT.moduleParam(m, profile, 'targetRate');
+      var n = Math.round((sets[m.id] || 0) * 10) / 10;
+      var list = seq[m.id] || [];
+      var last = list.length ? list[list.length - 1] : null;
+      var before = list.length > 1 ? list[list.length - 2] : null;
+      var lv, note, gap = null;
+
+      if (tgt === null || tgt === undefined) {
+        /* 数量和常识：没设目标，只按练的量给个粗略档位 */
+        lv = n > 0 ? (n >= need ? 2 : 1) : 0;
+        note = '这科没设目标，按练的量走';
+      } else if (last === null) {
+        lv = n > 0 ? (n >= need ? 2 : 1) : 0;
+        note = n > 0 ? '还没录过正确率，先按练的量走' : '还没开始练';
+      } else if (last >= tgt + 0.05 && before !== null && before >= tgt + 0.05) {
+        lv = 4;
+        note = '连续两次稳在目标以上，做一组保持就行';
+      } else if (last >= tgt) {
+        lv = 3;
+        gap = null;
+        note = '已经到目标，可以开始压时间了';
+      } else if (last >= tgt - 0.10) {
+        lv = 2;
+        gap = Math.round((tgt - last) * 100);
+        note = '还差 ' + gap + ' 个点到 ' + Math.round(tgt * 100) + '%';
+      } else {
+        lv = 1;
+        gap = Math.round((tgt - last) * 100);
+        note = '离目标还有 ' + gap + ' 个点，先把题型认全、别急着掐表';
+      }
+
+      /* 练了很多组但正确率一直不动 → 这就是平台期，给一句实话 */
+      if (list.length >= 3) {
+        var l3 = list.slice(-3);
+        var mx = Math.max.apply(null, l3), mn = Math.min.apply(null, l3);
+        if (mx - mn <= 0.04 && tgt !== null && tgt !== undefined && mx < tgt) {
+          note = '练了 ' + n + ' 组，正确率一直在 ' + Math.round(mx * 100) +
+                 '% 附近——该换练法了（回去把课重听一遍，或者换批题），别再加量';
+        }
+      }
+
+      return {
+        moduleId: m.id,
+        short: m.short,
+        name: m.name,
+        level: lv,
+        levelName: LEVEL_NAME[lv],
+        sets: n,
+        lastRate: last,
+        targetRate: (tgt === null || tgt === undefined) ? null : tgt,
+        gap: gap,
+        note: note,
+      };
+    });
+  }
+
   YT.archive = {
     build: build,
     lessonWhere: lessonWhere,
@@ -386,5 +473,7 @@ window.YT = window.YT || {};
     roundSummary: roundSummary,
     selfAddedByModule: selfAddedByModule,
     advice: advice,
+    moduleLevels: moduleLevels,
+    LEVEL_NAME: LEVEL_NAME,
   };
 })(window.YT);

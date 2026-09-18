@@ -2559,6 +2559,7 @@
     var scores = state.scores || [];
     var archQ = window.YT.archive.build(state, tk, (state.days[tk] || {}).stage || 'base');
     var advRows = window.YT.archive.advice(state, tk);
+    var lvRows = window.YT.archive.moduleLevels(state, tk);
 
     var rows = timing.map(function (r) {
       var med = r.medianPerQuestion === null ? '—' : (Math.round(r.medianPerQuestion * 10) / 10) + ' 分';
@@ -2649,6 +2650,18 @@
             }).join('') +
           '</div></div>'
         : '') +
+
+      '<div class="section"><p class="section-title">各科在第几档</p><div class="card">' +
+        lvRows.map(function (r) {
+          return '<div class="lv-row">' +
+            '<span class="lv-n">' + esc(r.short) + '</span>' +
+            '<span class="lv-b lv' + r.level + '">' + esc(r.levelName) + '</span>' +
+            '<span class="lv-s">' + esc(r.note) + '</span>' +
+          '</div>';
+        }).join('') +
+        '<div class="footnote">只是告诉你现在在哪一档、下一步该干什么，不是关卡——' +
+        '不会因为你没到目标就卡着不让往下走。没录成绩的科目按练的量估。</div>' +
+      '</div></div>' +
 
       '<div class="section">' +
         '<p class="section-title">做题速度</p>' +
