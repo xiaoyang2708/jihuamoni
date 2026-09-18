@@ -1100,3 +1100,39 @@ html, body {
 .ord-mv:active { background: #f4f0e8; }
 .ord-mv:disabled { opacity: .25; cursor: default; }
 .ord-hint { flex: 0 0 auto; width: 72px; text-align: right; font-size: 12px; color: var(--ink-3); }
+/* ---------- 我的记录 ---------- */
+
+.heatmap { display: flex; gap: 3px; overflow-x: auto; padding: 2px 0 4px; }
+.hm-col { display: flex; flex-direction: column; gap: 3px; }
+.hm-cell {
+  width: 11px; height: 11px; border-radius: 3px;
+  background: #efeae1; display: block;
+}
+.hm-cell.blank { background: transparent; }
+/* 没学的那天用最淡的底色——不刺眼，也别让人觉得自己在还债 */
+.hm-cell.lv0 { background: #efeae1; }
+.hm-cell.lv1 { background: #e6d5b4; }
+.hm-cell.lv2 { background: var(--primary); opacity: .55; }
+.hm-cell.lv3 { background: var(--primary); opacity: .8; }
+.hm-cell.lv4 { background: var(--primary); }
+.hm-legend {
+  display: flex; align-items: center; gap: 4px; justify-content: flex-end;
+  font-size: 11px; color: var(--ink-3); margin-top: 2px;
+}
+
+.cal-cell.rlv0 { background: #faf8f5; }
+.cal-cell.rlv1 { background: #f7f0e2; }
+.cal-cell.rlv2 { background: #f0e2c8; }
+.cal-cell.rlv3 { background: #e8d4ac; }
+.cal-cell.rlv4 { background: #dfc48c; }
+
+.rec-day { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.rec-day-head { font-size: 13px; color: var(--ink-2); margin-bottom: 8px; }
+.rec-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 5px 0; font-size: 13px; border-bottom: 1px solid var(--line);
+}
+.rec-row:last-child { border-bottom: 0; }
+.rec-row .rm { flex: 0 0 16px; color: var(--ink-3); }
+.rec-row .rt { flex: 1; min-width: 0; }
+.rec-row .rv { flex: 0 0 auto; color: var(--ink-3); font-size: 12px; }

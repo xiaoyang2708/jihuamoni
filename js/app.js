@@ -2663,6 +2663,230 @@
   }
 
   /* ---------------------------------------------------------------------
+   * 记录：给用户看"我做过什么"
+   *
+   * 三条保护（都是用户定的）：
+   *   只画"第一次打卡到现在"这一段 —— 开始之前的日子不画，
+   *   否则一个刚上手的人看到的是一片空白，那不是激励是打击
+   *   强调已有的，不强调缺的 —— 没学的日子用最淡的底色
+   *   不做里程碑 —— 花样太多
+   * ------------------------------------------------------------------- */
+
+  function firstStudyKey() {
+    var keys = Object.keys(state.days || {}).sort();
+    for (var i = 0; i < keys.length; i++) {
+      var day = state.days[keys[i]];
+      if (day.isRest) continue;
+      if ((day.tasks || []).some(function (t) { return t.status !== 'todo'; })) return keys[i];
+    }
+    return null;
+  }
+
+  /* 累计做过什么。只算打完卡的（半完成按一半）。 */
+  function recordTotals(tk) {
+    var out = { questions: 0, lessons: 0, minutes: 0, papers: 0 };
+    Object.keys(state.days || {}).sort().forEach(function (k) {
+      if (tk && k > tk) return;
+      (state.days[k].tasks || []).forEach(function (t) {
+        var cr = t.status === 'done' ? 1 : t.status === 'half' ? 0.5 : 0;
+        if (!cr) return;
+        out.minutes += t.minutes * cr;
+        if (t.kind === 'practice') out.questions += (t.amount || 0) * cr;
+        else if (t.kind === 'essay') out.questions += (t.amounts || 1) * cr;
+        else if (t.kind === 'course') out.lessons += (t.units || 1) * cr;
+        else if (t.kind === 'paperset') out.papers += cr;
+      });
+    });
+    out.questions = Math.round(out.questions);
+    out.lessons = Math.round(out.lessons * 10) / 10;
+    out.minutes = Math.round(out.minutes);
+    out.papers = Math.round(out.papers * 10) / 10;
+    return out;
+  }
+
+  /* 某一天学了多久（分钟） */
+  function dayMinutes(k) {
+    var day = state.days[k];
+    if (!day) return 0;
+    var m = 0;
+    (day.tasks || []).forEach(function (t) {
+      var cr = t.status === 'done' ? 1 : t.status === 'half' ? 0.5 : 0;
+      if (cr) m += t.minutes * cr;
+    });
+    return Math.round(m);
+  }
+
+  /* 热力图：一格一天。颜色深浅按当天学了多久，用固定的档位，
+   * 这样不同周之间可以直接比。 */
+  function heatLevel(mins) {
+    if (!mins) return 0;
+    if (mins < 60) return 1;
+    if (mins < 150) return 2;
+    if (mins < 300) return 3;
+    return 4;
+  }
+
+  function heatmapHtml(tk) {
+    var first = firstStudyKey();
+    if (!first) {
+      return '<div class="tiny muted" style="padding:8px 0">打过一次卡，这里就开始有颜色了。</div>';
+    }
+    var lastD = E.parseKey(tk);
+    /* 第一列对齐到那一周的周一，最后一列画到本周 */
+    var firstD = E.parseKey(first);
+    var back = firstD.getDay() === 0 ? 6 : firstD.getDay() - 1;
+    var colStart = E.addDays(firstD, -back);
+    var endBack = lastD.getDay() === 0 ? 6 : lastD.getDay() - 1;
+    var lastColStart = E.addDays(lastD, -endBack);
+
+    var cols = [];
+    var d = colStart;
+    var guard = 0;
+    while (d <= lastColStart && guard < 60) {
+      guard++;
+      var cells = '';
+      for (var w = 0; w < 7; w++) {
+        var dd = E.addDays(d, w);
+        var k = E.toKey(dd);
+        if (k > tk || k < first) {
+          cells += '<span class="hm-cell blank"></span>';
+          continue;
+        }
+        var mins = dayMinutes(k);
+        cells += '<span class="hm-cell lv' + heatLevel(mins) + '" title="' +
+          fmtDate(k, false) + (mins ? '　' + fmtMinutes(mins) : '　没学') + '"></span>';
+      }
+      cols.push('<span class="hm-col">' + cells + '</span>');
+      d = E.addDays(d, 7);
+    }
+
+    return '<div class="heatmap">' + cols.join('') + '</div>' +
+      '<div class="hm-legend">少' +
+        '<span class="hm-cell lv1"></span><span class="hm-cell lv2"></span>' +
+        '<span class="hm-cell lv3"></span><span class="hm-cell lv4"></span>多' +
+      '</div>';
+  }
+
+  function recMonthKey(tk) { return state.ui.recMonth || tk.slice(0, 7); }
+
+  function shiftMonth(mkey, delta) {
+    var y = Number(mkey.slice(0, 4)), m = Number(mkey.slice(5, 7)) + delta;
+    while (m < 1) { m += 12; y--; }
+    while (m > 12) { m -= 12; y++; }
+    return y + '-' + (m < 10 ? '0' + m : m);
+  }
+
+  /* 按天记录：这个月每天完成了多少，点开看那天做了什么 */
+  function recordCalendarHtml(tk) {
+    var mkey = recMonthKey(tk);
+    var y = Number(mkey.slice(0, 4)), mo = Number(mkey.slice(5, 7));
+    var firstD = new Date(y, mo - 1, 1);
+    var lastD = new Date(y, mo, 0);
+    var back = firstD.getDay() === 0 ? 6 : firstD.getDay() - 1;
+    var gridStart = E.addDays(firstD, -back);
+    var fwd = lastD.getDay() === 0 ? 0 : 7 - lastD.getDay();
+    var gridEnd = E.addDays(lastD, fwd);
+
+    var heads = ['一', '二', '三', '四', '五', '六', '日']
+      .map(function (w) { return '<div class="cal-head">' + w + '</div>'; }).join('');
+
+    var cells = '';
+    var d = gridStart, guard = 0;
+    while (d <= gridEnd && guard < 45) {
+      guard++;
+      var k = E.toKey(d);
+      if (d.getMonth() !== mo - 1 || k > tk) {
+        cells += '<div class="cal-cell out"></div>';
+      } else {
+        var mins = dayMinutes(k);
+        var isRest = E.isRest(d, state.profile);
+        var cls = 'cal-cell rlv' + heatLevel(mins);
+        if (isRest) cls += ' rest';
+        if (k === tk) cls += ' today';
+        if (state.ui.recDay === k) cls += ' sel';
+        var label = mins ? Math.round(mins / 60 * 10) / 10 + 'h' : (isRest ? '休' : '');
+        cells += '<button class="' + cls + '" data-act="rec-pick" data-v="' + k + '">' +
+          '<span class="cal-d">' + d.getDate() + '</span>' +
+          '<span class="cal-mini">' + label + '</span></button>';
+      }
+      d = E.addDays(d, 1);
+    }
+
+    var canNext = mkey < tk.slice(0, 7);
+    return '<div class="row between" style="align-items:center;margin-bottom:8px">' +
+        '<button class="ord-mv" data-act="rec-month" data-v="-1" aria-label="上个月">←</button>' +
+        '<span style="font-size:14px;font-weight:600">' + y + ' 年 ' + mo + ' 月</span>' +
+        '<button class="ord-mv" data-act="rec-month" data-v="1"' + (canNext ? '' : ' disabled') + ' aria-label="下个月">→</button>' +
+      '</div>' +
+      '<div class="cal-grid">' + heads + cells + '</div>';
+  }
+
+  /* 选中那天的明细 */
+  function recordDayHtml() {
+    var k = state.ui.recDay;
+    if (!k || !state.days[k]) return '';
+    var day = state.days[k];
+    var st = { done: [], half: [], skip: [], todo: [] };
+    (day.tasks || []).forEach(function (t) {
+      if (t.skip) st.skip.push(t);
+      else if (t.status === 'done') st.done.push(t);
+      else if (t.status === 'half') st.half.push(t);
+      else st.todo.push(t);
+    });
+    function row(t, mark) {
+      return '<div class="rec-row"><span class="rm">' + mark + '</span>' +
+        '<span class="rt">' + esc(t.title) + '</span>' +
+        '<span class="rv">' + fmtMinutes(t.minutes) + '</span></div>';
+    }
+    var body =
+      st.done.map(function (t) { return row(t, '✓'); }).join('') +
+      st.half.map(function (t) { return row(t, '◐'); }).join('') +
+      st.skip.map(function (t) { return row(t, '—'); }).join('') +
+      st.todo.map(function (t) { return row(t, '○'); }).join('');
+
+    return '<div class="rec-day">' +
+      '<div class="rec-day-head">' + fmtDate(k, true) + '　' + weekdayName(k) +
+        (dayMinutes(k) ? '　学了 ' + fmtMinutes(dayMinutes(k)) : '　没有记录') + '</div>' +
+      (body || '<div class="tiny muted">这天没有任务</div>') +
+    '</div>';
+  }
+
+  function renderRecord() {
+    var tk = todayKey();
+    var totals = recordTotals(tk);
+    var days = S.overall(state, tk).daysStudied;
+    var first = firstStudyKey();
+    var st = S.streak(state, tk);
+
+    app.innerHTML = '<div class="screen">' +
+      '<div class="top"><h1>我的记录</h1>' +
+        '<div class="sub">' +
+          (days
+            ? '你已经坚持了 ' + days + ' 天' + (first ? '，从 ' + fmtDate(first, false) + ' 开始' : '')
+            : '还没有记录，打过一次卡就开始算') +
+        '</div></div>' +
+
+      '<div class="section"><div class="card">' + heatmapHtml(tk) + '</div></div>' +
+
+      '<div class="section"><div class="metrics">' +
+        '<div class="metric"><div class="v">' + totals.questions + '</div><div class="k">累计做题</div></div>' +
+        '<div class="metric"><div class="v">' + totals.lessons + '</div><div class="k">听课节数</div></div>' +
+        '<div class="metric"><div class="v">' + Math.round(totals.minutes / 60) + '</div><div class="k">学习小时</div></div>' +
+      '</div>' +
+      '<div class="footnote">' +
+        (st > 1 ? '现在连续 ' + st + ' 天。' : '') +
+        (totals.papers ? '累计做过 ' + totals.papers + ' 套卷。' : '') +
+        '听课大约 ' + Math.round(totals.lessons * E.effectiveLesson(state.profile) / 60) + ' 小时。</div>' +
+      '</div>' +
+
+      '<div class="section"><p class="section-title">按天记录</p>' +
+        '<div class="card">' + recordCalendarHtml(tk) + recordDayHtml() + '</div>' +
+      '</div>' +
+      '</div>';
+    renderTabbar('record');
+  }
+
+  /* ---------------------------------------------------------------------
    * 设置
    * ------------------------------------------------------------------- */
 
@@ -2924,12 +3148,14 @@
     var ICON = {
       today: '<circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/>',
       plan: '<path d="M4.5 7h15M4.5 12h15M4.5 17h9"/>',
+      record: '<rect x="3.6" y="5" width="16.8" height="15" rx="3"/><path d="M8 9.5h8M8 13h8M8 16.5h5"/>',
       stats: '<path d="M6 19v-6M12 19V5.5M18 19v-9"/>',
       settings: '<path d="M4 8.5h8M17 8.5h3M4 15.5h3M12 15.5h8"/><circle cx="14.5" cy="8.5" r="2.2"/><circle cx="9.5" cy="15.5" r="2.2"/>',
     };
     var tabs = [
       { id: 'today', label: '今日' },
       { id: 'plan', label: '计划' },
+      { id: 'record', label: '记录' },
       { id: 'stats', label: '统计' },
       { id: 'settings', label: '设置' },
     ];
@@ -2962,6 +3188,7 @@
     }
     var out;
     if (s === 'plan') out = renderPlan();
+    else if (s === 'record') out = renderRecord();
     else if (s === 'stats') out = renderStats();
     else if (s === 'settings') out = renderSettings();
     else out = renderToday();
@@ -3315,6 +3542,23 @@
     }
     if (act === 'cal-pick') {
       state.ui.calDay = el.getAttribute('data-v');
+      save();
+      return reRender();
+    }
+
+    /* ---- 我的记录 ---- */
+    if (act === 'rec-pick') {
+      var rk = el.getAttribute('data-v');
+      state.ui.recDay = state.ui.recDay === rk ? null : rk;
+      save();
+      return reRender();
+    }
+    if (act === 'rec-month') {
+      var md = Number(el.getAttribute('data-v'));
+      var nk = shiftMonth(recMonthKey(tk), md);
+      if (nk.slice(0, 7) > tk.slice(0, 7)) return;
+      state.ui.recMonth = nk;
+      state.ui.recDay = null;
       save();
       return reRender();
     }
