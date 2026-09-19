@@ -89,6 +89,14 @@
       }, 8000);
     })();
   </script>
+  <script>
+    /* 尽早接住安卓 Chrome 的安装事件，避免 app.js 还没跑到就错过了。 */
+    window.__deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      window.__deferredInstallPrompt = e;
+    });
+  </script>
   <script src="js/config.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/stats.js"></script>

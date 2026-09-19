@@ -35,7 +35,8 @@
   var draft = null;
   var lastEnterKey = '';
   var pendingRestart = null;   // 断更回来时，等这一屏画完再弹学习档案
-  var deferredInstallPrompt = null;   // Chrome / 安卓的"添加到桌面"事件
+  var deferredInstallPrompt = window.__deferredInstallPrompt || null;   // Chrome / 安卓的"添加到桌面"事件
+  var installPromptBusy = false;
 
   function isStandalone() {
     return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
@@ -3522,6 +3523,7 @@
       body = '<div class="modal-msg">这台设备支持一键添加。点下面的按钮，按提示确认就行。</div>' +
         '<button class="btn primary block" data-act="install-do" style="margin-top:14px">立即添加到桌面</button>' +
         '<div class="param-note" style="margin-top:10px">添加后会像 App 一样全屏打开，数据只存在你自己的设备上。</div>' +
+        '<div class="param-note">如果点了没反应，用浏览器右上角三个点 → 「安装应用」或「添加到主屏幕」。</div>' +
         '<div class="param-note">以后不想用了：长按桌面图标 → 移除/卸载。</div>';
     } else if (isIOS()) {
       body = '<div class="modal-msg">iPhone / iPad 用 Safari 打开：</div>' +
@@ -4682,16 +4684,41 @@
       return;
     }
     if (act === 'install-do') {
-      if (!deferredInstallPrompt) return;
+      if (installPromptBusy) return;
+      if (!deferredInstallPrompt) {
+        toast('系统没有可用的安装窗口，请用浏览器菜单里的「安装应用」');
+        return;
+      }
       var installEvent = deferredInstallPrompt;
-      deferredInstallPrompt = null;
-      installEvent.prompt();
+      installPromptBusy = true;
+      toast('正在请求系统安装窗口…');
+      var finishInstall = function (accepted) {
+        installPromptBusy = false;
+        deferredInstallPrompt = null;
+        window.__deferredInstallPrompt = null;
+        closeModal();
+        toast(accepted ? '已经添加到桌面' : '没有添加，也可以用浏览器菜单里的「安装应用」');
+        render();
+      };
+      try {
+        installEvent.prompt();
+      } catch (e) {
+        installPromptBusy = false;
+        deferredInstallPrompt = null;
+        window.__deferredInstallPrompt = null;
+        closeModal();
+        toast('系统没有弹出安装窗口，请用浏览器右上角菜单里的「安装应用」');
+        render();
+        return;
+      }
       if (installEvent.userChoice && installEvent.userChoice.then) {
         installEvent.userChoice.then(function (choice) {
-          if (choice && choice.outcome === 'accepted') toast('已经添加到桌面');
-          else toast('没有添加，也没关系');
-          render();
+          finishInstall(choice && choice.outcome === 'accepted');
+        }).catch(function () {
+          finishInstall(false);
         });
+      } else {
+        finishInstall(false);
       }
       return;
     }
@@ -5239,10 +5266,12 @@
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();
     deferredInstallPrompt = e;
+    window.__deferredInstallPrompt = e;
     if (state.profile && (state.ui.screen || 'today') === 'mine') render();
   });
   window.addEventListener('appinstalled', function () {
     deferredInstallPrompt = null;
+    window.__deferredInstallPrompt = null;
     state.ui.installed = true;
     save();
     toast('已经添加到桌面');

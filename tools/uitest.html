@@ -746,11 +746,23 @@
           click('[data-act="goto"][data-to="mine"]');
           if (document.body.textContent.indexOf('添加到桌面') >= 0) {
             ok('我的页有「添加到桌面」入口');
+            /* 模拟安卓 Chrome 的 beforeinstallprompt，验证一键安装按钮真的会调系统窗口 */
+            var fakeInstall = new Event('beforeinstallprompt');
+            fakeInstall.prompt = function () { fakeInstall.prompted = true; };
+            fakeInstall.userChoice = { then: function (cb) { cb({ outcome: 'accepted' }); return { catch: function () {} }; } };
+            window.dispatchEvent(fakeInstall);
             click('[data-act="install-open"]');
             var ov0 = $('#overlay');
+            if (ov0 && ov0.textContent.indexOf('立即添加到桌面') >= 0) {
+              ok('安卓支持时显示一键安装按钮');
+            } else {
+              fail('安卓路径没有显示一键安装按钮');
+            }
             if (ov0 && ov0.textContent.indexOf('长按桌面图标') >= 0) ok('添加到桌面弹窗有删除说明');
             else fail('添加到桌面弹窗没有删除说明');
-            click('[data-act="install-close"]');
+            click('[data-act="install-do"]');
+            if (fakeInstall.prompted) ok('立即添加到桌面会调用系统安装窗口');
+            else fail('立即添加到桌面没有调用系统安装窗口');
           } else {
             fail('我的页没有「添加到桌面」入口');
           }
