@@ -3874,6 +3874,9 @@
         '<button class="btn block" data-act="import">导入数据</button>' +
         '<div style="height:8px"></div>' +
         '<button class="btn block danger" data-act="wipe">重新开始（回到问卷第一页）</button>' +
+        (state.ui.installHintDismissed
+          ? '<div style="height:8px"></div><button class="btn ghost block" data-act="install-restore">恢复「添加到桌面」入口</button>'
+          : '') +
         '<div class="footnote">计划、打卡记录和统计都会清空。想留个底，先点上面的「导出数据」。</div>' +
       '</div></div>';
 
@@ -4624,6 +4627,37 @@
     if (act === 'chg-ok') { lastUndo = null; return closeModal(); }
     if (act === 'adj-open') return openAdjustLog();
     if (act === 'adj-close') return closeModal();
+    if (act === 'install-open') return openInstallHelp();
+    if (act === 'install-close') return closeModal();
+    if (act === 'install-dismiss') {
+      state.ui.installHintDismissed = true;
+      save();
+      closeModal();
+      render();
+      toast('已关掉这个入口');
+      return;
+    }
+    if (act === 'install-restore') {
+      state.ui.installHintDismissed = false;
+      save();
+      reRenderKeepPlace();
+      toast('入口已恢复');
+      return;
+    }
+    if (act === 'install-do') {
+      if (!deferredInstallPrompt) return;
+      var installEvent = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      installEvent.prompt();
+      if (installEvent.userChoice && installEvent.userChoice.then) {
+        installEvent.userChoice.then(function (choice) {
+          if (choice && choice.outcome === 'accepted') toast('已经添加到桌面');
+          else toast('没有添加，也没关系');
+          render();
+        });
+      }
+      return;
+    }
 
     /* ---- 成绩记录 ---- */
     if (act === 'score-open') return openScoreForm();

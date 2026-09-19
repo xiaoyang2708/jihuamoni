@@ -744,6 +744,16 @@
           }
 
           click('[data-act="goto"][data-to="mine"]');
+          if (document.body.textContent.indexOf('添加到桌面') >= 0) {
+            ok('我的页有「添加到桌面」入口');
+            click('[data-act="install-open"]');
+            var ov0 = $('#overlay');
+            if (ov0 && ov0.textContent.indexOf('长按桌面图标') >= 0) ok('添加到桌面弹窗有删除说明');
+            else fail('添加到桌面弹窗没有删除说明');
+            click('[data-act="install-close"]');
+          } else {
+            fail('我的页没有「添加到桌面」入口');
+          }
           click('[data-act="goto"][data-to="settings"]');
           if (document.body.textContent.indexOf('重新开始') >= 0) ok('设置页里有「重新开始」');
           else fail('设置页里没有「重新开始」');
