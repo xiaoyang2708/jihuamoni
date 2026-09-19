@@ -69,6 +69,29 @@
       .replace(/"/g, '&quot;');
   }
 
+  /* 出错时不要留白屏。把出错位置和错误内容直接画到页面上，
+   * 用户截个图就能定位。esc 之后使用，避免错误内容里带 HTML。 */
+  function showFatalError(stage, err) {
+    try {
+      var msg = (err && (err.stack || err.message)) || String(err || '未知错误');
+      app.className = '';
+      app.innerHTML = '<div style="min-height:100vh;padding:44px 24px;box-sizing:border-box;' +
+        'background:#f1efea;color:#1a1815;font:14px/1.8 -apple-system,BlinkMacSystemFont,' +
+        '\'PingFang SC\',\'Microsoft YaHei\',sans-serif">' +
+        '<div style="font-size:22px;font-weight:700;margin-bottom:6px">页面出错了</div>' +
+        '<div style="font-size:13px;color:#665f56;margin-bottom:14px">出错位置：' + esc(stage) + '</div>' +
+        '<pre style="white-space:pre-wrap;word-break:break-all;background:#fff;border-radius:12px;' +
+        'padding:12px;font-size:12px;color:#8a4b3f;margin:0 0 16px">' + esc(msg) + '</pre>' +
+        '<button onclick="location.reload()" style="width:100%;padding:12px 16px;border:0;' +
+        'border-radius:12px;background:#ab8752;color:#fff;font:inherit;font-weight:600">重新加载</button>' +
+        '<div style="font-size:12px;color:#8a837a;margin-top:12px">' +
+        '把上面的文字截图发给开发者即可。' +
+        '</div></div>';
+    } catch (e2) {
+      try { document.body.innerHTML = '<pre>页面出错了：' + esc(err && err.message) + '</pre>'; } catch (e3) {}
+    }
+  }
+
   /* 任务 id 必须唯一：查任务、打卡、删除全靠它对上号。
    * 只用 Date.now() 的话，同一毫秒里加两条就会撞 id——
    * 表现就是"点第二条没反应"（其实是改到了第一条）。 */
@@ -4014,6 +4037,14 @@
    * ------------------------------------------------------------------- */
 
   function render() {
+    try {
+      return renderInner();
+    } catch (e) {
+      showFatalError('渲染页面', e);
+    }
+  }
+
+  function renderInner() {
     /* 主题要在"没有档案"的分支之前应用，否则第一次打开问卷时还是默认色 */
     applyTheme();
     if (!state.profile) { app.className = ''; renderOnboarding(); return; }
@@ -4056,6 +4087,7 @@
    * ------------------------------------------------------------------- */
 
   document.addEventListener('click', function (ev) {
+    try {
     var el = ev.target.closest('[data-act]');
     if (!el) return;
     var act = el.getAttribute('data-act');
@@ -4961,10 +4993,14 @@
       return;
     }
     if (act === 'confirm-no') return closeModal();
+    } catch (e) {
+      showFatalError('点击操作', e);
+    }
   });
 
   /* 输入类控件 */
   document.addEventListener('input', function (ev) {
+    try {
     var el = ev.target.closest('[data-act]');
     if (!el) return;
     var act = el.getAttribute('data-act');
@@ -5110,9 +5146,13 @@
     }
     if (act === 'set-wd') { state.profile.weekdayMinutes = Number(el.value); save(); return; }
     if (act === 'set-we') { state.profile.weekendMinutes = Number(el.value); save(); return; }
+    } catch (e) {
+      showFatalError('输入操作', e);
+    }
   });
 
   document.addEventListener('change', function (ev) {
+    try {
     var el = ev.target.closest('[data-act]');
     if (!el) return;
     var act = el.getAttribute('data-act');
@@ -5142,6 +5182,9 @@
       setTaskStatus(t, t.status, { actualMinutes: t.actualMinutes });
       save();
       render();
+    }
+    } catch (e) {
+      showFatalError('修改设置', e);
     }
   });
 
@@ -5195,5 +5238,9 @@
     render();
   });
 
-  boot();
+  try {
+    boot();
+  } catch (e) {
+    showFatalError('启动', e);
+  }
 })();

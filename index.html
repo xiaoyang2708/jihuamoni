@@ -60,7 +60,17 @@
           show('脚本没加载上：' + (e.target.src || '') + '\n（服务器是不是没开？）');
           return;
         }
-        show((e.message || '未知错误') + '\n' + (e.filename || '') + ':' + (e.lineno || '') + stackOf(e));
+        var msg = e && e.message ? e.message : '未知错误';
+        var file = e && e.filename ? e.filename : '';
+        var line = e && e.lineno ? e.lineno : '';
+        /* Safari 对第三方注入脚本常报 "Script error."，拿不到文件和行号。
+         * 这种不要弹大黑框吓人；真正属于本项目的错误会带文件名和调用栈。 */
+        if (msg === 'Script error.' && !file) {
+          try { console.warn('忽略一个外部脚本错误（浏览器插件或翻译注入常见）'); } catch (err) {}
+          return;
+        }
+        show(msg + '\n' + file + ':' + line + stackOf(e) +
+          '\nUA: ' + navigator.userAgent + '\nURL: ' + location.href);
       }, true);
       window.addEventListener('unhandledrejection', function (e) {
         show('未处理的 Promise 错误：' + (e.reason && e.reason.message ? e.reason.message : e.reason) +
