@@ -10,8 +10,10 @@
 
 裁剪之后大概 200–400 KB，gzip 之后更小，service worker 还会缓存下来离线用。
 
-顺带还会塞进去：ASCII、全部数字、中英文标点、以及一份常用字兜底
-（万一以后加了新文案、或者用户导入的数据里有生僻字，不至于变成方框）。
+顺带还会塞进去：ASCII、全部数字和中英文标点。
+不塞几千个常用汉字兜底——那会把字体撑到 1 MB，首屏等不起。
+源码里出现过的字已经全都在里面；以后加了新文案，重跑一次本脚本即可。
+用户导入的数据里有生僻字时，会回退到系统字体，不会变成方框。
 
 怎么用
 ------
@@ -77,31 +79,7 @@ def collect_chars():
                  "·—…‰′″℃×÷±≈≠≤≥∞√∑√←↑→↓↔⇒⇔■□●○◆◇★☆✓✔✗✘"
                  "①②③④⑤⑥⑦⑧⑨⑩")
 
-    # 常用字兜底：把 GB2312 一级字表（3755 个最常用汉字）全带上。
-    # 不用手打的字表——手打的必然有洞，而且看不出来。
-    chars.update(gb2312_level1())
-
     return "".join(sorted(chars))
-
-
-# GB2312 一级字表：3755 个最常用汉字，按编码区顺序排的。
-# 直接从 Python 自带的 gb2312 编解码器生成，不用手抄。
-_GB1 = None
-
-
-def gb2312_level1():
-    global _GB1
-    if _GB1 is not None:
-        return _GB1
-    out = set()
-    for hi in range(0xB0, 0xD8):        # 区 16–55 就是一级汉字
-        for lo in range(0xA1, 0xFF):
-            try:
-                out.add(bytes([hi, lo]).decode("gb2312"))
-            except UnicodeDecodeError:
-                continue
-    _GB1 = out
-    return out
 
 
 def find_font():

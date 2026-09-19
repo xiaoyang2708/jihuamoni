@@ -5,14 +5,13 @@
  * 这么选是因为这个项目改得勤，缓存优先很容易出现"我明明改了怎么还是旧的"。
  * ========================================================================= */
 
-var CACHE = 'beikao-v2';
+var CACHE = 'beikao-v3';
 
 var ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/styles.css',
-  './fonts/noto-sans-sc-subset.woff2',
   './js/config.js',
   './js/engine.js',
   './js/stats.js',
