@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" style="background:#f1efea">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -16,18 +16,20 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="备考节奏">
 </head>
-<body>
+<body style="margin:0;background:#f1efea">
   <!-- 这一块是"启动占位"。app.js 一跑起来就会把 #app 整个换掉。
        留在里面的意思是：万一脚本出错、或者文件没加载上，用户看到的是这句话，
        而不是一片白——白屏是最糟糕的失败形态，连"哪里错了"都无从说起。 -->
   <div id="app">
-    <div style="padding:60px 28px;text-align:center;color:#7a7268;font-size:14px;line-height:2">
+    <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 28px;box-sizing:border-box;text-align:center;color:#7a7268;font:14px/2 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+      <div style="width:34px;height:34px;border-radius:50%;border:3px solid rgba(171,135,82,.25);border-top-color:#ab8752;animation:bootspin .9s linear infinite;margin-bottom:14px"></div>
       <div id="boot-tip">正在加载…</div>
-      <div style="font-size:12.5px;opacity:.75">
-        如果一直停在这里，按住 Ctrl 点刷新（Mac 是 ⌘ + Shift + R）。
+      <div style="font-size:12.5px;opacity:.75;margin-top:4px">
+        第一次打开会慢一点，之后会快很多。
       </div>
     </div>
   </div>
+  <style>@keyframes bootspin{to{transform:rotate(360deg)}}</style>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="overlay" class="overlay hidden"></div>
 

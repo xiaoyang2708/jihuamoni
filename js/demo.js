@@ -474,5 +474,9 @@ window.YT = window.YT || {};
     enabled: enabled,
     bar: bar,
     decorate: decorate,
+    setEnabled: function (on) {
+      setFlag(!!on);
+      memo = !!on;
+    },
   };
 })(window.YT);

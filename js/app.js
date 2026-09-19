@@ -3900,6 +3900,11 @@
         (state.ui.installHintDismissed
           ? '<div style="height:8px"></div><button class="btn ghost block" data-act="install-restore">恢复「添加到桌面」入口</button>'
           : '') +
+        ((window.YT.demo && window.YT.demo.setEnabled)
+          ? '<div style="height:8px"></div><button class="btn ghost block" data-act="demo-toggle">' +
+              (demoOn() ? '退出体验模式' : '打开体验模式（开发者）') +
+            '</button>'
+          : '') +
         '<div class="footnote">计划、打卡记录和统计都会清空。想留个底，先点上面的「导出数据」。</div>' +
       '</div></div>';
 
@@ -4688,6 +4693,12 @@
           render();
         });
       }
+      return;
+    }
+    if (act === 'demo-toggle') {
+      if (!(window.YT.demo && window.YT.demo.setEnabled)) return;
+      window.YT.demo.setEnabled(!demoOn());
+      location.reload();
       return;
     }
 

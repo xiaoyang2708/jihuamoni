@@ -768,6 +768,11 @@
           } else {
             fail('设置页没有阶段边界输入');
           }
+          if (document.body.textContent.indexOf('体验模式') >= 0) {
+            ok('设置页有体验模式开关');
+          } else {
+            fail('设置页没有体验模式开关');
+          }
           /* 折叠头展开后，标题不应该在内容里再出现一次 */
           click('[data-act="fold-toggle"][data-k="settings:strength"]');
           var foldTxt = ($('#app') || document.body).textContent;
