@@ -579,6 +579,7 @@
         });
 
         step('two more days then back', function () {
+          var startDate = stored().simDate || window.YT.engine.toKey(new Date());
           click('[data-act="demo-next"]');
           click('[data-act="demo-next"]');
           var E = window.YT.engine;
@@ -588,7 +589,7 @@
           click('[data-act="demo-prev"]');
           click('[data-act="demo-prev"]');
           var st = stored();
-          if (st.simDate !== '2026-09-19') return fail('往回走两次没回到第一天（' + st.simDate + '）');
+          if (st.simDate !== startDate) return fail('往回走两次没回到第一天（' + st.simDate + '，想要 ' + startDate + '）');
           if (!st.weekMark[wk]) ok('往回走清掉了重排标记，再往前走才会按新数据重算');
           else fail('往回走没清重排标记：' + JSON.stringify(st.weekMark));
         });

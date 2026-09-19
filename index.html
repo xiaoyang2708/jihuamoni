@@ -59,7 +59,18 @@
       }
       window.addEventListener('error', function (e) {
         if (e && e.target && e.target.tagName === 'SCRIPT') {
-          show('脚本没加载上：' + (e.target.src || '') + '\n（服务器是不是没开？）');
+          var src = e.target.src || '';
+          var own = false;
+          try {
+            own = new URL(src, location.href).origin === location.origin;
+          } catch (err) { own = false; }
+          /* 第三方插件 / 运营商注入的脚本失败不要吓用户。
+           * 只有本项目自己的脚本没加载上，才说明服务器或文件有问题。 */
+          if (!own) {
+            try { console.warn('忽略第三方脚本加载失败：' + src); } catch (err) {}
+            return;
+          }
+          show('脚本没加载上：' + src + '\n（服务器是不是没开？）');
           return;
         }
         var msg = e && e.message ? e.message : '未知错误';
