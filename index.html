@@ -22,7 +22,7 @@
        而不是一片白——白屏是最糟糕的失败形态，连"哪里错了"都无从说起。 -->
   <div id="app">
     <div style="padding:60px 28px;text-align:center;color:#7a7268;font-size:14px;line-height:2">
-      <div>正在加载…</div>
+      <div id="boot-tip">正在加载…</div>
       <div style="font-size:12.5px;opacity:.75">
         如果一直停在这里，按住 Ctrl 点刷新（Mac 是 ⌘ + Shift + R）。
       </div>
@@ -66,6 +66,15 @@
         show('未处理的 Promise 错误：' + (e.reason && e.reason.message ? e.reason.message : e.reason) +
           (e.reason && e.reason.stack ? '\n\n调用栈：\n' + e.reason.stack : ''));
       });
+      /* 网络慢的时候给一个更明确的提示，别让人对着白屏猜。 */
+      setTimeout(function () {
+        var tip = document.getElementById('boot-tip');
+        if (!tip) return;
+        tip.innerHTML = '网络有点慢，还在加载……<br>' +
+          '<button onclick="location.reload()" style="margin-top:10px;padding:8px 14px;' +
+          'border:0;border-radius:10px;background:#ab8752;color:#fff;font:inherit;font-size:13px">' +
+          '重新加载</button>';
+      }, 8000);
     })();
   </script>
   <script src="js/config.js"></script>

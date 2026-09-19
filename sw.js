@@ -5,7 +5,7 @@
  * 这么选是因为这个项目改得勤，缓存优先很容易出现"我明明改了怎么还是旧的"。
  * ========================================================================= */
 
-var CACHE = 'beikao-v3';
+var CACHE = 'beikao-v4';
 
 var ASSETS = [
   './',
@@ -53,19 +53,28 @@ self.addEventListener('fetch', function (e) {
   try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;
 
+  /* 网络优先，但最多等 3.5 秒；超过就先吃缓存，网络请求继续在后台跑，
+   * 回来后顺手把缓存更新掉。这样 GitHub Pages 慢的时候，第二次打开不会
+   * 又卡几十秒。 */
+  var network = fetch(req).then(function (res) {
+    if (res && res.ok) {
+      var copy = res.clone();
+      caches.open(CACHE).then(function (c) { c.put(req, copy); }).catch(function () {});
+    }
+    return res;
+  });
+  var timeout = new Promise(function (_, reject) {
+    setTimeout(function () { reject(new Error('slow')); }, 3500);
+  });
+
   e.respondWith(
-    fetch(req).then(function (res) {
-      if (res && res.ok) {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (c) { c.put(req, copy); }).catch(function () {});
-      }
-      return res;
-    }).catch(function () {
+    Promise.race([network, timeout]).catch(function () {
       return caches.match(req).then(function (hit) {
+        if (hit) return hit;
+        return network;
+      }).catch(function () {
         /* 直接输网址进来的时候请求是导航请求，回 index.html 才不会白屏 */
-        return hit || (req.mode === 'navigate' ? caches.match('./index.html') : null);
-      }).then(function (r) {
-        return r || Response.error();
+        return req.mode === 'navigate' ? caches.match('./index.html') : Response.error();
       });
     })
   );
