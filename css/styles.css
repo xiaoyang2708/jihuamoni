@@ -9,28 +9,141 @@
  *   4. 动画只动 transform / opacity，毛玻璃只用在底部导航一处。
  * ========================================================================= */
 
+/* -------------------------------------------------------------------------
+ * 字体：思源黑体（Noto Sans SC）
+ *
+ * 不写 system-ui 那种字体栈，是因为栈里第一位是苹方——苹果独有，
+ * 到了 Windows 会一路回退到微软雅黑（2006 年的字体，而且只有两个字重，
+ * 界面里 600/650 这些字重全是浏览器描出来的假粗体）。
+ *
+ * 这里自己托管一份子集：完整版 16.9 MB，只保留本项目用得到的字之后
+ * 是 346 KB。默认走 woff2（所有现代浏览器都支持）。
+ * 生成脚本：tools/make-font-subset.py，改了文案重新跑一次就行。
+ *
+ * 变量字体，100–900 一整条字重轴都在，所以 300–800 各档都是真字重。
+ * 没扫到的生僻字会自动回退到后面的系统字体，不会变方框。
+ * ------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Noto Sans SC";
+  src: url("../fonts/noto-sans-sc-subset.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  /* 底色偏暖，配香槟金才不会发灰 */
-  --bg:        #f6f4f1;
+  /* 底色偏暖，配金色才不会发灰 */
+  --bg:        #f1efea;
   --card:      #ffffff;
+  --surface-2: #f8f7f4;
   --ink:       #1a1815;
-  --ink-2:     rgba(58, 53, 46, .62);
-  --ink-3:     rgba(58, 53, 46, .34);
-  --line:      rgba(58, 53, 46, .10);
-  /* 彩色：只出现在"状态"上 */
-  --primary:   #ab8752;   /* 香槟金 */
-  --primary-s: rgba(171, 135, 82, .13);
+  --ink-2:     rgba(26, 24, 21, .58);
+  --ink-3:     rgba(26, 24, 21, .33);
+  --line:      rgba(26, 24, 21, .09);
+  --hair:      rgba(26, 24, 21, .05);
+
+  /* ---- 主题色 ----------------------------------------------------------
+   * 这是唯一跟着"主题"变的一组。一个主题只需要四个数：
+   *   primary    主色      —— 按钮、选中、进度、打卡
+   *   primary-l  亮色      —— 按钮上缘的高光
+   *   primary-d  深色      —— 按钮下缘的收边、深色文字
+   *   on-primary 字色      —— 压在主色上面的字（亮色主题要用深字）
+   * 下面 html[data-theme] 那几段会整组覆盖。
+   * -------------------------------------------------------------------- */
+  --primary:      #bb9455;
+  --primary-l:    #d9bb7e;
+  --primary-d:    #96733a;
+  --on-primary:   #2c2109;
+  --primary-s:    rgba(187, 148, 85, .13);
+  --primary-xs:   rgba(187, 148, 85, .055);
+  --primary-line: rgba(187, 148, 85, .30);
+
+  /* ---- 状态色：故意不跟主题走 ------------------------------------------
+   * 它们表达的是"状态"，不是"品牌"。警告永远是橙、危险永远是红、
+   * 半完成永远是琥珀——换个主题颜色就变，用户会看不懂。 */
   --accent:    #c07a3c;
   --accent-s:  rgba(192, 122, 60, .12);
   --danger:    #b5574a;
-  --done:      #ab8752;
-  --half:      #cf9a3e;   /* 半完成：比主色偏橙，一眼能区分 */
-  --radius:    18px;
+  --done:      var(--primary);
+  --half:      #cf9a3e;
+
+  --radius:    20px;
   --radius-s:  12px;
-  --shadow:    none;
+
+  /* 层次靠投影，不靠描边。宽扩散、负偏移，柔和不发灰。 */
+  --sh-sm:  0 1px 2px rgba(26, 24, 21, .05);
+  --sh-md:  0 1px 2px rgba(26, 24, 21, .04), 0 12px 26px -18px rgba(26, 24, 21, .34);
+  --shadow: var(--sh-md);
+
   /* 弹性曲线，全局统一 */
   --spring:    cubic-bezier(.34, 1.4, .64, 1);
   --ease:      cubic-bezier(.32, .72, 0, 1);
+}
+
+/* =========================================================================
+ * 主题
+ *
+ * 七个主色，只换上面那四个值。想加主题就在这儿再抄一段，
+ * 再去 js/config.js 的 YT.THEMES 里加一条同名记录。
+ * ========================================================================= */
+
+html[data-theme="rose"] {          /* 玫瑰金 */
+  --primary:      #c08a7a;
+  --primary-l:    #ddafa2;
+  --primary-d:    #9c6555;
+  --on-primary:   #3a1e17;
+  --primary-s:    rgba(192, 138, 122, .14);
+  --primary-xs:   rgba(192, 138, 122, .055);
+  --primary-line: rgba(192, 138, 122, .32);
+}
+html[data-theme="mist"] {          /* 雾蓝 */
+  --primary:      #5a7fa8;
+  --primary-l:    #86a5c7;
+  --primary-d:    #3d5f85;
+  --on-primary:   #ffffff;
+  --primary-s:    rgba(90, 127, 168, .13);
+  --primary-xs:   rgba(90, 127, 168, .055);
+  --primary-line: rgba(90, 127, 168, .30);
+}
+html[data-theme="celadon"] {       /* 青瓷 */
+  --primary:      #4e8c86;
+  --primary-l:    #7db0aa;
+  --primary-d:    #366964;
+  --on-primary:   #0a2422;
+  --primary-s:    rgba(78, 140, 134, .13);
+  --primary-xs:   rgba(78, 140, 134, .055);
+  --primary-line: rgba(78, 140, 134, .30);
+}
+html[data-theme="bamboo"] {        /* 竹青 */
+  --primary:      #6b8f5a;
+  --primary-l:    #93b183;
+  --primary-d:    #4c6b3e;
+  --on-primary:   #1b2913;
+  --primary-s:    rgba(107, 143, 90, .14);
+  --primary-xs:   rgba(107, 143, 90, .055);
+  --primary-line: rgba(107, 143, 90, .32);
+}
+html[data-theme="cinnabar"] {      /* 朱砂 */
+  --primary:      #b04c3e;
+  --primary-l:    #d07a6a;
+  --primary-d:    #8a372c;
+  --on-primary:   #ffffff;
+  --primary-s:    rgba(176, 76, 62, .13);
+  --primary-xs:   rgba(176, 76, 62, .055);
+  --primary-line: rgba(176, 76, 62, .30);
+  /* 朱砂做主色时，默认的危险红 #b5574a 和它几乎一样，
+   * 「清空数据」看着就不像危险操作了。这里把危险色压深一档，
+   * 让它比品牌色更沉、更"重"，一眼能分出性质。 */
+  --danger:       #7a2b21;
+}
+html[data-theme="cocoa"] {         /* 可可 */
+  --primary:      #8a6a55;
+  --primary-l:    #ac8d77;
+  --primary-d:    #664b3a;
+  --on-primary:   #ffffff;
+  --primary-s:    rgba(138, 106, 85, .13);
+  --primary-xs:   rgba(138, 106, 85, .055);
+  --primary-line: rgba(138, 106, 85, .30);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -38,10 +151,16 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: #e5e5ea;
+  /* 桌面打开时露在 480px 应用区外面的那圈底。跟着暖色走，
+   * 用 iOS 那种冷灰会在窗口两侧露出一条发蓝的边。 */
+  background: #e3e0db;
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
-               "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  /* 第一位是自托管的思源黑体，正常情况下它就把所有字接住了。
+   * 后面那一串是兜底：字体还没下载完、或者遇到子集里没有的生僻字时，
+   * 苹果走苹方、Windows 走雅黑，不会变成方框。 */
+  font-family: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+               "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+               "Segoe UI", Roboto, sans-serif;
   font-size: 17px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -103,18 +222,100 @@ html, body {
 .section { padding: 0 16px; margin-top: 26px; }
 
 .section-title {
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: .02em;
-  color: var(--ink-2);
+  /* 分组标签做得比正文更小、更重、更淡，读起来像"标签"而不是"内容"。
+   * 这样视线会先落在卡片里的东西上，层级是靠对比拉开的。 */
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  color: var(--ink-3);
   margin: 0 0 8px;
   padding-left: 4px;
 }
 
+/* 通用折叠块：计划详情、设置里的长分组。
+ * 折叠头只有一行，展开内容沿用原来的 .section / .card。 */
+/* 分组标题右边的小胶囊入口。用在「调整阶段」「批量排」「9 月」这种
+ * "点了会去别处/会打开东西"的地方。光写一行金字，用户看不出能点。 */
+.pillbtn {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 29px; padding: 0 11px;
+  border: 0; border-radius: 99px;
+  background: var(--card); color: var(--primary);
+  font: inherit; font-size: 12.5px; font-weight: 650; letter-spacing: -.1px;
+  box-shadow: inset 0 0 0 1px var(--primary-line), var(--sh-sm);
+  cursor: pointer;
+  transition: background .18s ease, transform .18s var(--spring);
+}
+.pillbtn:active { background: var(--primary-s); transform: scale(.96); }
+.pillbtn .bi { width: 12px; height: 12px; }
+
+.fold { margin-top: 26px; }
+/* 连着排的几个折叠收紧一点，让它们看起来是一组，而不是几张散落的卡 */
+.fold + .fold { margin-top: 10px; }
+
+/* 折叠头做成"一张收起来的卡片"：左右上下跟别的卡片对齐（16px），
+ * 里面按卡片的内容缩进。这样它一眼就是个能点的容器，
+ * 而不是一行说明文字——之前是一行透明背景的小字，用户根本不知道能点。 */
+.fold-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 32px);
+  margin: 0 16px;
+  padding: 15px 16px 15px 18px;
+  background: var(--card);
+  border: 1px solid rgba(58, 53, 46, .045);
+  border-radius: 14px;
+  font: inherit;
+  text-align: left;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background .18s ease;
+}
+.fold-head:active { background: #faf8f4; }
+.fold-t {
+  flex: 0 0 auto;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -.1px;
+  color: var(--ink);
+}
+/* 提示靠右，紧挨着箭头——这样箭头不会孤零零地飘在右边 */
+.fold-n {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 展开箭头。用 SVG 而不是 ⌃⌄ 字符：字符的粗细和基线随字体变，
+ * 字号一调就飘；而且没法做旋转动画。 */
+.chev-i {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: rgba(58, 53, 46, .40);
+  transition: transform .26s var(--ease);
+}
+.fold.open > .fold-head .chev-i,
+.plan-day.open .chev-i { transform: rotate(180deg); }
+
+.fold-body { display: none; }
+.fold.open .fold-body { display: block; margin-top: 10px; }
+.fold-body > .section { margin-top: 0; }
+.fold-body > .section + .section { margin-top: 18px; }
+
 .card {
   background: var(--card);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  /* 层次交给投影：大偏移、负扩散，边缘柔和不发灰。
+   * 不用描边——描边会把界面切碎，显得廉价。 */
+  box-shadow: var(--sh-md);
   padding: 18px;
 }
 
@@ -135,7 +336,7 @@ html, body {
 .btn {
   appearance: none;
   border: 0;
-  background: rgba(120,120,128,.12);
+  background: rgba(58,53,46,.075);
   color: var(--ink);
   font: inherit;
   font-size: 15px;
@@ -148,14 +349,43 @@ html, body {
 .btn:active { transform: scale(.96); opacity: .75; }
 
 .btn.primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  font-weight: 600;
+  /* 实体金按钮：上缘高光 + 下缘收边 + 落地投影。
+   * 三样加起来才有"厚度"，纯色填充永远是一块平的色。 */
+  background: linear-gradient(180deg, var(--primary-l) 0%, var(--primary) 52%, var(--primary-d) 100%);
+  color: var(--on-primary);
+  font-weight: 650;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .45),
+    inset 0 -1px 0 rgba(0, 0, 0, .10),
+    0 1px 1.5px rgba(90, 68, 30, .25),
+    0 10px 20px -12px var(--primary-d);
 }
+.btn.primary:active { transform: translateY(1px) scale(.985); opacity: .92; }
 
 .btn.ghost { background: transparent; }
 .btn.ghost { color: var(--primary); }
+/* 白底描边按钮：和实心主按钮配成一对时用它。
+ * 有底色 + 一层很浅的投影，所以和主按钮是"同一套材质"，只是弱一档。 */
+.btn.secondary {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--hair), var(--sh-sm);
+}
+.btn.secondary:active { background: var(--surface-2); }
+/* 浅金底的动作按钮。用在"加一项""今天主攻一科"这类次要但正向的动作上——
+ * 纯文字的时候它们看着像链接，没有按钮的分量。 */
+.btn.soft { background: var(--primary-s); color: var(--primary-d); }
+/* 描边按钮：用在"点了会去别处/会打开东西"的动作上。
+ * 比纯文字明确得多，又不像实心金按钮那么重。 */
+.btn.line {
+  background: var(--card);
+  border: 1px solid var(--primary-line);
+  color: var(--primary);
+  font-weight: 600;
+  box-shadow: var(--sh-sm);
+}
+.btn.line:active { background: #f7f4ef; }
+.btn .bi { width: 13px; height: 13px; margin-left: 1px; vertical-align: -1.5px; }
 .btn.block { display: block; width: 100%; text-align: center; }
 .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 8px; }
 .btn.sm { position: relative; }
@@ -176,7 +406,7 @@ html, body {
   background: rgba(249,249,249,.84);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
-  border-top: .5px solid rgba(60,60,67,.18);
+  border-top: .5px solid rgba(58,53,46,.14);
   padding-bottom: env(safe-area-inset-bottom);
   z-index: 20;
 }
@@ -218,11 +448,21 @@ html, body {
 }
 .task:last-child { border-bottom: 0; }
 
+/* 回顾任务置顶：只加一条很轻的分组线，不抢任务本身。 */
+.task-group {
+  padding: 12px 0 3px;
+  font-size: 12px;
+  color: var(--ink-3);
+  letter-spacing: .02em;
+}
+.task-group + .task { border-top: 0; }
+.task-group + .task-group { padding-top: 6px; }
+
 .tick {
   flex: 0 0 auto;
   width: 24px; height: 24px;
   border-radius: 50%;
-  border: 1.5px solid rgba(60,60,67,.28);
+  border: 1.5px solid rgba(58,53,46,.24);
   background: transparent;
   cursor: pointer;
   padding: 0;
@@ -243,7 +483,8 @@ html, body {
 
 .tick.done {
   border-color: var(--done);
-  background: var(--done);
+  background: linear-gradient(180deg, var(--primary-l), var(--primary) 58%, var(--primary-d));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 2px 6px -2px var(--primary-d);
 }
 .tick.done::after {
   content: "";
@@ -256,8 +497,8 @@ html, body {
 }
 
 .tick.half {
-  border-color: var(--half);
-  background: linear-gradient(to right, var(--half) 0 50%, transparent 50% 100%);
+  border-color: var(--primary-line);
+  background: linear-gradient(to right, var(--primary) 0 50%, transparent 50% 100%);
 }
 
 .task-body { flex: 1; min-width: 0; }
@@ -277,7 +518,7 @@ html, body {
   flex: 0 0 auto; align-self: flex-start;
   width: 22px; height: 22px; line-height: 1;
   border: 0; background: none; padding: 0;
-  color: rgba(60,60,67,.22); font-size: 17px; cursor: pointer;
+  color: rgba(58,53,46,.22); font-size: 17px; cursor: pointer;
   border-radius: 50%;
   position: relative;
   transition: transform .18s var(--spring), color .18s ease;
@@ -339,7 +580,7 @@ html, body {
 
 .chip {
   border: 0;
-  background: rgba(120,120,128,.10);
+  background: rgba(58,53,46,.06);
   border-radius: 20px;
   padding: 6px 12px;
   font-size: 13px;
@@ -353,43 +594,69 @@ html, body {
 /* 视觉不变，点击区域上下各多 5 像素（30 → 40） */
 .chip::before { content: ""; position: absolute; inset: -5px -3px; border-radius: inherit; }
 .chip:active { transform: scale(.94); }
-.chip.on { background: var(--primary); color: #fff; font-weight: 600; }
+.chip.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+
+/* 常识的「不专门学」单独给入口。它不是一个普通档位，
+ * 而是很多人的默认选择，所以不要再混在四个小按钮里。 */
+.skip-tip {
+  margin-top: 9px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--accent-s);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.skip-tip .st-t {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.skip-tip .btn { flex: 0 0 auto; }
 
 /* ---------- 今日头部 ---------- */
 
 .today-head {
-  padding: 8px 20px 0;
+  padding: 18px 22px 0;
 }
 
 .today-head .date {
-  font-size: 13px; font-weight: 500; color: var(--ink-2);
-  letter-spacing: .02em;
+  /* 日期做成"小标签"：更小、更重、更淡、拉字距。
+   * 视线先落在「今天」上，而不是先看到日期。 */
+  font-size: 12px; font-weight: 600; color: var(--ink-3);
+  letter-spacing: .1em;
 }
 .today-head h1 {
-  margin: 2px 0 0;
-  font-size: 34px; font-weight: 700; letter-spacing: -.9px; line-height: 1.15;
+  margin: 5px 0 0;
+  font-size: 34px; font-weight: 750; letter-spacing: -1.1px; line-height: 1.12;
 }
 .today-head .state {
-  margin-top: 6px; font-size: 15px; color: var(--ink-2); letter-spacing: -.1px;
+  margin-top: 7px; font-size: 14.5px; color: var(--ink-2); letter-spacing: -.1px;
 }
 .today-head .state b { font-weight: 600; color: var(--ink); }
 .today-head .state i { font-style: normal; font-weight: 600; color: var(--ink); }
 
 .daybar {
-  margin-top: 12px;
-  height: 6px;
-  background: rgba(120,120,128,.16);
-  border-radius: 20px;
+  margin-top: 14px;
+  height: 7px;
+  background: var(--hair);
+  border-radius: 99px;
+  box-shadow: inset 0 1px 1px rgba(26, 24, 21, .05);
   overflow: hidden;
 }
 .daybar > i {
-  display: block; height: 100%; background: var(--primary); border-radius: 20px;
+  display: block; height: 100%;
+  border-radius: 99px;
+  box-shadow: 0 1px 2px var(--primary-line);
   transition: width .45s var(--ease);
 }
 
 .daybar-meta {
   display: flex; justify-content: space-between;
-  font-size: 12px; color: var(--ink-2); margin-top: 7px;
+  font-size: 11.5px; color: var(--ink-3); margin-top: 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 每日感受 ---------- */
@@ -437,7 +704,7 @@ html, body {
 .mood {
   flex: 1;
   border: 0;
-  background: rgba(120,120,128,.10);
+  background: rgba(58,53,46,.06);
   border-radius: 11px;
   padding: 11px 4px;
   font-family: inherit;
@@ -525,7 +792,11 @@ html, body {
   display: flex; align-items: center; justify-content: center;
   margin-top: 2px;
 }
-.stage.cur .stage-idx { background: var(--primary); color: #fff; }
+.stage.cur .stage-idx {
+  background: linear-gradient(180deg, var(--primary-l), var(--primary) 55%, var(--primary-d));
+  color: var(--on-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 3px 8px -3px var(--primary-d);
+}
 .stage.cur .stage-name { color: var(--primary); }
 
 .stage-name { font-weight: 600; }
@@ -535,10 +806,10 @@ html, body {
 
 .segmented {
   display: flex;
-  background: rgba(120,120,128,.12);
-  border-radius: 9px;
-  padding: 2px;
-  gap: 2px;
+  background: rgba(58,53,46,.075);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
 }
 .segmented button {
   flex: 1;
@@ -547,8 +818,8 @@ html, body {
   font: inherit;
   font-size: 13px;
   font-weight: 500;
-  padding: 6px 0;
-  border-radius: 7px;
+  padding: 7px 0;
+  border-radius: 8px;
   color: var(--ink-2);
   cursor: pointer;
   transition: background .2s ease, box-shadow .2s ease, color .2s ease;
@@ -556,8 +827,8 @@ html, body {
 .segmented button.on {
   background: #fff;
   color: var(--ink);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.04);
+  font-weight: 650;
+  box-shadow: 0 1px 2px rgba(58,53,46,.10), 0 0 0 .5px rgba(58,53,46,.05);
 }
 
 .range-note {
@@ -571,21 +842,38 @@ html, body {
 .plan-day:last-child { border-bottom: 0; }
 .plan-day:first-child { padding-top: 4px; }
 
-.pd-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.pd-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .pd-date { font-size: 14px; font-weight: 600; }
-.pd-date small { font-weight: 400; color: var(--ink-3); font-size: 12px; margin-left: 5px; }
-.pd-right { display: flex; align-items: center; gap: 8px; }
-.pd-total { font-size: 12px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pd-date small {
+  font-weight: 400; color: var(--ink-3); font-size: 12px; margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+/* 右半边是一条固定的值列：时长 → 加一项 → 展开箭头。
+ * 三样的宽度都固定，所以每行的时长右边缘是对齐的，不会有的靠左有的靠右。 */
+.pd-right { display: flex; align-items: center; gap: 6px; }
+.pd-total {
+  font-size: 12.5px; color: var(--ink-2);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
 .pd-add {
   flex: 0 0 auto;
-  width: 22px; height: 22px; line-height: 1;
-  border: 1px solid var(--line); border-radius: 7px;
-  background: #fff; color: var(--ink-3);
-  font: inherit; font-size: 13px; cursor: pointer;
+  width: 24px; height: 24px; line-height: 1;
+  border: 0; border-radius: 8px;
+  background: transparent; color: rgba(60, 60, 67, .30);
+  font: inherit; font-size: 15px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   padding: 0;
+  transition: background .18s ease, color .18s ease;
 }
 .pd-add:active { background: var(--primary-s); color: var(--primary); }
+/* 展开箭头：整行都能点，这个只是把"能展开"这件事说出来 */
+.pd-chev {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  color: var(--ink-3);
+}
+.plan-day.foldable:active { opacity: .6; }
 
 .pd-stage { font-size: 11.5px; color: var(--ink-3); margin-top: 1px; }
 .plan-day.rest .pd-date,
@@ -595,6 +883,12 @@ html, body {
 .plan-day.past { padding: 8px 0; }
 
 .pd-tasks { margin-top: 8px; }
+.pd-group {
+  margin: 7px 0 2px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  letter-spacing: .02em;
+}
 .pd-task { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 2px 0; }
 .pd-t { flex: 0 0 auto; }
 .pd-d {
@@ -612,12 +906,17 @@ html, body {
 .pd-mark.half { color: var(--half); }
 
 /* 折叠行（两周视图） */
-.plan-day.foldable { cursor: pointer; }
+.plan-day.foldable { cursor: pointer; transition: opacity .18s ease; }
 .pd-brief {
-  font-size: 12px; color: var(--ink-3); margin-top: 4px;
+  font-size: 12.5px; color: var(--ink-3); margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .plan-day.open .pd-date { color: var(--primary); }
+/* 展开时给整行一点底色，让人知道"这一块是打开着的" */
+.plan-day.open {
+  background: var(--primary-xs);
+  border-radius: 12px;
+}
 
 /* 月历 */
 .cal-grid {
@@ -790,7 +1089,13 @@ html, body {
   color: var(--ink-2);
   cursor: pointer;
 }
-.daypicker button.on { border-color: var(--accent); background: var(--accent-s); color: var(--accent); font-weight: 650; }
+/* 休息日选中的那个。这是"当前选择"，不是警告色，所以跟主题走。 */
+.daypicker button.on {
+  border-color: var(--primary);
+  background: var(--primary-s);
+  color: var(--primary-d);
+  font-weight: 650;
+}
 
 .footnote {
   font-size: 12px; color: var(--ink-3);
@@ -1086,7 +1391,7 @@ html, body {
 .ord-row:last-child { border-bottom: 0; }
 .ord-n {
   flex: 0 0 22px; height: 22px; border-radius: 50%;
-  background: rgba(120,120,128,.10); color: var(--ink-2);
+  background: rgba(58,53,46,.06); color: var(--ink-2);
   font-size: 12px; font-weight: 600;
   display: flex; align-items: center; justify-content: center;
 }
@@ -1120,6 +1425,22 @@ html, body {
   font-size: 11px; color: var(--ink-3); margin-top: 2px;
 }
 
+/* 一次卡都没打过时的热力图位置：用最淡的格子示意这里会有东西 */
+.hm-empty { text-align: center; padding: 12px 0 8px; }
+.hm-ghost-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 11px);
+  gap: 3px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.hm-ghost {
+  display: block; width: 11px; height: 11px;
+  border-radius: 3px; background: #f0ece5;
+}
+.hm-ghost.on { background: #e7dcc8; }
+.hm-empty p { margin: 0; font-size: 12.5px; color: var(--ink-3); }
+
 .cal-cell.rlv0 { background: #faf8f5; }
 .cal-cell.rlv1 { background: #f7f0e2; }
 .cal-cell.rlv2 { background: #f0e2c8; }
@@ -1150,10 +1471,250 @@ html, body {
 .lv-n { flex: 0 0 60px; font-size: 13.5px; }
 .lv-b {
   flex: 0 0 auto; font-size: 11.5px; padding: 2px 8px; border-radius: 20px;
-  background: rgba(120,120,128,.10); color: var(--ink-2);
+  background: rgba(58,53,46,.06); color: var(--ink-2);
 }
 .lv-b.lv1 { background: #f2ece0; color: #8a7b5c; }
 .lv-b.lv2 { background: var(--primary-s); color: var(--primary); }
 .lv-b.lv3 { background: var(--primary); color: #fff; }
 .lv-b.lv4 { background: var(--done); color: #fff; }
 .lv-s { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+
+/* =========================================================================
+ * 我的 / 工具 —— 一级分组
+ *
+ * 底部导航从 5 格收成 4 格：今日 / 计划 / 工具 / 我的。
+ * 记录、统计、设置收进「我的」：记录就在首页，统计和设置是它的二级页。
+ * 工具暂时是空的，只留一句话。
+ * ========================================================================= */
+
+/* 二级页（统计、设置）左上角的返回 */
+.page-back {
+  display: block;
+  border: 0; background: none;
+  font: inherit; font-size: 13.5px; font-weight: 600;
+  color: var(--primary);
+  padding: 0 0 3px;
+  cursor: pointer;
+  transition: opacity .18s ease;
+}
+.page-back:active { opacity: .55; }
+
+/* 我的：通往二级页的入口行 */
+.menu-row {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 14px 0;
+  background: none; border: 0; border-bottom: 1px solid var(--line);
+  font: inherit; font-size: 15.5px; letter-spacing: -.2px;
+  color: var(--ink); text-align: left; cursor: pointer;
+  transition: opacity .18s ease;
+}
+.menu-row:last-child { border-bottom: 0; }
+.menu-row:active { opacity: .55; }
+.menu-row .gi { flex: 0 0 auto; width: 20px; height: 20px; color: var(--ink-3); }
+.menu-row .mt { flex: 1; min-width: 0; }
+.menu-row .mn { flex: 0 0 auto; font-size: 12.5px; color: var(--ink-3); }
+.menu-row .chev { flex: 0 0 auto; color: rgba(58,53,46,.24); font-size: 19px; line-height: 1; }
+
+/* 工具：还没做出来时的空状态。
+ * 只告诉用户"这里以后可能会有东西"，不解释是什么。 */
+/* ---------- 设置 · 主题选择 ---------- */
+
+.theme-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.theme-sw {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  border: 0; background: none; padding: 8px 0 4px;
+  font: inherit; font-size: 10.5px; color: var(--ink-3);
+  cursor: pointer;
+  transition: color .18s ease;
+}
+.theme-sw i {
+  display: block; width: 30px; height: 30px; border-radius: 10px;
+  background: linear-gradient(160deg, var(--sw-l), var(--sw) 55%, var(--sw-d));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 2px 5px -2px var(--sw-d);
+  transition: box-shadow .2s ease, transform .2s var(--spring);
+}
+.theme-sw:active i { transform: scale(.9); }
+.theme-sw.on { color: var(--ink); font-weight: 650; }
+.theme-sw.on i {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .45),
+    0 0 0 2px var(--card),
+    0 0 0 4px var(--sw),
+    0 3px 8px -3px var(--sw-d);
+}
+
+.empty-card {
+  background: transparent;
+  border: 1.5px dashed rgba(58,53,46,.16);
+  text-align: center;
+  padding: 54px 24px 52px;
+}
+.empty-ico { color: rgba(58,53,46,.20); }
+.empty-ico svg { width: 42px; height: 42px; }
+.empty-t {
+  margin-top: 16px;
+  font-size: 15.5px; font-weight: 600;
+  letter-spacing: -.2px; color: var(--ink-2);
+}
+.empty-d {
+  margin-top: 5px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* 计划调整提示：只在有新的跨周 / 断更 / 阶段变化时出现。
+ * 用一条窄卡片，不弹窗、不抢任务，点进去才看明细。 */
+.adjust-banner {
+  margin: 14px 16px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-s);
+  background: var(--primary-s);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.adjust-banner .ab-body { flex: 1; min-width: 0; }
+.adjust-banner .ab-t {
+  font-size: 14px; font-weight: 600; color: var(--primary);
+  letter-spacing: -.1px;
+}
+.adjust-banner .ab-d {
+  margin-top: 2px;
+  font-size: 12.5px; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.adj-list { margin-top: 14px; max-height: 52vh; overflow: auto; }
+.adj-item {
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.adj-item:first-child { border-top: 0; }
+.adj-h {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+}
+.adj-h b { font-size: 14px; letter-spacing: -.1px; }
+.adj-h span { flex: 0 0 auto; font-size: 11.5px; color: var(--ink-3); }
+.adj-d {
+  margin-top: 3px;
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-2);
+}
+.adj-changes {
+  margin-top: 7px;
+  padding: 8px 9px;
+  border-radius: 9px;
+  background: #faf8f4;
+}
+.adj-change {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 11.5px; line-height: 1.6;
+  color: var(--ink-3);
+}
+.adj-change + .adj-change { margin-top: 3px; }
+.adj-date { flex: 0 0 auto; color: var(--ink-2); }
+.adj-before,
+.adj-after {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.adj-arrow { flex: 0 0 auto; color: var(--ink-3); }
+.adj-after { color: var(--ink); }
+.adj-more { margin-top: 4px; font-size: 11.5px; color: var(--ink-3); }
+.adj-empty { padding: 18px 0; text-align: center; font-size: 13px; color: var(--ink-3); }
+
+/* =========================================================================
+ * 体验模式（网址后面加 ?demo=1 才出现）—— 正式上架时整段删掉
+ * 上面那些是正式功能，这一段只服务 js/demo.js，删了不影响别处。
+ * ========================================================================= */
+
+.demo-bar {
+  margin: 10px 16px 16px;
+  padding: 12px 14px 13px;
+  border-radius: var(--radius-s);
+  background: var(--primary-s);
+  border: 1px dashed var(--primary-line);
+}
+
+.demo-top { display: flex; align-items: center; gap: 8px; }
+
+.demo-tag {
+  flex: 0 0 auto;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  color: #fff; background: var(--primary);
+  padding: 2px 7px; border-radius: 6px;
+}
+
+.demo-date { font-size: 13px; font-weight: 600; letter-spacing: -.1px; }
+
+/* 顶行右边那个"真实今天 x月x日"，点一下就能跳回去 */
+.demo-real {
+  margin-left: auto;
+  background: none; border: 0; padding: 2px 0;
+  font-family: inherit; font-size: 11.5px; color: var(--primary);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+
+.demo-main { display: flex; gap: 7px; margin-top: 10px; }
+/* 三个按钮等宽。文字长的那个自己缩，别把另外两个挤没了。 */
+.demo-main .btn { flex: 1 1 0; min-width: 0; padding-left: 4px; padding-right: 4px; }
+
+.demo-toggle {
+  display: block; width: 100%; margin-top: 9px;
+  background: none; border: 0; padding: 3px 0;
+  font-family: inherit; font-size: 12px; color: var(--ink-3); cursor: pointer;
+}
+
+.demo-label {
+  font-size: 11.5px; font-weight: 600; color: var(--ink-2);
+  margin: 12px 0 6px; letter-spacing: .01em;
+}
+
+/* 原生日历控件，点开就是系统自己的日期选择器。
+ * 不要加 appearance: none —— 那会把自带的日历按钮一起干掉。 */
+.demo-pick {
+  width: 100%; padding: 9px 12px;
+  font-family: inherit; font-size: 14px; color: var(--ink);
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+
+.demo-note {
+  margin-top: 12px;
+  font-size: 11.5px; line-height: 1.6; color: var(--ink-3);
+}
+
+.demo-off {
+  display: block; width: 100%; margin-top: 10px;
+  background: none; border: 0; padding: 6px 0;
+  font-family: inherit; font-size: 12px; color: var(--ink-3);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+
+/* 不在今日页时挂在右下角的小标。点了回今日。
+ * 位置放在底部导航栏上面，right 让它在 480px 那一列里贴右。 */
+.demo-pill {
+  position: fixed; z-index: 70;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  right: max(10px, calc(50vw - 240px + 10px));
+  background: var(--primary); color: var(--on-primary);
+  font-family: inherit; font-size: 11.5px; letter-spacing: .01em;
+  border: 0; border-radius: 999px; padding: 6px 12px;
+  cursor: pointer;
+}
+
+/* 设置页底部那行状态：平时写"改完自动重排"，重排中/刚重排完显示结果。
+ * 有这行，用户才知道自己改的数字到底生效了没有。 */
+.regen-note {
+  font-size: 12.5px; line-height: 1.5; color: var(--ink-3);
+  text-align: center; padding: 2px 4px 10px;
+  transition: color .2s ease;
+}
+.regen-note.busy { color: var(--ink-2); }
+.regen-note.done { color: var(--primary); font-weight: 600; }
+
+/* 问卷最后一步的预览里，课排不完时的那句提醒 */
+.pv-warn {
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; line-height: 1.6; color: var(--accent);
+}

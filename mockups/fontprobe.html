@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>字体实测</title>
+<!-- 直接用真项目的样式表，量出来的就是真项目的结果 -->
+<link rel="stylesheet" href="../css/styles.css">
+<style>
+  #probe { position: absolute; left: -9999px; top: 0; white-space: nowrap; font-size: 100px; }
+</style>
+</head>
+<body>
+  <div id="probe">资料分析 · 听课 2026</div>
+  <div id="out" style="padding:24px;font-size:15px;line-height:2"></div>
+
+  <script>
+    /* 同一串字，换不同的 font-family 量宽度。
+     * 宽度一样 = 浏览器最终落到同一款字体上。 */
+    (function () {
+      var el = document.getElementById('probe');
+      var body = getComputedStyle(document.body).fontFamily;
+
+      function w(fam) {
+        el.style.fontFamily = fam;
+        return Math.round(el.getBoundingClientRect().width * 100) / 100;
+      }
+
+      var rows = [
+        ['项目现在用的字体栈', body],
+        ['苹方 PingFang SC', '"PingFang SC"'],
+        ['思源黑体 Noto Sans SC', '"Noto Sans SC"'],
+        ['微软雅黑 Microsoft YaHei', '"Microsoft YaHei"'],
+        ['等线 DengXian', '"DengXian"'],
+        ['爱奇艺黑体', '"爱奇艺黑体"'],
+        ['思源宋体 Noto Serif SC', '"Noto Serif SC"']
+      ];
+
+      /* 必须等字体加载完再量。不等的话量的是回退字体，结论是反的。 */
+      function run() {
+        var base = w(body);
+        var lines = rows.map(function (r) {
+          var v = w(r[1]);
+          var same = Math.abs(v - base) < 0.5;
+          return r[0] + '  ' + v + (same && r[0].indexOf('项目') === -1 ? '  ← 和项目一样' : '');
+        });
+
+        document.getElementById('out').innerHTML =
+          'body 的 font-family =<br><b style="font-size:13px">' + body + '</b><br><br>' +
+          lines.map(function (s) { return s.replace(/&/g, '&amp;'); }).join('<br>');
+
+        var faces = [];
+        document.fonts.forEach(function (f) {
+          faces.push(f.family + ' ' + f.status);
+        });
+        document.title = 'PROBE ' + rows.map(function (r) { return r[0].split(' ')[0] + '=' + w(r[1]); }).join(' | ') +
+          ' || ' + faces.join(' , ');
+
+        /* 字重阶梯：同一串字，四档字重各量一次宽度。
+         * 宽度全都一样 = 字重轴没生效，全是合成粗体。 */
+        var wl = ['300', '400', '600', '700', '900'].map(function (wg) {
+          return '<span style="font-family:\'Noto Sans SC\';font-weight:' + wg +
+            ';font-size:40px;display:inline-block;width:200px">备考 Aa</span>' +
+            '<span style="font-size:11px;color:#888">wght ' + wg + '</span>　';
+        }).join('');
+        document.getElementById('out').insertAdjacentHTML('beforeend',
+          '<div style="margin-top:22px;font-size:15px">' +
+          '<div style="font-weight:700;margin-bottom:8px">字重轴实测</div>' + wl + '</div>');
+      }
+
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(run);
+      else run();
+    })();
+  </script>
+</body>
+</html>

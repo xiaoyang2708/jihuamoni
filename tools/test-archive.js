@@ -493,5 +493,28 @@ console.log('\n【14】档位是导航，不是关卡');
   check('申论不参与（它不按正确率算）', l6.indexOf('slw') === -1, l6.join(','));
 }
 
+/* ---- 阶段安排：系统推荐 + 用户自定义日期 ---- */
+(function () {
+  const rec = E.recommendPhasePlan(profile, startKey);
+  check('推荐阶段有基础期结束和冲刺开始',
+    !!rec.baseEnd && !!rec.sprintStart && rec.baseEnd < rec.sprintStart,
+    JSON.stringify(rec));
+
+  const customProfile = JSON.parse(JSON.stringify(profile));
+  customProfile.phasePlan = { custom: true, baseEnd: '2026-10-01', sprintStart: '2026-11-20' };
+  const rmCustom = E.buildRoadmap(customProfile, startKey);
+  check('自定义阶段被采用', rmCustom.phasePlan.custom === true, JSON.stringify(rmCustom.phasePlan));
+  check('自定义阶段有三段且连续',
+    rmCustom.stages.length === 3 &&
+    rmCustom.stages[0].endKey < rmCustom.stages[1].startKey &&
+    rmCustom.stages[1].endKey < rmCustom.stages[2].startKey,
+    JSON.stringify(rmCustom.stages.map(s => s.startKey + '~' + s.endKey)));
+  check('stageOf 在阶段边界上正确',
+    E.stageOf(rmCustom.stages[0].endKey, rmCustom) === 'base' &&
+    E.stageOf(rmCustom.stages[2].startKey, rmCustom) === 'sprint',
+    E.stageOf(rmCustom.stages[0].endKey, rmCustom) + '/' +
+    E.stageOf(rmCustom.stages[2].startKey, rmCustom));
+})();
+
 console.log('\n' + (fail ? '有 ' + fail + ' 条没过 ❌' : '全部通过 ✅'));
 process.exit(fail ? 1 : 0);

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>七个主题 · 真机截图</title>
+<style>
+  body {
+    margin: 0; padding: 40px 48px 48px;
+    background: #cfcbc4;
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #2a2724;
+  }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -.4px; }
+  p  { margin: 0 0 26px; font-size: 13px; color: #5d574f; line-height: 1.75; }
+  p b { color: #2a2724; }
+
+  .row { display: flex; gap: 26px; align-items: flex-start; }
+  .shot { width: 300px; flex: 0 0 auto; }
+  .shot .lb { font-size: 13px; font-weight: 700; margin: 0 0 9px; padding-left: 2px; }
+  .shot .lb em { font-style: normal; color: #9a8046; margin-right: 6px; }
+  .shot img {
+    display: block; width: 300px; height: auto; border-radius: 20px;
+    box-shadow: 0 14px 30px rgba(38,32,24,.2), 0 0 0 1px rgba(38,32,24,.07);
+  }
+
+  .bottom { display: flex; gap: 32px; align-items: flex-start; margin-top: 40px; }
+  .bottom .big { width: 420px; flex: 0 0 auto; }
+  .bottom .big img {
+    display: block; width: 420px; height: auto; border-radius: 26px;
+    box-shadow: 0 18px 38px rgba(38,32,24,.22), 0 0 0 1px rgba(38,32,24,.07);
+  }
+  .panel {
+    flex: 1; background: #fff; border-radius: 22px; padding: 26px 30px 28px;
+    box-shadow: 0 16px 34px rgba(38,32,24,.14);
+  }
+  .panel h2 { margin: 0 0 6px; font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
+  .panel .ps { margin: 0 0 20px; font-size: 12.5px; color: #6f685f; line-height: 1.75; }
+  .panel .li {
+    display: flex; gap: 12px; padding: 8px 0;
+    border-bottom: 1px solid rgba(26,24,21,.07);
+    font-size: 12.5px; line-height: 1.7;
+  }
+  .panel .li:last-child { border-bottom: 0; }
+  .panel .li b { flex: 0 0 92px; font-weight: 700; }
+  .panel .li span { flex: 1; min-width: 0; color: #5d574f; }
+
+  .swrow { display: flex; gap: 8px; margin-bottom: 18px; }
+  .sw {
+    width: 34px; height: 34px; border-radius: 11px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 3px 8px -4px rgba(0,0,0,.4);
+  }
+</style>
+</head>
+<body>
+  <h1>七个主题 · 真机截图</h1>
+  <p>这是<b>真项目</b>跑出来的，不是样张。切换方式是 <code>html[data-theme]</code> 上一组 CSS 变量——换色是瞬时的，不重排计划、不动数据。</p>
+
+  <div class="row">
+    <div class="shot"><div class="lb"><em>01</em>香槟金</div><img src="theme-champagne.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>02</em>玫瑰金</div><img src="theme-rose.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>03</em>雾蓝</div><img src="theme-mist.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>04</em>青瓷</div><img src="theme-celadon.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>05</em>竹青</div><img src="theme-bamboo.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>06</em>朱砂</div><img src="theme-cinnabar.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>07</em>可可</div><img src="theme-cocoa.png" alt=""></div>
+  </div>
+
+  <div class="bottom">
+    <div class="big">
+      <div class="lb" style="font-size:13px;font-weight:700;margin-bottom:9px;padding-left:2px">设置页里的选择器（当前选中：青瓷）</div>
+      <img src="theme-picker.png" alt="">
+    </div>
+    <div class="panel">
+      <h2>颜色多，会不会有影响？</h2>
+      <div class="ps">不会。换一个主题只改四个值，界面里所有跟品牌有关的地方都从这四个值派生。</div>
+      <div class="swrow">
+        <div class="sw" style="background:linear-gradient(160deg,#d9bb7e,#bb9455 55%,#96733a)"></div>
+        <div class="sw" style="background:linear-gradient(160deg,#ddafa2,#c08a7a 55%,#9c6555)"></div>
+        <div class="sw" style="background:linear-gradient(160deg,#86a5c7,#5a7fa8 55%,#3d5f85)"></div>
+        <div class="sw" style="background:linear-gradient(160deg,#7db0aa,#4e8c86 55%,#366964)"></div>
+        <div class="sw" style="background:linear-gradient(160deg,#93b183,#6b8f5a 55%,#4c6b3e)"></div>
+        <div class="sw" style="background:linear-gradient(160deg,#d07a6a,#b04c3e 55%,#8a372c)"></div>
+        <div class="sw" style="background:linear-gradient(160deg,#ac8d77,#8a6a55 55%,#664b3a)"></div>
+      </div>
+      <div class="li"><b>跟着变的</b><span>按钮、进度条、打卡圆点、当前阶段标记、选中的标签、底部导航高亮</span></div>
+      <div class="li"><b>故意不变</b><span>警告橙、危险红、半完成琥珀、三个阶段的配色。它们表达的是状态，不是品牌——跟着变反而看不懂</span></div>
+      <div class="li"><b>要留意的</b><span>朱砂做主色时，危险红（清空数据）会撞色。实际影响很小：那个按钮在设置最深处还有确认框。真在意的话，朱砂主题下把危险色换成深灰红就行</span></div>
+      <div class="li"><b>要加新主题</b><span>改两处：<code>js/config.js</code> 的 <code>YT.THEMES</code> 加一条，<code>css/styles.css</code> 里抄一段 <code>html[data-theme]</code>。id 必须一致</span></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>布局改完之后</title>
+<style>
+  body {
+    margin: 0; padding: 40px 48px 48px;
+    background: #cfcbc4;
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #2a2724;
+  }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -.4px; }
+  p  { margin: 0 0 26px; font-size: 13px; color: #5d574f; line-height: 1.75; }
+  p b { color: #2a2724; }
+  .row { display: flex; gap: 30px; align-items: flex-start; }
+  .shot { width: 356px; flex: 0 0 auto; }
+  .shot .lb { font-size: 13px; font-weight: 700; margin: 0 0 9px; padding-left: 2px; }
+  .shot .lb em { font-style: normal; color: #9a8046; margin-right: 6px; }
+  .shot img {
+    display: block; width: 356px; height: auto; border-radius: 24px;
+    box-shadow: 0 16px 34px rgba(38,32,24,.2), 0 0 0 1px rgba(38,32,24,.07);
+  }
+</style>
+</head>
+<body>
+  <h1>布局改完之后 · 香槟金</h1>
+  <p>真项目跑出来的。字是自托管的思源黑体，卡片靠投影分层，主按钮做成有厚度的实体，分组标题右边的入口做成了带箭头的胶囊。</p>
+  <div class="row">
+    <div class="shot"><div class="lb"><em>①</em>今日</div><img src="v3-today.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>②</em>计划</div><img src="v3-plan.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>③</em>我的</div><img src="v3-mine.png" alt=""></div>
+    <div class="shot"><div class="lb"><em>④</em>设置 · 主题色</div><img src="v3-settings.png" alt=""></div>
+  </div>
+</body>
+</html>

@@ -13,12 +13,43 @@
   var MODULE_BY_ID = window.YT.MODULE_BY_ID;
   var CFG = window.YT.CONFIG;
 
+  /* ?fresh=1：给朋友试用时用的一次性入口。
+   * 清掉本地数据，回到问卷第一页；清完就把参数从网址里去掉，
+   * 之后他们再打开同一个网址，进度不会被重复清空。 */
+  var forceFresh = false;
+  try {
+    forceFresh = /(?:^|[?&])fresh=1(?:&|$)/.test(window.location.search);
+    if (forceFresh) window.localStorage.removeItem(store.KEY);
+  } catch (e) { forceFresh = false; }
   var state = store.load();
+  if (forceFresh) {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      params.delete('fresh');
+      var qs = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+    } catch (e) {}
+  }
   var app = document.getElementById('app');
   var overlay = document.getElementById('overlay');
   var draft = null;
   var lastEnterKey = '';
   var pendingRestart = null;   // 断更回来时，等这一屏画完再弹学习档案
+  var deferredInstallPrompt = null;   // Chrome / 安卓的"添加到桌面"事件
+
+  function isStandalone() {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+  }
+
+  function isIOS() {
+    return /iPad|iPhone|iPod/.test(window.navigator.userAgent)
+      || (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+  }
+
+  function installHintVisible() {
+    return !(state.ui && state.ui.installHintDismissed);
+  }
 
   /* ---------------------------------------------------------------------
    * 小工具
@@ -95,6 +126,21 @@
     confirmCb = null;
     overlay.className = 'overlay hidden';
     overlay.innerHTML = '';
+  }
+
+  /* 一次性说明弹窗，只有一个"知道了"。
+   * 用来回答"我改完之后到底变了什么"——以前只有一句 toast，说不清楚。 */
+  function showNote(title, lines) {
+    confirmCb = null;
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal">' +
+        '<div class="modal-title">' + esc(title) + '</div>' +
+        '<div class="modal-msg">' + lines.map(function (l) { return esc(l); }).join('<br>') + '</div>' +
+        '<div class="row" style="gap:10px;margin-top:18px">' +
+          '<button class="btn primary grow" data-act="confirm-no">知道了</button>' +
+        '</div>' +
+      '</div>';
   }
 
   /* 带输入框的弹窗，用来补记已听的课 */
@@ -362,6 +408,28 @@
   /* 使用模式。老数据里没有这个字段的，按半自动算。 */
   function usageMode() {
     return E.usageModeOf(state.profile);
+  }
+
+  /* 当前主题。老档案里没有 theme 字段，落到默认那一个。
+   * 主题本身是靠 html[data-theme] 上的 CSS 变量切的（见 styles.css），
+   * 这里只负责把属性写上去。 */
+  function themeOf() {
+    /* 每一步都当它可能不存在。
+     * 之前这里直接读 window.YT.THEME_BY_ID[id]，一旦浏览器留着旧版的 config.js
+     * （里面还没有主题表），这里就抛错——render() 在它后面，整页白屏。 */
+    var themes = (window.YT && window.YT.THEMES) || [];
+    if (!themes.length) return 'champagne';
+    var id = (state.profile && state.profile.theme) || window.YT.DEFAULT_THEME;
+    for (var i = 0; i < themes.length; i++) {
+      if (themes[i].id === id) return id;
+    }
+    return themes[0].id;
+  }
+
+  /* 切主题不用重画整屏：只改根节点上的属性，CSS 变量立刻全变。
+   * 这样切换是瞬时的，也不会把滚动位置弄丢。 */
+  function applyTheme() {
+    document.documentElement.setAttribute('data-theme', themeOf());
   }
 
   /* 自己排模式：系统不排复盘，但可以按他今天自己排的量算一个建议时长，
@@ -820,6 +888,8 @@
     p.examDate = d.examDate;
     p.weekdayMinutes = Number(d.weekdayMinutes);
     p.weekendMinutes = Number(d.weekendMinutes);
+    /* 换了考试日期，旧的阶段边界就不适用了，回到系统推荐值。 */
+    p.phasePlan = { custom: false };
 
     var start = (d.mode === 'new') ? tk : ((state.roadmap && state.roadmap.startKey) || tk);
     state.roadmap = E.buildRoadmap(p, start);
@@ -1147,6 +1217,11 @@
       days: JSON.parse(JSON.stringify(state.days)),
       weeklyLog: JSON.parse(JSON.stringify(state.weeklyLog || [])),
       weekMark: JSON.parse(JSON.stringify(state.weekMark || {})),
+      /* 顺手记一份课节数。撤销的时候连设置一起退回去，
+       * 否则会出现"撤销了，但下次重排又按新节数来"这种怪事。 */
+      courseUnits: JSON.parse(JSON.stringify((state.profile && state.profile.courseUnits) || {})),
+      lessonMinutes: state.profile && state.profile.lessonMinutes,
+      speed: state.profile && state.profile.speed,
     };
   }
 
@@ -1172,23 +1247,49 @@
     return out;
   }
 
-  function finishChange(before, title) {
+  function finishChange(before, title, notes) {
     rebuildCourseLabels();
     var diff = diffDays(before.days, state.days);
     lastUndo = before;
+    /* 计划里"今天"这一格常常不动：已经打过卡的日子系统一律不覆盖。
+     * 不说这一句，用户改完设置看今天的任务没变，就会以为设置没生效。 */
+    if (diff.length && diff[0].date > todayKey()) {
+      notes = ['今天（' + fmtDate(todayKey(), false) + '）已经动过了，系统不覆盖动过的日子，' +
+        '所以这次变化从 ' + fmtDate(diff[0].date, false) + ' 开始。'].concat(notes || []);
+    }
+    /* 结构性改动也留一条记录。用户下次想知道"计划什么时候变过"时，
+     * 不用凭记忆翻日期。真正的对比面板照旧马上弹。 */
+    if (diff.length && title) {
+      var adj = logAdjust('task', title, '这次改动影响到了 ' + diff.length + ' 天。', {
+        changes: diff.slice(0, 2),
+        changedCount: diff.length,
+      });
+      state.ui.adjustSeenAt = adj.at;
+      if (lastUndo) lastUndo.adjustId = adj.id;
+    }
     save();
     render();
-    if (!diff.length) { toast(title); return; }
-    showChangePanel(title, diff);
+    /* 一天都没变，但计划整体可能变了（基础期多长、听课总时长、排不排得完）。
+     * 这时候也要说清楚，不然就是"我改了，怎么什么都没发生"。 */
+    if (!diff.length) {
+      if (notes && notes.length) return showNote(title, notes);
+      toast(title);
+      return;
+    }
+    showChangePanel(title, diff, notes);
   }
 
-  function showChangePanel(title, diff) {
+  function showChangePanel(title, diff, notes) {
     var shown = diff.slice(0, 4);
     var more = diff.length - shown.length;
     overlay.className = 'overlay';
     overlay.innerHTML =
       '<div class="modal">' +
         '<div class="modal-title">' + esc(title) + '</div>' +
+        (notes && notes.length
+          ? '<div class="tiny muted" style="margin:-4px 0 10px;line-height:1.6">' +
+              notes.map(function (n) { return esc(n); }).join('<br>') + '</div>'
+          : '') +
         '<div class="modal-msg">影响到了 ' + diff.length + ' 天：</div>' +
         '<div class="chg-list">' +
           shown.map(function (d) {
@@ -1203,6 +1304,75 @@
         '<div class="row" style="gap:10px;margin-top:16px">' +
           '<button class="btn grow" data-act="chg-undo">撤销</button>' +
           '<button class="btn primary grow" data-act="chg-ok">知道了</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* ---------------------------------------------------------------------
+   * 计划调整记录
+   *
+   * 打卡本身只记录事实；真正动到未来安排的是跨周、断更、阶段变化
+   * 和用户自己删改任务。这些变化都记一条，今日页有新记录时出提示。
+   * ------------------------------------------------------------------- */
+
+  function logAdjust(type, title, detail, extra) {
+    state.adjustLog = state.adjustLog || [];
+    var entry = {
+      id: uid('adj-'),
+      at: new Date().toISOString(),
+      date: todayKey(),
+      type: type || 'plan',
+      title: title || '计划有调整',
+      detail: detail || '',
+    };
+    if (extra) Object.keys(extra).forEach(function (k) { entry[k] = extra[k]; });
+    state.adjustLog.push(entry);
+    if (state.adjustLog.length > 40) state.adjustLog = state.adjustLog.slice(-40);
+    return entry;
+  }
+
+  function unseenAdjust() {
+    var seen = (state.ui && state.ui.adjustSeenAt) || '';
+    var list = (state.adjustLog || []).filter(function (e) { return e.at > seen; });
+    return list.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+
+  function adjustRowHtml(e) {
+    var changes = (e.changes || []).map(function (d) {
+      return '<div class="adj-change">' +
+        '<span class="adj-date">' + fmtDate(d.date, false) + '</span>' +
+        '<span class="adj-before">' + esc(d.before || '（没有）') + '</span>' +
+        '<span class="adj-arrow">→</span>' +
+        '<span class="adj-after">' + esc(d.after || '（取消）') + '</span>' +
+      '</div>';
+    }).join('');
+    return '<div class="adj-item">' +
+      '<div class="adj-h"><b>' + esc(e.title) + '</b><span>' + fmtDate(e.date || e.at.slice(0, 10), false) + '</span></div>' +
+      (e.detail ? '<div class="adj-d">' + esc(e.detail) + '</div>' : '') +
+      (changes ? '<div class="adj-changes">' + changes +
+        (e.changedCount > (e.changes || []).length
+          ? '<div class="adj-more">还有 ' + (e.changedCount - e.changes.length) + ' 天也有变化</div>'
+          : '') + '</div>' : '') +
+    '</div>';
+  }
+
+  function openAdjustLog() {
+    var list = (state.adjustLog || []).slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+    state.ui = state.ui || {};
+    state.ui.adjustSeenAt = new Date().toISOString();
+    save();
+    render();   // 先把今日页那条"计划有调整"收掉，再打开明细
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal">' +
+        '<div class="modal-title">计划调整记录</div>' +
+        '<div class="modal-msg">计划什么时候变过、为什么变，都记在这里。</div>' +
+        '<div class="adj-list">' +
+          (list.length ? list.slice(0, 12).map(adjustRowHtml).join('')
+                       : '<div class="adj-empty">还没有调整记录</div>') +
+        '</div>' +
+        '<div class="row" style="margin-top:16px">' +
+          '<button class="btn primary block" data-act="adj-close">知道了</button>' +
         '</div>' +
       '</div>';
   }
@@ -1263,6 +1433,80 @@
     });
   }
 
+  /* 课程"完成一半"时，拆出一条"续听"任务。
+   * 原任务继续算半节进度；续听任务不占节次编号，只把剩下那半节接上。
+   * 当天没做完的话，第二天的顺延逻辑会把它排到最前面。 */
+  function syncHalfCourse(day, task) {
+    if (!day || !task || task.kind !== 'course') return false;
+    var tasks = day.tasks || [];
+    var existing = null;
+    tasks.forEach(function (t) {
+      if (t.continuationOf === task.id) existing = t;
+    });
+
+    if (task.status !== 'half' || task.skip) {
+      if (existing) {
+        /* 续听也可能被标成一半，从而再拆出一条子续听。
+         * 撤回时要把整条链一起收掉，不能留下孤儿任务。 */
+        var pendingIds = [task.id];
+        for (var i = 0; i < pendingIds.length; i++) {
+          var pid = pendingIds[i];
+          tasks.slice().forEach(function (t) {
+            if (t.continuationOf !== pid) return;
+            pendingIds.push(t.id);
+            tasks.splice(tasks.indexOf(t), 1);
+          });
+        }
+        return true;
+      }
+      return false;
+    }
+
+    var remUnits = Math.max(0.25, Math.round(((task.units || 1) / 2) * 4) / 4);
+    var remMinutes = Math.max(5, Math.round((task.minutes || 0) / 2));
+    if (existing) {
+      existing.units = remUnits;
+      existing.amounts = remUnits;
+      existing.minutes = remMinutes;
+      existing.amountText = '约 ' + remMinutes + ' 分钟';
+      return false;
+    }
+
+    var m = MODULE_BY_ID[task.moduleId] || {};
+    var cont = {
+      id: uid('cont-'),
+      moduleId: task.moduleId,
+      moduleName: task.moduleName,
+      kind: 'course',
+      title: (m.short || task.moduleName || '课程') + ' · 续听',
+      detail: '把没听完的部分接着听完',
+      amounts: remUnits,
+      units: remUnits,
+      amountText: '约 ' + remMinutes + ' 分钟',
+      minutes: remMinutes,
+      status: 'todo',
+      actualMinutes: null,
+      noSeq: true,
+      continuation: true,
+      continuationOf: task.id,
+    };
+    var idx = tasks.indexOf(task);
+    tasks.splice(idx + 1, 0, cont);
+    return true;
+  }
+
+  /* 老数据里可能已经有"完成一半"的课，但当时还没有续听任务。
+   * 每次跨天检查时补一遍，保证顺延逻辑接得上。 */
+  function syncAllHalfCourses() {
+    Object.keys(state.days || {}).sort().forEach(function (k) {
+      var day = state.days[k];
+      if (!day || day.isRest) return;
+      (day.tasks || []).slice().forEach(function (t) {
+        if (t.kind === 'course') syncHalfCourse(day, t);
+      });
+    });
+  }
+
   function taskDetail(t) {
     if (t.kind === 'course' && courseLabels[t.id]) return courseLabels[t.id];
     return t.detail || t.amountText || '';
@@ -1283,131 +1527,39 @@
   var moodPreview = null;
 
   /* ---------------------------------------------------------------------
-   * 开发者工具：快进
-   * 不用真的等 30 天，就能看到跨周重排、降档、阶段推进跑出来是什么样。
+   * 体验模式：只把 app.js 的内部能力借给 js/demo.js
    *
-   * 只在本机显示（localhost / 局域网 IP）。发布到网上自动隐藏——
-   * 靠手动改开关太容易忘，而且改了之后自己在本地也没法用了。
+   * 演示用的界面、按钮和全部逻辑都在 js/demo.js 里，这里只开一扇门。
+   * 【正式上架时怎么删干净】见 js/demo.js 文件顶部，一共四处。
    * ------------------------------------------------------------------- */
 
-  var SHOW_DEV = (function () {
-    var h = location.hostname;
-    if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return true;
-    if (/^192\.168\./.test(h) || /^10\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-    return false;
-  })();
-
-  function makeRnd(seed) {
-    var s = seed || 20260918;
-    return function () {
-      s = (s * 1103515245 + 12345) & 0x7fffffff;
-      return s / 0x7fffffff;
+  function demoCtx() {
+    return {
+      getState: function () { return state; },
+      todayKey: todayKey,
+      realTodayKey: realTodayKey,
+      save: save,
+      render: render,
+      go: go,
+      toast: toast,
+      askConfirm: askConfirm,
+      dailyRoll: dailyRoll,
+      regenFuture: regenFuture,
+      setTaskStatus: setTaskStatus,
+      /* 回到问卷第一页。跟设置页那个「重新开始」是同一条路。 */
+      hardReset: function () {
+        state = store.reset();
+        draft = null;
+        save();
+        render();
+      },
     };
   }
+  window.YT.demoCtx = demoCtx;
 
-  /* 按完成率造一天的打卡记录。固定种子，同样参数跑出来结果一样。 */
-  function simulateCheckin(day, rate, rnd) {
-    if (!day || day.isRest) return;
-    (day.tasks || []).forEach(function (t) {
-      var r = rnd();
-      if (r < rate) {
-        t.status = 'done';
-        if (rnd() < 0.6) {
-          t.actualMinutes = Math.max(1, Math.round(t.minutes * (0.75 + rnd() * 0.5)));
-        }
-      } else if (r < rate + 0.12) {
-        t.status = 'half';
-      }
-    });
-    /* 感受跟完成情况挂钩：做得顺就是轻松，做不动就是累 */
-    var r2 = rnd();
-    if (rate < 0.6) day.mood = r2 < 0.5 ? 'hard' : 'tired';
-    else if (rate > 0.9) day.mood = r2 < 0.5 ? 'easy' : 'ok';
-    else day.mood = r2 < 0.4 ? 'ok' : (r2 < 0.7 ? 'tired' : 'easy');
-  }
-
-  function simulateForward(days, rate) {
-    /* 先备份，随时能还原 */
-    state.devBackup = JSON.stringify({
-      simDate: state.simDate, days: state.days, roadmap: state.roadmap,
-      weeklyLog: state.weeklyLog, weekMark: state.weekMark, rounds: state.rounds,
-    });
-
-    var rnd = makeRnd(20260918 + days);
-    var d = E.parseKey(todayKey());
-    var done = 0;
-    for (var i = 0; i < days; i++) {
-      var dk = E.toKey(d);
-      state.simDate = dk;
-      dailyRoll();                       // 和真实打开 App 走同一条路径
-      var day = state.days[dk];
-      if (day && !day.isRest) { simulateCheckin(day, rate, rnd); done++; }
-      d = E.addDays(d, 1);
-    }
-    state.simDate = E.toKey(d);
-    dailyRoll();
-    save();
-    return done;
-  }
-
-  function restoreDev() {
-    if (!state.devBackup) return false;
-    var b = JSON.parse(state.devBackup);
-    state.simDate = b.simDate;
-    state.days = b.days;
-    state.roadmap = b.roadmap;
-    state.weeklyLog = b.weeklyLog;
-    state.weekMark = b.weekMark;
-    state.rounds = b.rounds || [];
-    if (b.onboarding && b.profile) state.profile = b.profile;
-    state.devBackup = null;
-    save();
-    return true;
-  }
-
-  function devRows() {
-    var rate = state.ui.simRate || 0.75;
-    function rateBtn(v, label) {
-      return '<button class="chip ' + (rate === v ? 'on' : '') + '" data-act="sim-rate" data-v="' + v + '">' + label + '</button>';
-    }
-    return '<div class="param-row">' +
-      '<div class="param-note">这一块只有你自己用，发布给朋友时会隐藏。' +
-      '快进会按你选的完成率把中间每一天都跑一遍——周重排、任务顺延、阶段推进走的都是真实逻辑，不是造出来的假数据。跑完可以一键还原。</div>' +
-      '<div class="param-head" style="margin-top:10px"><span class="param-label">模拟完成率</span></div>' +
-      '<div class="chips" style="margin-top:6px">' +
-        rateBtn(0.5, '50% 经常完不成') + rateBtn(0.75, '75% 一般') + rateBtn(0.95, '95% 很稳') +
-      '</div>' +
-      '<div class="param-head" style="margin-top:14px"><span class="param-label">快进</span></div>' +
-      '<div class="chips" style="margin-top:6px">' +
-        '<button class="chip" data-act="sim-run" data-v="7">7 天</button>' +
-        '<button class="chip" data-act="sim-run" data-v="30">30 天</button>' +
-        '<button class="chip" data-act="sim-run" data-v="60">60 天</button>' +
-        '<button class="chip" data-act="sim-run" data-v="120">120 天</button>' +
-      '</div>' +
-      '<div class="param-note" style="margin-top:12px">' +
-        '想自己每天点一遍的话用下面这个——它只把日期往后拨一天，不帮你打卡，' +
-        '然后你就像平常一样勾任务、选感受，再拨下一天。这样验证到的就是你真实的操作路径。</div>' +
-      '<div class="chips" style="margin-top:6px">' +
-        '<button class="chip" data-act="sim-next">过一天 →</button>' +
-        (state.simDate ? '<button class="chip" data-act="sim-today">回到真实今天</button>' : '') +
-      '</div>' +
-      '<div class="param-note" style="margin-top:12px">当前日期：<b>' + todayKey() + '</b>' +
-        (state.simDate ? '（真实今天是 ' + realTodayKey() + '）' : '') + '</div>' +
-      '<div class="param-head" style="margin-top:14px"><span class="param-label">模拟断更</span></div>' +
-      '<div class="chips" style="margin-top:6px">' +
-        '<button class="chip" data-act="sim-break" data-v="5">停 5 天后回来</button>' +
-        '<button class="chip" data-act="sim-break" data-v="12">停 12 天后回来</button>' +
-      '</div>' +
-      '<div class="param-note" style="margin-top:8px">' +
-        '直接跳到"断更 N 天之后"，看看回来那天自动弹出的学习档案、' +
-        '以及那些天没做完的东西是不是真的没被算成欠账。</div>' +
-      (state.devBackup
-        ? '<button class="btn ghost block" style="margin-top:10px" data-act="sim-restore">还原到快进前</button>'
-        : '') +
-      '<button class="btn ghost block" style="margin-top:10px" data-act="sim-restart">重走一遍问卷</button>' +
-      '<div class="param-note">重走问卷会先自动备份，走完之后可以点上面的"还原"退回来。' +
-      '这样你就能反复看刚进项目的那几个界面了。</div>' +
-    '</div>';
+  /* 体验模式开着没有。demo.js 没加载（正式版）时永远是 false。 */
+  function demoOn() {
+    return !!(window.YT.demo && window.YT.demo.enabled());
   }
 
   /* 明天起第一个"还没动过"的学习日。已打过卡的日子不会因为改感受被重排，
@@ -1516,6 +1668,190 @@
     if (onDone) onDone();
   }
 
+  /* ---------------------------------------------------------------------
+   * 设置改完立刻重排
+   *
+   * 以前是"改完点最下面那个按钮"，但设置页很长，改数字的地方离按钮很远，
+   * 用户改完往下一看计划没动，就会以为设置没生效。
+   * 现在改完自动重排：输入框停手 400ms 就重算，点选类即刻重算。
+   * ------------------------------------------------------------------- */
+
+  var regenTimer = null;
+  var regenNote = null;        // { text: '…', busy: true/false }
+  var regenNoteTimer = null;
+  var regenDoneText = null;    // 有些改动想说自己那句话（比如"已切到全自动"）
+
+  function setRegenNote(text, busy) {
+    regenNote = { text: text, busy: !!busy };
+    paintRegenNote();
+    clearTimeout(regenNoteTimer);
+    if (!busy) {
+      /* 过一会儿收回默认那句，免得一直挂着一串旧数字 */
+      regenNoteTimer = setTimeout(function () {
+        regenNote = null;
+        paintRegenNote();
+      }, 6000);
+    }
+  }
+
+  function paintRegenNote() {
+    var el = document.querySelector('.regen-note');
+    if (!el) return;
+    el.textContent = regenNote ? regenNote.text : '设置改完会自动重排后面的计划';
+    el.className = 'regen-note' + (regenNote ? (regenNote.busy ? ' busy' : ' done') : '');
+  }
+
+  function scheduleRegen(delay, doneText) {
+    /* 只在设置页自动重排。别的页面（问卷、记录成绩）改了不算设置 */
+    if (!state.profile || (state.ui.screen || '') !== 'settings') return;
+    regenDoneText = doneText || null;
+    setRegenNote('正在按新设置重排…', true);
+    clearTimeout(regenTimer);
+    regenTimer = setTimeout(runRegenNow, delay === undefined ? 400 : delay);
+  }
+
+  function runRegenNow() {
+    regenTimer = null;
+    if (!state.profile) return;
+    var before = planSnapshot();
+    generateAll();
+    setRegenNote(regenDoneText || planDiffShort(before));
+    regenDoneText = null;
+    reRenderKeepPlace();
+  }
+
+  /* 重排之后要把设置页里那些跟着变的数字（听课进度、顺序表、强度表）刷新一遍。
+   * 但用户多半还在输入框里，所以重画之后把焦点和光标位置还回去。 */
+  function reRenderKeepPlace() {
+    /* 记住"刚才在操作哪个控件"，重画之后把焦点还回去。
+     *
+     * 选择器必须一路精确到 data-k / data-m / data-v，只写 data-act 的话
+     * 永远命中页面上第一个同类控件——原来就是这个毛病：点第 3 个折叠分组，
+     * 焦点却被还给第 1 个，浏览器为了让它可见把整页滚上去，
+     * 表现就是"一展开就被弹回上面"。 */
+    var ae = document.activeElement;
+    var focusSel = null;
+    if (ae && ae.getAttribute && ae.getAttribute('data-act')) {
+      var parts = ['[data-act="' + ae.getAttribute('data-act') + '"]'];
+      ['data-k', 'data-m', 'data-v'].forEach(function (a) {
+        var v = ae.getAttribute(a);
+        if (v !== null && v !== '') parts.push('[' + a + '="' + v + '"]');
+      });
+      focusSel = parts.join('');
+    }
+    var sel = null;
+    try { sel = ae ? ae.selectionStart : null; } catch (e) { sel = null; }
+    var sy = window.scrollY;
+
+    render();
+    window.scrollTo(0, sy);
+
+    if (!focusSel) return;
+    var el = document.querySelector(focusSel);
+    if (!el || !el.focus) return;
+    /* preventScroll：焦点可以还，页面不许动 */
+    try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    if (sel !== null && sel !== undefined) {
+      try { el.setSelectionRange(sel, sel); } catch (e) { /* number 输入框不支持，忽略 */ }
+    }
+  }
+
+  /* 通用折叠块。计划详情、设置里的各个分组都用它。
+   * 展开状态放在 state.ui.folds 里，记住上次的选择。 */
+  function foldOpen(key, defaultOpen) {
+    state.ui = state.ui || {};
+    state.ui.folds = state.ui.folds || {};
+    var v = state.ui.folds[key];
+    return v === undefined ? !!defaultOpen : !!v;
+  }
+
+  /* 统一的展开箭头。
+   * 以前用 '⌃' '⌄' 两个字符，问题是它们在不同字体里的粗细、大小、基线都不一样，
+   * 而且换字符等于换布局，没法做旋转动画。SVG 一套到底。 */
+  function chevIcon() {
+    return '<svg class="chev-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M8.4 10.2l3.6 3.6 3.6-3.6"/></svg>';
+  }
+
+  /* 右箭头。用在"点了会去另一个地方"的按钮上——比如「调整阶段」跳去设置页。
+   * 光写文字的话，用户会以为那只是几个字。 */
+  function arrowRight() {
+    return '<svg class="bi" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M10.4 7.4l4.6 4.6-4.6 4.6"/></svg>';
+  }
+
+  function foldBlock(key, title, note, body, defaultOpen) {
+    var open = foldOpen(key, defaultOpen);
+    return '<div class="fold' + (open ? ' open' : '') + '">' +
+      '<button class="fold-head" data-act="fold-toggle" data-k="' + esc(key) + '">' +
+        '<span class="fold-t">' + esc(title) + '</span>' +
+        (note ? '<span class="fold-n">' + esc(note) + '</span>' : '') +
+        chevIcon() +
+      '</button>' +
+      '<div class="fold-body">' + body + '</div>' +
+    '</div>';
+  }
+
+  /* 给设置页底部那行状态用的一句话，短，够看明白 */
+  function planDiffShort(b) {
+    var a = planSnapshot();
+    var parts = [];
+    function row(label, from, to) {
+      if (from === null || to === null || from === to) return;
+      parts.push(label + ' ' + from + '→' + to);
+    }
+    row('基础期', b.base, a.base);
+    row('强化期', b.strong, a.strong);
+    row('听课时长', b.hours, a.hours);
+    if (!parts.length) return '已按新设置重排，后面的计划没有变化';
+    return '已重排：' + parts.join('　·　') +
+      (a.left > 0 ? '　（还有 ' + a.left + ' 节课排不进去）' : '');
+  }
+
+  /* 重排前后各拍一张，用来告诉用户"这次到底改了什么"。
+   * 以前点完重排只弹一句 toast 就跳回今日页，而变化全在计划页最上面，
+   * 于是"我改了课节数，计划怎么没反应"这个问题一定会出现。 */
+  function planSnapshot() {
+    var stages = (state.roadmap && state.roadmap.stages) || [];
+    var lc = (state.roadmap && state.roadmap.lessonCheck) || {};
+    var fc = state.forecast || {};
+    var units = 0;
+    MODULES.forEach(function (m) { units += E.targetUnits(m, state.profile); });
+    return {
+      base: stages[0] ? stages[0].studyDays : null,
+      strong: stages[1] ? stages[1].studyDays : null,
+      hours: lc.totalMinutes ? Math.round(lc.totalMinutes / 60) : null,
+      units: Math.round(units * 10) / 10,
+      left: (fc.courseLeft && fc.courseLeft.units) || 0,
+      leftHours: fc.courseLeft ? Math.round(fc.courseLeft.minutes / 60) : 0,
+    };
+  }
+
+  function planDiff(b) {
+    var a = planSnapshot();
+    var lines = [];
+    function row(label, from, to, unit) {
+      if (from === null || to === null || from === to) return;
+      lines.push(label + '：' + from + unit + ' → ' + to + unit);
+    }
+    row('基础期', b.base, a.base, ' 天');
+    row('强化期', b.strong, a.strong, ' 天');
+    row('听课总时长', b.hours, a.hours, ' 小时');
+    row('要听的课', b.units, a.units, ' 节');
+    if (a.left > 0) {
+      lines.push('注意：按现在的时间，有 ' + a.left + ' 节课（约 ' + a.leftHours +
+        ' 小时）到最后也排不进去。这种情况再减课节数，日期不会变，只是把后面的科目顶上来。');
+    }
+    if (!lines.length) {
+      lines.push('排出来的任务没有变化。');
+      lines.push('因为"今天该听哪节课、做哪几道题"跟总共打算听多少节没有关系——');
+      lines.push('改这个数字影响的是"课什么时候听完、基础期多长"，这些在计划页最上面。');
+    }
+    return lines;
+  }
+
   function generateWithOverlay(onDone) {
     var msgs = [
       '正在读取你的可用时间和考试日期…',
@@ -1553,26 +1889,19 @@
     if (!state.profile || !state.roadmap) return;
     state.forecast = E.forecast(state, tk);
     if (state.forecast) state.roadmap.stages = state.forecast.stages;
-    /* 中间挤不出专项期的话，顺手算一下"砍多少课能腾出四周"。
-     * 只有这种情况才多跑几次预测，正常情况下零开销。 */
+    /* 课排不完才需要算"砍多少"。现在阶段按日期切，
+     * 砍课不会让强化期变长，只会让剩下的课排得进去。 */
     state.cutPlan = null;
-    var wantDays = cutWantDays();
-    if (state.forecast && (state.forecast.stages[1].studyDays || 0) < wantDays) {
-      state.cutPlan = courseCutPlan(tk, wantDays);
+    if (state.forecast && state.forecast.courseLeft &&
+        state.forecast.courseLeft.units > 0.5) {
+      state.cutPlan = courseCutPlan(tk);
     }
   }
 
-  /* 希望腾出多少学习日给专项。备考期短的话按比例要，别张口就要四周——
-   * 一共只剩一个月的人，砍掉七成的课也变不出四周。 */
-  function cutWantDays() {
-    var total = (state.roadmap && state.roadmap.totalStudyDays) || 100;
-    return Math.max(7, Math.min(20, Math.floor(total * 0.4)));
-  }
-
   /* 砍课比例不是拍脑袋来的：把每科课节数按同一个比例缩小，
-   * 重新预测一遍，看专项期能不能到 wantDays 天。试几档就够。
+   * 重新预测一遍，看剩下的课能不能排完。试几档就够。
    * 试的时候临时改 profile，马上改回来——中间没有异步操作，安全。 */
-  function courseCutPlan(tk, wantDays) {
+  function courseCutPlan(tk) {
     var p = state.profile;
     var cur = {};
     MODULES.forEach(function (m) {
@@ -1585,12 +1914,16 @@
     var tries = [0.85, 0.7, 0.6, 0.5];
     var best = null;
     var sumBefore = 0;
-    MODULES.forEach(function (m) { sumBefore += cur[m.id]; });
+    MODULES.forEach(function (m) {
+      if (m.essay) return;
+      sumBefore += cur[m.id];
+    });
 
     for (var i = 0; i < tries.length; i++) {
       var f = tries[i];
       var sumAfter = 0;
       MODULES.forEach(function (m) {
+        if (m.essay) return;
         var nv = Math.max(0.5, Math.round(cur[m.id] * f * 2) / 2);
         sumAfter += nv;
         p.courseUnits[m.id] = nv;
@@ -1599,16 +1932,20 @@
       MODULES.forEach(function (m) { p.courseUnits[m.id] = cur[m.id]; });
       /* 已经砍到低了，再建议就是骚扰 */
       if (sumAfter >= sumBefore - 0.001) continue;
-      var strDays = fc ? (fc.stages[1].studyDays || 0) : 0;
-      best = { factor: f, strDays: strDays };
-      if (strDays >= wantDays) break;
+      var left = fc && fc.courseLeft ? fc.courseLeft.units : 0;
+      best = {
+        factor: f,
+        left: Math.round(left * 10) / 10,
+        fit: left <= 0.5,
+      };
+      if (best.fit) break;
     }
     if (!best || best.factor >= 1) return null;
 
     /* 挑一个模块当例子说给用户听，比一堆百分比好懂 */
     var sample = null;
     MODULES.forEach(function (m) {
-      if (sample || !cur[m.id]) return;
+      if (m.essay || sample || !cur[m.id]) return;
       sample = { short: m.short, from: cur[m.id], to: Math.max(0.5, Math.round(cur[m.id] * best.factor * 2) / 2) };
     });
     best.sample = sample;
@@ -1617,6 +1954,10 @@
 
   function dailyRoll() {
     var tk = todayKey();
+
+    /* 老数据里"完成一半"的课没有续听任务，先补齐再走顺延。 */
+    syncAllHalfCourses();
+    var beforeDays = JSON.parse(JSON.stringify(state.days || {}));
 
     /* 0. 断了很久回来：把断更期间"排了但一下都没碰"的日子清掉。
      * 必须放在顺延之前，否则那些天没做完的东西会被顺延到未来，
@@ -1627,6 +1968,10 @@
     if (ri && !E.isRest(E.parseKey(tk), state.profile) && state.ui.restartSeenOn !== tk) {
       state.ui.restartSeenOn = tk;
       pendingRestart = ri;
+      logAdjust('restart', '停了一段时间，已经帮你接上',
+        '上次学习是 ' + fmtDate(ri.lastKey, false) + '，中间隔了 ' + ri.missed +
+        ' 个学习日。断更期间的旧安排已经清掉，今天先按' +
+        (ri.level === 'long' ? '六成' : '八成') + '的量来。');
     }
 
     /* 1. 如果跨进了新的一周，先按上周的实际表现重排本周还没开始的部分 */
@@ -1662,6 +2007,30 @@
         factor: roll.factor,
       });
       if (state.weeklyLog.length > 12) state.weeklyLog = state.weeklyLog.slice(-12);
+
+      /* 记一条带具体变化的调整记录。数量不多，只看前三天，
+       * 剩下的在"全部记录"里告诉用户还有几天也变了。 */
+      rebuildCourseLabels();
+      var weekDiff = diffDays(beforeDays, state.days);
+      logAdjust('week', '已按上周完成情况重排本周',
+        '上周完成 ' + pct(roll.ws.rate) + '，' +
+        (roll.rule ? roll.rule.label : '保持原计划') +
+        '。本周还没开始的安排已经按这个结果排好。',
+        { changes: weekDiff.slice(0, 3), changedCount: weekDiff.length });
+    }
+
+    /* 阶段不看月份看进度。第一次运行只记基线，之后变了才留记录。
+     * 休息日没有 stage，跳过，免得把休息日误判成"回到基础期"。 */
+    var todayDay = state.days[tk];
+    if (todayDay && !todayDay.isRest) {
+      var stageNow = todayDay.stage || 'base';
+      if (!state.lastStage) {
+        state.lastStage = stageNow;
+      } else if (state.lastStage !== stageNow) {
+        logAdjust('stage', '进入' + (STAGE_NAME[stageNow] || stageNow),
+          '累计学到这个阶段了，后面的安排会换一种节奏。');
+        state.lastStage = stageNow;
+      }
     }
   }
 
@@ -1706,8 +2075,8 @@
     return hit ? hit.label : '';
   }
 
-  /* 用当前问卷内容试算一遍，让用户看到"我的选择产生了什么结果" */
-  function previewPlan() {
+  /* 把当前问卷内容拼成一份临时档案，用来试算 */
+  function draftProfile() {
     var E2 = window.YT.engine;
     var today = E2.toKey(new Date());
     var p = {
@@ -1724,27 +2093,53 @@
       strength: {},
     };
     MODULES.forEach(function (m) { p.strength[m.id] = 'normal'; });
-    try { return E2.buildRoadmap(p, today); } catch (e) { return null; }
+    return p;
+  }
+
+  /* 用当前问卷内容试算一遍，让用户看到"我的选择产生了什么结果" */
+  function previewPlan() {
+    var E2 = window.YT.engine;
+    try { return E2.buildRoadmap(draftProfile(), E2.toKey(new Date())); } catch (e) { return null; }
+  }
+
+  /* 阶段天数得用真实引擎跑一遍才算得准。
+   * buildRoadmap 里的阶段是按日期比例切的，改时长/倍速它一动不动，
+   * 于是用户会觉得"改了没反应"——其实是他那里的数字本来就决定不了这几行。 */
+  function previewForecast() {
+    var E2 = window.YT.engine;
+    var p = draftProfile();
+    var today = E2.toKey(new Date());
+    try {
+      var st = { profile: p, roadmap: E2.buildRoadmap(p, today), days: {}, scores: [] };
+      E2.ensureAhead(st, today, 14);
+      return E2.forecast(st, today);
+    } catch (e) { return null; }
   }
 
   function previewHtml() {
-    var rm = previewPlan();
-    if (!rm) return '';
-    var totalUnits = 0, totalMinutes = 0;
+    var p = draftProfile();
+    var fc = previewForecast();
+    if (!fc) return '';
+    var totalUnits = 0;
     var E2 = window.YT.engine;
     MODULES.forEach(function (m) {
-      var n = E2.targetUnits(m, {
-        courseUnits: draft.courseUnits, strength: { slw: 'normal' },
-      });
-      totalUnits += n;
+      totalUnits += E2.targetUnits(m, p);
     });
-    totalMinutes = Math.round(totalUnits * (Number(draft.lessonMinutes) || 150) / (Number(draft.speed) || 1.5));
+    var totalMinutes = Math.round(totalUnits * E2.effectiveLesson(p));
 
-    var st = rm.stages;
+    var st = fc.stages;
     var f = baseFactor();
     var note = f < 1
       ? '因为你说「' + baseLabel() + '」，每科的课都按 ' + Math.round(f * 100) + '% 折算过了，你可以在这上面直接改。'
       : '这些数字可以按你手上的课直接改。';
+
+    /* 时间/节数明摆着排不完的时候，就在这一步说清楚。
+     * 这是用户正在挑数字的时候，比在计划页再说一遍有用得多。 */
+    var warn = (fc.courseLeft && fc.courseLeft.units > 0)
+      ? '<div class="pv-warn">按这个时间和节数，行测课排不完：还有 <b>' + fc.courseLeft.units +
+        ' 节</b>（约 ' + Math.round(fc.courseLeft.minutes / 60) +
+        ' 小时）到最后也听不了。可以把节数调少、倍速调高，或者每天多留点时间。</div>'
+      : '';
 
     return '<div class="preview-card">' +
       '<div class="pv-title">按现在的填写，你的计划会是这样</div>' +
@@ -1753,11 +2148,23 @@
       '<div class="pv-row"><span>基础期</span><b>' + st[0].studyDays + ' 个学习日</b></div>' +
       '<div class="pv-row"><span>强化期</span><b>' + st[1].studyDays + ' 个学习日</b></div>' +
       '<div class="pv-row"><span>冲刺期</span><b>' + st[2].studyDays + ' 个学习日</b></div>' +
+      warn +
       '<div class="pv-note">' + esc(note) + '</div>' +
     '</div>';
   }
 
   var ONBOARD_STEPS = 7;
+
+  /* 问卷最后一步下面那块"按现在的填写，你的计划会是这样"。
+   * 改数字时只换这一块、不整页重画（整页重画会把正在输入的框踢掉）。
+   *
+   * 这里必须三个输入框都调：课节数、每节课时长、听课倍速。
+   * 以前只有课节数调了，改时长和倍速预览纹丝不动，
+   * 用户就会以为"改了没反应"——这个坑踩过一次。 */
+  function refreshObPreview() {
+    var pv = document.getElementById('ob-preview');
+    if (pv) pv.innerHTML = previewHtml();
+  }
 
   function renderOnboarding() {
     if (!draft) draft = freshDraft();
@@ -1819,13 +2226,13 @@
       body += '<button class="opt ' + (draft.mode === 'auto' ? 'on' : '') + '" data-act="pick-mode" data-v="auto">' +
               '<div class="t">全自动</div><div class="d">系统排什么你就做什么，界面最干净。适合完全没头绪、想被带着走的人。</div></button>';
       body += '<button class="opt ' + (draft.mode === 'semi' ? 'on' : '') + '" data-act="pick-mode" data-v="semi">' +
-              '<div class="t">半自动（推荐）</div><div class="d">系统排，但每天可以自己换、跳过、加练。适合大多数在职备考的人。</div></button>';
+              '<div class="t">半自动（推荐）</div><div class="d">系统排，但每天可以自己换、跳过、加练。适合大多数人备考。</div></button>';
       body += '<button class="opt ' + (draft.mode === 'manual' ? 'on' : '') + '" data-act="pick-mode" data-v="manual">' +
               '<div class="t">自己排</div><div class="d">系统只排听课，刷题和复盘都由你自己安排。适合已经知道自己缺什么、有自己的节奏的人。</div></button>';
 
     } else if (step === 6) {
       body = '<h2>每个模块你打算听多少节课？</h2>' +
-             '<p class="lead">不是"你买了多少"，是"你打算听多少"。以后听完想加，把数字往上改就行。</p>' +
+             '<p class="lead">数字随时能改：想多听就往上加，没听或不想听就往下减。</p>' +
              '<div class="numlist">';
       MODULES.forEach(function (m) {
         var v = draft.courseUnits[m.id];
@@ -1873,6 +2280,7 @@
       courseUnits: draft.courseUnits,
       benchmarks: draft.benchmarks || {},
       strength: {},
+      phasePlan: { custom: false },
       createdAt: new Date().toISOString(),
     };
     MODULES.forEach(function (m) { profile.strength[m.id] = 'normal'; });
@@ -1916,9 +2324,10 @@
         '<span class="task-min">' + fmtMinutes(t.minutes) + '</span>' +
       '</div>' +
       (taskDetail(t) ? '<div class="task-detail">' + esc(taskDetail(t)) + '</div>' : '') +
-      ((t.carried || t.status === 'half' || t.userAdded)
+      ((t.carried || t.status === 'half' || t.userAdded || t.continuation)
         ? '<div class="task-meta">' +
-            (t.focus ? '<span class="pill plain">主攻</span>'
+            (t.continuation ? '<span class="pill warn">续听</span>'
+                      : t.focus ? '<span class="pill plain">主攻</span>'
                       : t.review ? '<span class="pill plain">回顾</span>'
                       : (t.userAdded ? '<span class="pill plain">自己加的</span>' : '')) +
             (t.carried ? '<span class="pill warn">顺延</span>' : '') +
@@ -1958,6 +2367,32 @@
     '</div>';
   }
 
+  function reviewFirst(tasks) {
+    var review = [], rest = [];
+    (tasks || []).forEach(function (t) {
+      (t && t.review ? review : rest).push(t);
+    });
+    return review.concat(rest);
+  }
+
+  function taskListHtml(tasks, dateKey) {
+    var ordered = reviewFirst(tasks);
+    var hasReview = ordered.some(function (t) { return t && t.review; });
+    var head = hasReview ? '<div class="task-group">先回顾，再做今天的任务</div>' : '';
+    var doneHead = (hasReview && ordered.some(function (t) { return !t.review; }))
+      ? '<div class="task-group">今天的任务</div>' : '';
+    var out = '', doneHeadUsed = false;
+    ordered.forEach(function (t) {
+      if (!t) return;
+      if (hasReview && !t.review && !doneHeadUsed) {
+        out += doneHead;
+        doneHeadUsed = true;
+      }
+      out += renderTask(t, dateKey);
+    });
+    return head + out;
+  }
+
   function renderToday() {
     var tk = todayKey();
     if (!state.days[tk]) { E.ensureAhead(state, tk, 14); save(); }
@@ -1977,11 +2412,28 @@
     /* 今天不做的那些不算"欠着的"，别让 4 项里的 1 项白占分母 */
     var skippedCount = (day.tasks || []).filter(function (t) { return t.skip; }).length;
     var totalCount = (day.tasks || []).length - skippedCount;
-    var head = '<div class="today-head">' +
+    /* 今日页顶部只留一行，所以课程进度压成一个很小的数字。
+     * 不新增卡片，避免把今日页拉长。 */
+    var cp = E.courseProgress(state);
+    var cDone = 0, cNeed = 0;
+    MODULES.forEach(function (m) {
+      var need = E.targetUnits(m, profile);
+      if (need <= 0) return;
+      cNeed += need;
+      cDone += Math.min(need, cp[m.id] || 0);
+    });
+    var courseText = cNeed > 0
+      ? '听课 ' + (Math.round(cDone * 10) / 10) + '/' + (Math.round(cNeed * 10) / 10) + ' 节'
+      : '';
+    /* 体验模式：今日页最上面那条模拟工具。正式版这里永远是空串。 */
+    var demoBar = demoOn() ? window.YT.demo.bar() : '';
+
+    var head = demoBar + '<div class="today-head">' +
       '<div class="date">' + fmtDate(tk, true) + '　' + weekdayName(tk) + '</div>' +
       '<h1>' + (day.isRest ? '今天休息' : '今天') + '</h1>' +
       '<div class="state">' +
         '<i>' + stageLabel(day.stage) + '</i>' +
+        (courseText ? ' · ' + courseText : '') +
         (totalCount ? ' · 已完成 <b>' + doneCount + ' / ' + totalCount + '</b> 项' : '') +
         (skippedCount ? ' · <span class="muted">' + skippedCount + ' 项今天不做</span>' : '') +
         (st > 1 ? ' · 连续 <b>' + st + '</b> 天' : '') +
@@ -1999,7 +2451,7 @@
     }
 
     var s = E.dayStats(day);
-    var tasksHtml = (day.tasks || []).map(function (t) { return renderTask(t, tk); }).join('');
+    var tasksHtml = taskListHtml(day.tasks || [], tk);
     if (!tasksHtml) tasksHtml = '<div class="task"><div class="task-body muted tiny">今天没有安排任务。</div></div>';
 
     var allDone = (day.tasks || []).length > 0 && (day.tasks || []).every(function (t) { return t.status === 'done'; });
@@ -2042,7 +2494,33 @@
           '</div></div>'
       : '';
 
+    /* 跨周、断更、阶段变化时，计划确实动过。
+     * 不弹窗，只在今日页顶部留一条，点进去能看到具体改了哪几天。 */
+    var adjNew = unseenAdjust();
+    var adjHtml = adjNew.length
+      ? '<div class="adjust-banner">' +
+          '<div class="ab-body">' +
+            '<div class="ab-t">计划有调整' + (adjNew.length > 1 ? '（' + adjNew.length + ' 条）' : '') + '</div>' +
+            '<div class="ab-d">' + esc(adjNew[0].title) + '</div>' +
+          '</div>' +
+          '<button class="btn sm primary" data-act="adj-open">看看</button>' +
+        '</div>'
+      : '';
+    var pw = phaseWarning(tk);
+    var pwHtml = pw
+      ? '<div class="pref-note"><b>' + esc(pw.title) + '</b><br>' + esc(pw.body) +
+          '<div class="row" style="gap:8px;margin-top:8px">' +
+            pw.actions.map(function (a) {
+              return '<button class="btn sm ' + (a.primary ? 'primary' : 'ghost') + '" data-act="' + a.act + '"' +
+                (a.f ? ' data-f="' + a.f + '"' : '') +
+                (a.to ? ' data-to="' + a.to + '"' : '') + '>' + esc(a.label) + '</button>';
+            }).join('') +
+          '</div></div>'
+      : '';
+
     app.innerHTML = '<div class="screen">' + head +
+      adjHtml +
+      (pwHtml ? '<div class="section">' + pwHtml + '</div>' : '') +
       (sugHtml ? '<div class="section">' + sugHtml + '</div>' : '') +
       (staleHtml ? '<div class="section">' + staleHtml + '</div>' : '') +
       (allDone ? '<div class="section"><div class="done-note">今天全部完成</div></div>' : '') +
@@ -2055,9 +2533,9 @@
             ? '<div class="tiny muted" style="text-align:center">现在是全自动模式，只跟着做就行。' +
               '想换科目、跳过多做点，去设置里改成半自动。</div>'
             : '<div class="row" style="gap:8px">' +
-                '<button class="btn grow ghost" data-act="extra-open">加一项</button>' +
-                '<button class="btn grow ghost" data-act="focus-open">今天主攻一科</button>' +
-              '</div>')) +
+                '<button class="btn grow secondary" data-act="extra-open">加一项</button>' +
+                '<button class="btn grow primary" data-act="focus-open">今天主攻一科</button>' +
+                '</div>')) +
       '</div>' +
 
       (usageMode() === 'manual'
@@ -2143,6 +2621,42 @@
       if (gap >= days) out.push({ module: m, gap: gap, last: lk });
     });
     return out.sort(function (a, b) { return b.gap - a.gap; });
+  }
+
+  /* 到了用户定的阶段边界，但内容没完成时提醒一次。
+   * 进度不再是硬门槛，所以必须有人把"没做完"这件事说出来。 */
+  function phaseWarning(tk) {
+    var rm = state.roadmap;
+    if (!rm || !rm.phasePlan) return null;
+    var stage = E.stageOf(tk, rm);
+    var fc = state.forecast;
+    var left = fc && fc.courseLeft ? fc.courseLeft.units : 0;
+
+    if (stage !== 'base' && left > 0.5) {
+      var acts = [{ act: 'phase-open', label: '调整阶段', primary: false }];
+      if (state.cutPlan) acts.push({ act: 'cut-course', f: state.cutPlan.factor, label: '帮我砍课', primary: true });
+      return {
+        title: '基础期结束了，还有 ' + left + ' 节行测课没听完',
+        body: '已经放进强化期继续听。想按时开始大量刷题，建议砍课或把基础期往后延。',
+        actions: acts,
+      };
+    }
+
+    if (stage === 'sprint' && rm.phasePlan.sprintStart) {
+      var daysIn = E.dayDiff(rm.phasePlan.sprintStart, tk);
+      if (daysIn >= 0 && daysIn <= 7) {
+        var ready = E.readyModuleCount(state.profile, E.moduleSets(state));
+        var need = CFG.stage.sprintMinModules;
+        if (ready < need) {
+          return {
+            title: '冲刺期开始了，但专项还没刷够',
+            body: '现在有 ' + ready + ' / ' + need + ' 个模块过完一轮。建议优先补高分模块，数量和常识放弃专项，只做套卷里遇到的题。',
+            actions: [{ act: 'goto', to: 'plan', label: '去计划页看', primary: true }],
+          };
+        }
+      }
+    }
+    return null;
   }
 
   /* ---------------------------------------------------------------------
@@ -2263,19 +2777,37 @@
       return '<div class="stage' + cur + (skipped ? ' skipped' : '') + '">' +
         '<div class="stage-idx">' + (i + 1) + '</div>' +
         '<div class="grow"><div class="stage-name">' + st.name + (st.key === todayStage ? ' · 进行中' : '') + '</div>' +
-        '<div class="stage-date">' + range + ' · ' + (skipped ? '按现在的进度会跳过' : st.studyDays + ' 个学习日') + '</div>' +
+        '<div class="stage-date">' + range + ' · ' + (skipped ? '跳过' : st.studyDays + ' 个学习日') + '</div>' +
         '<div class="tiny muted" style="margin-top:3px">' + esc(st.goal) + '</div></div></div>';
     }).join('');
 
-    /* 预测：课哪天听完、哪天开始套卷。学得快就提前，学得慢就往后推。 */
+    var phaseNote = '';
+    if (rm.phasePlan) {
+      phaseNote = '<div class="tiny muted" style="margin-top:10px">' +
+        (rm.phasePlan.custom
+          ? '这是你自己改的阶段日期。'
+          : '这是系统按你的课量和考试日期推荐的阶段日期。') +
+        (rm.phasePlan.courseOverflow
+          ? ' 按现在的行测课量，基础期加强化期也装不下全部课程，建议砍课或把基础期往后延。'
+          : '') +
+      '</div>';
+    }
+
+    /* 预测：课哪天听完、哪天进入冲刺。阶段日期现在由用户定或系统推荐。 */
     var fc = state.forecast;
     var fcHtml = '';
     if (fc && fc.courseDoneKey && fc.sprintKey) {
       var sprintLeft = E.countStudyDays(fc.sprintKey, fc.examKey, state.profile);
-      fcHtml = '<div class="forecast-note">按现在的进度：<b>' + fmtDate(fc.courseDoneKey, false) +
-        '</b> 听完所有课，<b>' + fmtDate(fc.sprintKey, false) + '</b> 开始刷套卷，之后有 <b>' +
-        sprintLeft + '</b> 个学习日做套卷。<br>' +
-        '<span class="muted">学得快就提前，学得慢就往后推，这里会跟着变。</span></div>';
+      if (!fc.courseLeft || fc.courseLeft.units <= 0.5) {
+        fcHtml = '<div class="forecast-note">按现在的安排：<b>' + fmtDate(fc.courseDoneKey, false) +
+          '</b> 听完所有行测课，<b>' + fmtDate(fc.sprintKey, false) + '</b> 进入冲刺期，之后有 <b>' +
+          sprintLeft + '</b> 个学习日做套卷。<br>' +
+          '<span class="muted">阶段日期可以在上面的「调整阶段」里改。</span></div>';
+      } else {
+        fcHtml = '<div class="forecast-note">冲刺期从 <b>' + fmtDate(fc.sprintKey, false) +
+          '</b> 开始，之后有 <b>' + sprintLeft + '</b> 个学习日做套卷。<br>' +
+          '<span class="muted">但按现在的课量，课排不完，下面会给出砍课建议。</span></div>';
+      }
     }
 
     /* 听课体检 */
@@ -2284,18 +2816,21 @@
     /* 老数据里可能没有这个字段（那时候还没算强化期），先兜一下 */
     var capH = isFinite(lc && lc.capacityMinutes) ? Math.round(lc.capacityMinutes / 60) : 0;
     var cp = state.cutPlan;
-    if (cp && fc && fc.courseDoneKey) {
-      /* 课把时间吃完了，中间挤不出专项期——这正是"砍课不砍题"要出手的时候 */
+    if (cp && fc && fc.courseLeft && fc.courseLeft.units > 0.5) {
+      /* 课排不完时，系统必须替用户做取舍：先砍课，保刷题。 */
       checkHtml = '<div class="section"><div class="card" style="background:var(--accent-s);box-shadow:none">' +
-        '<div style="font-weight:600;color:var(--accent)">中间挤不出专项训练的时间</div>' +
+        '<div style="font-weight:600;color:var(--accent)">课排不完，建议砍课</div>' +
         '<div class="tiny" style="margin-top:4px;color:var(--ink-2)">' +
-        '按现在的进度，你的课要到 <b>' + fmtDate(fc.courseDoneKey, false) + '</b> 才听完，' +
-        '之后就剩 ' + (fc.stages[2].studyDays || 0) + ' 个学习日，直接上套卷了。</div>' +
+          '按现在的阶段日期和课量，有 <b>' + fc.courseLeft.units + ' 节行测课</b>（约 ' +
+          Math.round(fc.courseLeft.minutes / 60) + ' 小时）在基础期和强化期里排不进去，' +
+          '到冲刺期会被丢掉。</div>' +
         '<div class="tiny" style="margin-top:6px;color:var(--ink-3)">' +
-        '刷题是提分主力，课是输入。要砍就砍课：把每科的课节数砍掉约 <b>' +
+        '刷题是提分主力，课是输入。建议把行测各科的课节数砍掉约 <b>' +
         Math.round((1 - cp.factor) * 100) + '%</b>' +
         (cp.sample ? '（比如' + cp.sample.short + '从 ' + cp.sample.from + ' 节减到 ' + cp.sample.to + ' 节）' : '') +
-        '，专项训练能从 <b>' + (fc.stages[1].studyDays || 0) + '</b> 天变成 <b>' + cp.strDays + '</b> 天。</div>' +
+        (cp.fit
+          ? '，剩下的课就能在基础期和强化期里排完。</div>'
+          : '；即使砍一半，还会差 <b>' + cp.left + ' 节</b>，建议同时把基础期往后延，或者提高每天可用时间。</div>') +
         '<button class="btn sm primary" style="margin-top:10px" data-act="cut-course" data-f="' + cp.factor + '">帮我砍</button>' +
         '<button class="btn sm ghost" style="margin-top:10px;margin-left:8px" data-act="goto" data-to="settings">我自己调</button>' +
         '</div></div>';
@@ -2307,6 +2842,20 @@
         '但基础期加强化期只放得下 <b>' + capH + ' 小时</b>。会挤压刷题。</div>' +
         '<div class="tiny" style="margin-top:6px;color:var(--ink-3)">' +
         '办法：提高倍速、少听几节、或者把每天的时间调高。</div>' +
+        '<button class="btn sm ghost" style="margin-top:10px" data-act="goto" data-to="settings">去调整</button>' +
+        '</div></div>';
+    } else if (fc && fc.courseLeft && fc.courseLeft.units > 0) {
+      /* 每天排多少听课是按"当天时间的固定比例"算的。
+       * 课多到排不完的时候，减少几节不会让日期提前——只是把后面的科目顶上来。
+       * 这事不说清楚，用户改完课节数会觉得"改了没反应"。 */
+      checkHtml = '<div class="section"><div class="card" style="background:var(--accent-s);box-shadow:none">' +
+        '<div style="font-weight:600;color:var(--accent)">听课排不完</div>' +
+        '<div class="tiny" style="margin-top:4px;color:var(--ink-2)">' +
+        '按现在的时间，有 <b>' + fc.courseLeft.units + ' 节行测课</b>（约 ' +
+        Math.round(fc.courseLeft.minutes / 60) + ' 小时）到最后也塞不进去，会在冲刺期被丢掉。</div>' +
+        '<div class="tiny" style="margin-top:6px;color:var(--ink-3)">' +
+        '这种情况下再少听几节，日期也不会变，只是把后面的科目顶上来。' +
+        '要真的腾出时间：提高倍速、把每天的时间调高，或者整块砍掉一科的课。</div>' +
         '<button class="btn sm ghost" style="margin-top:10px" data-act="goto" data-to="settings">去调整</button>' +
         '</div></div>';
     } else if (lc) {
@@ -2329,6 +2878,19 @@
         '</div></div>';
     }
 
+    var adjAll = (state.adjustLog || []).slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+    var adjHtml = '<div class="section">' +
+      '<div class="row between" style="align-items:center">' +
+        '<p class="section-title" style="margin:0">计划调整</p>' +
+        '<button class="btn sm ghost" data-act="adj-open">全部记录</button>' +
+      '</div>' +
+      '<div class="card" style="margin-top:8px">' +
+        (adjAll.length
+          ? adjAll.slice(0, 3).map(adjustRowHtml).join('')
+          : '<div class="tiny muted">跨周、断更或阶段变化时，会记在这里。</div>') +
+      '</div>' +
+    '</div>';
+
     /* ---- 计划视图：本周 / 两周 / 本月 ---- */
     var rangeMode = state.ui.planRange || 'week';
     var rng = planRangeFor(tk, rangeMode);
@@ -2343,7 +2905,7 @@
     '</div>' +
     '<div class="row between" style="margin-top:10px;align-items:center">' +
       '<span class="range-note" style="margin:0">' + fmtDate(rng.startKey, false) + ' – ' + fmtDate(rng.endKey, false) + '</span>' +
-      '<button class="btn sm ghost" data-act="batch-open">批量排</button>' +
+      '<button class="pillbtn" data-act="batch-open">批量排' + arrowRight() + '</button>' +
     '</div>';
 
     var curD = E.parseKey(rng.startKey);
@@ -2388,20 +2950,29 @@
     }).join('');
     var progHead = '<div class="prog-sum">共 ' + tNeed + ' 节 · 已听 ' + tDone + ' 节 · 还剩 <b>' +
       (tNeed - tDone) + '</b> 节</div>';
+    var progHtml = '<div class="section"><p class="section-title">听课进度</p><div class="card">' +
+      progHead + progRows + '</div></div>';
+
+    /* 方案 A：核心的"总体节奏 + 日程"留在外面，
+     * 听课进度、预测、上周表现、计划调整收进「计划详情」，默认收起。
+     * 展开状态记住，常看的人不用每次点。 */
+    var planDetailsBody =
+      (fcHtml ? '<div class="section">' + fcHtml + '</div>' : '') +
+      progHtml + logHtml + adjHtml;
 
     app.innerHTML = '<div class="screen">' +
       '<div class="top"><h1>我的计划</h1>' +
       '<div class="sub">距离 ' + fmtDate(profile.examDate, true) + ' 还有 ' + rm.totalStudyDays + ' 个学习日</div></div>' +
 
-      '<div class="section"><p class="section-title">总体节奏</p><div class="card">' + stagesHtml + '</div></div>' +
+      '<div class="section"><div class="row between" style="align-items:center">' +
+        '<p class="section-title" style="margin:0">总体节奏</p>' +
+        '<button class="pillbtn" data-act="phase-open">调整阶段' + arrowRight() + '</button>' +
+      '</div><div class="card" style="margin-top:8px">' + stagesHtml + phaseNote + '</div></div>' +
       checkHtml +
-      (fcHtml ? '<div class="section">' + fcHtml + '</div>' : '') +
-      logHtml +
+      foldBlock('plan:details', '计划详情', '更多计划信息', planDetailsBody, false) +
 
       '<div class="section"><p class="section-title">日程</p>' + rangeBar +
         '<div class="card" style="margin-top:10px">' + daysHtml + '</div></div>' +
-      '<div class="section"><p class="section-title">听课进度</p><div class="card">' +
-        progHead + progRows + '</div></div>' +
       '</div>';
     renderTabbar('plan');
   }
@@ -2446,17 +3017,23 @@
     var info = dayLoad(k, tk, profile);
     var day = info.day, d = info.date, isRest = info.isRest, total = info.total;
     var label = k === tk ? '今天' : weekdayName(k);
+    var open = !!(state.ui.expandedDays && state.ui.expandedDays[k]);
+    /* 有内容才叫"可折叠"。休息日和空白天只显示一行日期，不给展开箭头。 */
+    var canFold = collapsible && !isRest && !!day;
     var head = '<div class="pd-head">' +
       '<div class="pd-date">' + label + '<small>' + (d.getMonth() + 1) + '/' + d.getDate() + '</small></div>' +
       '<div class="pd-right">' +
         '<span class="pd-total">' + (isRest ? '休息' : (total ? fmtMinutes(total) : '—')) + '</span>' +
         '<button class="pd-add" data-act="extra-open-day" data-v="' + k + '" title="给这天加一项">＋</button>' +
+        /* 折叠视图里右端给一个展开箭头。休息日没有内容可展开，不给箭头，
+         * 免得点下去什么都不动——那种"看着能点、点了没反应"最伤信任。 */
+        (canFold ? '<span class="pd-chev">' + chevIcon() + '</span>' : '') +
       '</div>' +
     '</div>';
 
     var formHere = (state.ui.addingExtra && state.ui.extraDate === k) ? extraFormHtml() : '';
 
-    if (isRest) return '<div class="plan-day rest' + (collapsible ? ' foldable' : '') + '">' + head + formHere + '</div>';
+    if (isRest) return '<div class="plan-day rest">' + head + formHere + '</div>';
     if (!day) {
       return k < tk
         ? '<div class="plan-day past">' + head + formHere + '</div>'
@@ -2466,9 +3043,8 @@
     var stageName = STAGE_NAME[day.stage] || '';
 
     if (collapsible) {
-      var open = !!(state.ui.expandedDays && state.ui.expandedDays[k]);
       var kinds = [];
-      (day.tasks || []).forEach(function (t) {
+      reviewFirst(day.tasks || []).forEach(function (t) {
         var n = t.moduleName;
         if (kinds.indexOf(n) === -1) kinds.push(n);
       });
@@ -2487,16 +3063,25 @@
   }
 
   function taskRows(day) {
-    return (day.tasks || []).map(function (t) {
+    var ordered = reviewFirst(day.tasks || []);
+    var hasReview = ordered.some(function (t) { return t && t.review; });
+    var out = hasReview ? '<div class="pd-group">先回顾</div>' : '';
+    var restHead = false;
+    ordered.forEach(function (t) {
+      if (hasReview && !t.review && !restHead) {
+        out += '<div class="pd-group">今天的任务</div>';
+        restHead = true;
+      }
       var mark = t.status === 'done' ? '<i class="pd-mark done">✓</i>'
                : t.status === 'half' ? '<i class="pd-mark half">◐</i>' : '';
-      return '<div class="pd-task">' +
+      out += '<div class="pd-task">' +
         '<span class="pd-t">' + mark + esc(t.title) + '</span>' +
         '<span class="pd-d">' + esc(taskDetail(t)) + '</span>' +
         '<span class="pd-min">' + t.minutes + ' 分</span>' +
         '<button class="del" data-act="del-task" data-date="' + day.date + '" data-task="' + esc(t.id) + '" title="删掉这项">×</button>' +
       '</div>';
-    }).join('');
+    });
+    return out;
   }
 
   /* 月历：一屏看完一个月，哪几天重、哪几天休息、哪几天打没打卡一目了然 */
@@ -2585,7 +3170,8 @@
     var anySamples = timing.some(function (r) { return r.samples > 0; });
 
     app.innerHTML = '<div class="screen">' +
-      '<div class="top"><h1>统计</h1><div class="sub">这些数字用来把计划调得越来越贴合你</div></div>' +
+      '<div class="top">' + pageBack() +
+        '<h1>统计</h1><div class="sub">这些数字用来把计划调得越来越贴合你</div></div>' +
 
       '<div class="section"><div class="metrics">' +
         '<div class="metric"><div class="v">' + st + '</div><div class="k">连续打卡</div></div>' +
@@ -2694,7 +3280,7 @@
         '</div>' +
       '</div>' +
       '</div>';
-    renderTabbar('stats');
+    renderTabbar('mine');
   }
 
   /* ---------------------------------------------------------------------
@@ -2764,7 +3350,16 @@
   function heatmapHtml(tk) {
     var first = firstStudyKey();
     if (!first) {
-      return '<div class="tiny muted" style="padding:8px 0">打过一次卡，这里就开始有颜色了。</div>';
+      /* 还没打过卡。画一块最浅的格子做示意——比一行光秃秃的灰字像样，
+       * 又用的是最淡的底色，不会让人觉得欠了一屁股账。 */
+      var ghost = '';
+      for (var g = 0; g < 21; g++) {
+        ghost += '<i class="hm-ghost' + (g % 5 === 2 ? ' on' : '') + '"></i>';
+      }
+      return '<div class="hm-empty">' +
+        '<div class="hm-ghost-grid">' + ghost + '</div>' +
+        '<p>打过一次卡，这里就开始有颜色了</p>' +
+      '</div>';
     }
     var lastD = E.parseKey(tk);
     /* 第一列对齐到那一周的周一，最后一列画到本周 */
@@ -2886,20 +3481,91 @@
     '</div>';
   }
 
-  function renderRecord() {
+  /* ---------------------------------------------------------------------
+   * 我的：记录 + 两个入口
+   *
+   * 下面这一屏就是原来那一格「记录」，原样搬过来——
+   * 热力图、三项累计、按天记录（月历 + 点某天看明细）都没动。
+   * 只在最上面加了一条入口，统计和设置从这儿进。
+   * ------------------------------------------------------------------- */
+
+  function openInstallHelp() {
+    var installed = isStandalone();
+    var body;
+    if (installed) {
+      body = '<div class="modal-msg">你已经把它添加到桌面了。</div>' +
+        '<div class="param-note">想删掉：长按桌面图标，选择「移除」或「卸载」。</div>';
+    } else if (deferredInstallPrompt) {
+      body = '<div class="modal-msg">这台设备支持一键添加。点下面的按钮，按提示确认就行。</div>' +
+        '<button class="btn primary block" data-act="install-do" style="margin-top:14px">立即添加到桌面</button>' +
+        '<div class="param-note" style="margin-top:10px">添加后会像 App 一样全屏打开，数据只存在你自己的设备上。</div>' +
+        '<div class="param-note">以后不想用了：长按桌面图标 → 移除/卸载。</div>';
+    } else if (isIOS()) {
+      body = '<div class="modal-msg">iPhone / iPad 用 Safari 打开：</div>' +
+        '<div class="param-note">1. 点底部中间的「分享」按钮<br>2. 往下找到「添加到主屏幕」<br>3. 点右上角「添加」</div>' +
+        '<div class="param-note">添加后会像 App 一样全屏打开，数据只存在你自己的设备上。</div>' +
+        '<div class="param-note">以后不想用了：长按桌面图标 → 移除/卸载。</div>';
+    } else {
+      body = '<div class="modal-msg">在浏览器菜单里找：</div>' +
+        '<div class="param-note">Chrome：右上角三个点 → 「安装应用」或「添加到主屏幕」<br>' +
+        'Safari：底部分享按钮 → 「添加到程序坞」</div>' +
+        '<div class="param-note">以后不想用了：长按桌面图标 → 移除/卸载。</div>';
+    }
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal">' +
+        '<div class="modal-title">添加到桌面</div>' +
+        body +
+        '<div class="row" style="gap:10px;margin-top:16px">' +
+          '<button class="btn grow" data-act="install-dismiss">不再显示这个入口</button>' +
+          '<button class="btn primary grow" data-act="install-close">知道了</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function renderMine() {
     var tk = todayKey();
     var totals = recordTotals(tk);
     var days = S.overall(state, tk).daysStudied;
     var first = firstStudyKey();
     var st = S.streak(state, tk);
 
+    var statsIcon = '<path d="M6 19.4v-6M12 19.4V5.2M18 19.4v-9"/>';
+    var settingsIcon = '<path d="M4 8.5h8M17 8.5h3M4 15.5h3M12 15.5h8"/>' +
+      '<circle cx="14.5" cy="8.5" r="2.2"/><circle cx="9.5" cy="15.5" r="2.2"/>';
+    var installIcon = '<path d="M12 4v10M8 10l4 4 4-4"/><path d="M5 19h14"/>';
+
+    function menuRow(to, icon, title, note) {
+      return '<button class="menu-row" data-act="goto" data-to="' + to + '">' +
+        '<svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+        'stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg>' +
+        '<span class="mt">' + title + '</span>' +
+        '<span class="mn">' + note + '</span>' +
+        '<span class="chev">›</span>' +
+      '</button>';
+    }
+
     app.innerHTML = '<div class="screen">' +
-      '<div class="top"><h1>我的记录</h1>' +
+      '<div class="top"><h1>我的</h1>' +
         '<div class="sub">' +
           (days
             ? '你已经坚持了 ' + days + ' 天' + (first ? '，从 ' + fmtDate(first, false) + ' 开始' : '')
             : '还没有记录，打过一次卡就开始算') +
         '</div></div>' +
+
+      '<div class="section"><div class="card" style="padding:2px 18px">' +
+        menuRow('stats', statsIcon, '数据统计', '成绩 · 档位 · 速度') +
+        menuRow('settings', settingsIcon, '设置', '考试 · 时间 · 各科') +
+        (installHintVisible()
+          ? '<button class="menu-row" data-act="install-open">' +
+              '<svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+              'stroke-linecap="round" stroke-linejoin="round">' + installIcon + '</svg>' +
+              '<span class="mt">添加到桌面</span>' +
+              '<span class="mn">' + (isStandalone() ? '已经添加' : '像 App 一样打开') + '</span>' +
+              '<span class="chev">›</span>' +
+            '</button>'
+          : '') +
+      '</div></div>' +
 
       '<div class="section"><div class="card">' + heatmapHtml(tk) + '</div></div>' +
 
@@ -2918,7 +3584,54 @@
         '<div class="card">' + recordCalendarHtml(tk) + recordDayHtml() + '</div>' +
       '</div>' +
       '</div>';
-    renderTabbar('record');
+    renderTabbar('mine');
+  }
+
+  /* ---------------------------------------------------------------------
+   * 工具：现在什么都没有
+   *
+   * 只放一句话告诉用户这里以后可能会有东西。不解释是什么、
+   * 不说它和计划是什么关系——那些等真做出来再说。
+   * ------------------------------------------------------------------- */
+
+  function renderTools() {
+    app.innerHTML = '<div class="screen">' +
+      '<div class="top"><h1>工具</h1></div>' +
+      '<div class="section"><div class="card empty-card">' +
+        '<div class="empty-ico">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" ' +
+            'stroke-linecap="round" stroke-linejoin="round">' +
+            '<rect x="4" y="4" width="7" height="7" rx="2.2"/>' +
+            '<rect x="13" y="4" width="7" height="7" rx="2.2"/>' +
+            '<rect x="4" y="13" width="7" height="7" rx="2.2"/>' +
+            '<rect x="13" y="13" width="7" height="7" rx="2.2"/>' +
+          '</svg>' +
+        '</div>' +
+        '<div class="empty-t">更多公考学习工具正在准备中</div>' +
+        '<div class="empty-d">上线后会直接放在这里。</div>' +
+      '</div></div>' +
+      '</div>';
+    renderTabbar('tools');
+  }
+
+  /* 二级页（统计、设置）左上角的返回 */
+  function pageBack() {
+    return '<button class="page-back" data-act="back">← 我的</button>';
+  }
+
+  /* 设置页里的主题选择。七个色块，点一下整站换色。
+   * 色块本身的颜色用内联变量喂进去——它就是主题表里那三个值，
+   * 所以以后加主题只要改 config.js，这里不用动。 */
+  function themeGridHtml() {
+    var themes = (window.YT && window.YT.THEMES) || [];
+    if (!themes.length) return '';
+    var cur = themeOf();
+    return '<div class="theme-grid">' + themes.map(function (t) {
+      return '<button class="theme-sw' + (t.id === cur ? ' on' : '') + '" ' +
+        'data-act="set-theme" data-v="' + t.id + '" ' +
+        'style="--sw:' + t.accent + ';--sw-l:' + t.lite + ';--sw-d:' + t.deep + '">' +
+        '<i></i><span>' + esc(t.name) + '</span></button>';
+    }).join('') + '</div>';
   }
 
   /* ---------------------------------------------------------------------
@@ -2953,6 +3666,71 @@
     return '<div class="order-list">' + rows + '</div>';
   }
 
+  /* 设置里的「阶段安排」：只改两个日期。
+   * 系统给推荐值，用户想自己定就改这里；改完以后阶段按日期走。 */
+  function phasePlanSectionHtml() {
+    var p = state.profile;
+    if (!p) return '';
+    var rm = state.roadmap || E.buildRoadmap(p, todayKey());
+    var pp = rm.phasePlan || {};
+    var rec = pp.recommended || {};
+    var user = p.phasePlan || {};
+    var curBaseEnd = (pp.custom && user.baseEnd) || pp.baseEnd || '';
+    var curSprintStart = (pp.custom && user.sprintStart) || pp.sprintStart || '';
+    var recBaseEnd = rec.baseEnd || curBaseEnd;
+    var recSprintStart = rec.sprintStart || curSprintStart;
+    var note = pp.custom
+      ? '你现在用的是自己改的日期。系统推荐：基础期到 ' + fmtDate(recBaseEnd, false) +
+        '，冲刺期从 ' + fmtDate(recSprintStart, false) + ' 开始。'
+      : '这两个日期是系统按你的课量和考试日期推荐的。想自己定就直接改。';
+    var warn = pp.courseOverflow
+      ? '<div class="param-note" style="color:var(--danger)">按现在的行测课量，基础期加强化期也装不下全部课程。建议砍课，或者把基础期再往后延。</div>'
+      : '';
+    return '<div class="section" id="phase-plan">' +
+      '<div class="card">' +
+        '<div class="field"><label>基础期结束</label>' +
+          '<input class="input" type="date" data-act="set-base-end" value="' + esc(curBaseEnd) + '"></div>' +
+        '<div class="field"><label>冲刺期开始</label>' +
+          '<input class="input" type="date" data-act="set-sprint-start" value="' + esc(curSprintStart) + '"></div>' +
+        '<div class="param-note">' + esc(note) + '</div>' + warn +
+        '<button class="btn ghost block" style="margin-top:10px" data-act="phase-reset">恢复推荐值</button>' +
+      '</div></div>';
+  }
+
+  function phaseFoldNote() {
+    var rm = state.roadmap;
+    if (!rm || !rm.phasePlan) return '';
+    var user = state.profile.phasePlan || {};
+    var baseEnd = (rm.phasePlan.custom && user.baseEnd) || rm.phasePlan.baseEnd;
+    var sprintStart = (rm.phasePlan.custom && user.sprintStart) || rm.phasePlan.sprintStart;
+    return '基础期到 ' + fmtDate(baseEnd, false) +
+           ' · 冲刺 ' + fmtDate(sprintStart, false);
+  }
+
+  function lessonFoldNote() {
+    if (!state.profile) return '';
+    var n = 0;
+    MODULES.forEach(function (m) { n += E.targetUnits(m, state.profile); });
+    return '每节 ' + state.profile.lessonMinutes + ' 分钟 · 共 ' +
+           (Math.round(n * 10) / 10) + ' 节';
+  }
+
+  function strengthFoldNote() {
+    if (!state.profile) return '';
+    var changed = 0;
+    MODULES.forEach(function (m) {
+      if ((state.profile.strength[m.id] || 'normal') !== 'normal') changed++;
+    });
+    return changed ? changed + ' 科已调整' : '默认（正常）';
+  }
+
+  function orderFoldNote() {
+    if (!state.profile) return '';
+    return (state.profile.moduleOrder && state.profile.moduleOrder.length)
+      ? '已自定义顺序'
+      : '默认顺序';
+  }
+
   function renderSettings() {
     var p = state.profile;
 
@@ -2983,17 +3761,25 @@
             '<button class="chip on" data-act="clear-boost" data-m="' + m.id + '">刷题 ×' + boost + ' · 取消</button>' +
           '</div>'
         : '';
+      /* 常识很特殊：它性价比最低，很多人根本不专门学。
+       * 所以不把这个决定埋在四个小按钮里，单独给一个入口和一句解释。 */
+      var skipTip = m.id === 'cs'
+        ? '<div class="skip-tip">' +
+            '<div class="st-t">常识靠平时积累，专门刷题收益很小，很多人直接放弃。</div>' +
+            (cur === 'skip'
+              ? '<button class="btn sm ghost" data-act="set-strength" data-m="' + m.id + '" data-v="normal">恢复学习</button>'
+              : '<button class="btn sm primary" data-act="set-strength" data-m="' + m.id + '" data-v="skip">常识不专门学</button>') +
+          '</div>'
+        : '';
       return '<div style="padding:9px 0;border-bottom:1px solid var(--line)">' +
         '<div class="row between" style="margin-bottom:6px"><span style="font-size:13.5px">' + esc(m.short) + '</span>' +
         '<span class="tiny muted">' + summary + '</span></div>' +
         boostHtml +
-        '<div class="chips">' + btns + '</div></div>';
+        '<div class="chips">' + btns + '</div>' +
+        skipTip + '</div>';
     }).join('');
 
-    app.innerHTML = '<div class="screen">' +
-      '<div class="top"><h1>设置</h1><div class="sub">改完以后，点最下面那个按钮重排后面的计划</div></div>' +
-
-      '<div class="section"><p class="section-title">怎么用它</p><div class="card">' +
+    var modeSection = '<div class="section"><p class="section-title">怎么用它</p><div class="card">' +
         '<div class="chips">' +
           [['auto', '全自动'], ['semi', '半自动'], ['manual', '自己排']].map(function (x) {
             return '<button class="chip ' + (usageMode() === x[0] ? 'on' : '') + '" data-act="set-mode" data-v="' + x[0] + '">' + x[1] + '</button>';
@@ -3006,9 +3792,16 @@
               ? '自己排：系统只排听课，刷题和复盘你自己安排。'
               : '半自动：系统排，每天可以换、跳过、加练。') +
           '</div>' +
-      '</div></div>' +
+      '</div></div>';
 
-      '<div class="section"><p class="section-title">考试与时间</p><div class="card">' +
+    /* 主题。放在靠前的位置——它是最直观、最想马上试一下的一个设置。 */
+    var themeSection = '<div class="section"><p class="section-title">主题色</p><div class="card">' +
+        themeGridHtml() +
+        '<div class="footnote">换主题只动强调色：按钮、进度条、打卡、当前阶段跟着变。' +
+        '警告橙、危险红、半完成琥珀不跟着变——那些是在表达状态，换个主题就变色反而看不懂。</div>' +
+      '</div></div>';
+
+    var examSection = '<div class="section"><p class="section-title">考试与时间</p><div class="card">' +
         '<div class="field"><label>考试日期</label>' +
         '<input class="input" type="date" data-act="set-exam" value="' + esc(p.examDate) + '"></div>' +
         '<button class="btn ghost block" style="margin:-2px 0 12px" data-act="switch-open">' +
@@ -3026,16 +3819,18 @@
           }).join('') +
         '</select></div>' +
         '<div class="field" style="margin-bottom:6px"><label>每周休息日</label>' + restPicker + '</div>' +
-      '</div></div>' +
+      '</div></div>';
 
-      '<div class="section"><p class="section-title">听课</p><div class="card">' +
+    var phaseSection = phasePlanSectionHtml();
+
+    var lessonSection = '<div class="section"><div class="card">' +
         '<div class="numlist">' +
           '<div class="item"><label>每节课时长</label><input type="number" min="20" step="5" data-act="set-lesson" value="' + p.lessonMinutes + '"><span class="unit">分钟</span></div>' +
           '<div class="item"><label>听课倍速</label><input type="number" min="1" max="3" step="0.1" data-act="set-speed" value="' + p.speed + '"><span class="unit">倍</span></div>' +
         '</div>' +
-      '</div></div>' +
+      '</div></div>';
 
-      '<div class="section"><p class="section-title">各模块课节数</p><div class="card">' +
+    var unitsSection = '<div class="section"><p class="section-title">各模块课节数</p><div class="card">' +
         '<div class="numlist">' +
           MODULES.map(function (m) {
             var v = (p.courseUnits && p.courseUnits[m.id] !== undefined && p.courseUnits[m.id] !== '')
@@ -3043,57 +3838,65 @@
             var need = E.targetUnits(m, p);
             var doneM = Math.min(need, E.courseProgress(state)[m.id] || 0);
             var sub = need > 0
-              ? '<span class="unit">已听 ' + doneM + ' · 剩 ' + (need - doneM) + '</span>'
+              ? '<span class="unit unit-live">已听 ' + doneM + ' · 剩 ' + (need - doneM) + '</span>'
               : '';
             return '<div class="item"><label>' + esc(m.short) + '</label>' +
               '<input type="number" min="0" step="1" data-act="set-units" data-m="' + m.id + '" value="' + v + '">' +
               '<span class="unit">节</span>' + sub + '</div>';
           }).join('') +
         '</div>' +
-        '<div class="footnote">填你打算听多少节，不是买了多少节。想加课就往上改，已经听过的不重来。</div>' +
+        '<div class="footnote">数字随时能改：想多听就加，没听或不想听就减；已经听过的不重来。' +
+        '实际要听 = 这个数字 × 该模块的强度（下面「强度」那一栏），' +
+        '所以标着「加强」的科目会比这里填的多。</div>' +
         '<button class="btn ghost block" style="margin-top:10px" data-act="no-course-settings">不听课，全部设为 0</button>' +
-      '</div></div>' +
+      '</div></div>';
 
-      '<div class="section"><p class="section-title">各模块强度</p>' +
+    var strengthSection = '<div class="section">' +
         '<div class="card" style="padding-top:4px;padding-bottom:4px">' + strengthRows + '</div>' +
-        '<div class="footnote">有底子的选「减少」，打算放弃的选「不学」（比如数量关系）。改完点最下面重排。</div>' +
-      '</div>' +
+        '<div class="footnote">有底子的选「减少」，打算放弃的选「不学」（比如数量关系）。改完立刻重排。</div>' +
+      '</div>';
 
-      '<div class="section"><p class="section-title">学习顺序</p><div class="card">' +
+    var orderSection = '<div class="section"><div class="card">' +
         orderRows() +
         '<div class="footnote">只决定听课的先后。练题怎么分配还是按各科的性价比走，' +
         '换个顺序不会把刷题权重也带偏。已经听过的课不受影响。</div>' +
       '</div>' +
       '<div class="card" style="margin-top:10px">' + essayStartRow() + '</div>' +
-      '</div>' +
+      '</div>';
 
-      '<div class="section"><p class="section-title">高级参数</p><div class="card">' +
-        '<button class="param-toggle" data-act="toggle-advanced">' +
-          (state.ui.showAdvanced ? '收起 ▲' : '展开 ▼') +
-          '<span>默认值就是推荐值，一般不用动</span>' +
-        '</button>' +
-        (state.ui.showAdvanced ? advancedRows() : '') +
-      '</div></div>' +
+    var advancedSection = '<div class="section"><div class="card">' +
+        advancedRows() +
+      '</div></div>';
 
-      '<div class="section"><p class="section-title">数据</p><div class="card">' +
+    var dataSection = '<div class="section"><div class="card">' +
         '<button class="btn block" data-act="export">导出数据（备份用）</button>' +
         '<div style="height:8px"></div>' +
         '<button class="btn block" data-act="import">导入数据</button>' +
         '<div style="height:8px"></div>' +
-        '<button class="btn block danger" data-act="wipe">清空全部数据</button>' +
-      '</div></div>' +
+        '<button class="btn block danger" data-act="wipe">重新开始（回到问卷第一页）</button>' +
+        '<div class="footnote">计划、打卡记录和统计都会清空。想留个底，先点上面的「导出数据」。</div>' +
+      '</div></div>';
 
-      (SHOW_DEV ? '<div class="section"><p class="section-title">开发者工具</p><div class="card">' +
-        '<button class="param-toggle" data-act="toggle-dev">' +
-          (state.ui.showDev ? '收起 ▲' : '展开 ▼') +
-          '<span>快进模拟，只有你自己用</span>' +
-        '</button>' +
-        (state.ui.showDev ? devRows() : '') +
-      '</div></div>' : '') +
+    app.innerHTML = '<div class="screen">' +
+      '<div class="top">' + pageBack() +
+        '<h1>设置</h1><div class="sub">改完立刻生效，后面的计划会自动重排</div></div>' +
 
-      '<div class="sticky-cta above-tabs"><button class="btn primary block" data-act="regen">重新生成后面的计划</button></div>' +
+      modeSection + themeSection + examSection +
+
+      foldBlock('settings:phase', '阶段安排', phaseFoldNote(), phaseSection, false) +
+      foldBlock('settings:lesson', '听课与课节数', lessonFoldNote(), lessonSection + unitsSection, false) +
+      foldBlock('settings:strength', '各模块强度', strengthFoldNote(), strengthSection, false) +
+      foldBlock('settings:order', '学习顺序与申论', orderFoldNote(), orderSection, false) +
+      foldBlock('settings:advanced', '高级参数', '默认已调好', advancedSection, false) +
+      foldBlock('settings:data', '数据', '备份与重置', dataSection, false) +
+
+      '<div class="sticky-cta above-tabs">' +
+        '<div class="regen-note' + (regenNote ? (regenNote.busy ? ' busy' : ' done') : '') + '">' +
+          esc(regenNote ? regenNote.text : '设置改完会自动重排后面的计划') +
+        '</div>' +
+      '</div>' +
       '</div>';
-    renderTabbar('settings');
+    renderTabbar('mine');
   }
 
   /* 高级参数：只影响"排多少"，不影响"排什么"，所以随便调也不会把计划调坏 */
@@ -3182,20 +3985,20 @@
     /* 图标用内联 SVG：比 CSS 拼出来的方块精致得多，也不占内存 */
     var ICON = {
       today: '<circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/>',
-      plan: '<path d="M4.5 7h15M4.5 12h15M4.5 17h9"/>',
-      record: '<rect x="3.6" y="5" width="16.8" height="15" rx="3"/><path d="M8 9.5h8M8 13h8M8 16.5h5"/>',
-      stats: '<path d="M6 19v-6M12 19V5.5M18 19v-9"/>',
-      settings: '<path d="M4 8.5h8M17 8.5h3M4 15.5h3M12 15.5h8"/><circle cx="14.5" cy="8.5" r="2.2"/><circle cx="9.5" cy="15.5" r="2.2"/>',
+      plan: '<rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/>',
+      tools: '<rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/>',
+      mine: '<circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/>',
     };
     var tabs = [
       { id: 'today', label: '今日' },
       { id: 'plan', label: '计划' },
-      { id: 'record', label: '记录' },
-      { id: 'stats', label: '统计' },
-      { id: 'settings', label: '设置' },
+      { id: 'tools', label: '工具' },
+      { id: 'mine', label: '我的' },
     ];
+    /* 统计和设置是「我的」下面的二级页，底部导航还亮「我的」那一格 */
+    var on = (active === 'stats' || active === 'settings') ? 'mine' : active;
     var html = '<div class="tabbar">' + tabs.map(function (t) {
-      return '<button class="tab ' + (t.id === active ? 'on' : '') + '" data-act="goto" data-to="' + t.id + '">' +
+      return '<button class="tab ' + (t.id === on ? 'on' : '') + '" data-act="goto" data-to="' + t.id + '">' +
              '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
              'stroke-linecap="round" stroke-linejoin="round">' + ICON[t.id] + '</svg>' +
              t.label + '</button>';
@@ -3208,11 +4011,15 @@
    * ------------------------------------------------------------------- */
 
   function render() {
+    /* 主题要在"没有档案"的分支之前应用，否则第一次打开问卷时还是默认色 */
+    applyTheme();
     if (!state.profile) { app.className = ''; renderOnboarding(); return; }
     var rtk = todayKey();
     var rstage = (state.days[rtk] || {}).stage || 'base';
     rebuildCourseLabels();
     var s = state.ui.screen || 'today';
+    /* 老数据里可能是 'record'（记录以前是单独一格），归到「我的」 */
+    if (s === 'record') { s = 'mine'; state.ui.screen = 'mine'; }
     /* 只在换页时播进入动画。勾个任务就重播一遍的话，看着像闪屏。 */
     var enterKey = s + '|' + rtk;
     var entering = enterKey !== lastEnterKey;
@@ -3223,10 +4030,14 @@
     }
     var out;
     if (s === 'plan') out = renderPlan();
-    else if (s === 'record') out = renderRecord();
+    else if (s === 'tools') out = renderTools();
+    else if (s === 'mine') out = renderMine();
     else if (s === 'stats') out = renderStats();
     else if (s === 'settings') out = renderSettings();
     else out = renderToday();
+
+    /* 体验模式：不在今日页时挂一个小标，提醒"你现在看的是模拟日期" */
+    if (demoOn()) window.YT.demo.decorate();
 
     /* 断更回来自动弹出学习档案。等这一屏画完再弹，不然会被后面的渲染盖掉。 */
     if (pendingRestart) {
@@ -3288,6 +4099,15 @@
 
     /* ---- 导航 ---- */
     if (act === 'goto') return go(el.getAttribute('data-to'));
+    /* 统计、设置左上角的返回 */
+    if (act === 'back') return go('mine');
+    if (act === 'fold-toggle') {
+      var fk = el.getAttribute('data-k');
+      state.ui.folds = state.ui.folds || {};
+      state.ui.folds[fk] = !foldOpen(fk, false);
+      save();
+      return reRenderKeepPlace();
+    }
 
     /* ---- 打卡 ---- */
     if (act === 'cycle') {
@@ -3302,6 +4122,11 @@
       if (next !== 'todo' && task.skip) { task.skip = false; delete task.skipAt; }
       setTaskStatus(task, next);
       if (next !== 'done') task.actualMinutes = null;
+      /* 听课可以只完成一半：剩下那半节拆成"续听"，下次优先接上。 */
+      if (task.kind === 'course') {
+        syncHalfCourse(day, task);
+        if (next === 'half') toast('已记一半，剩下的会排在下次学习日最前面');
+      }
       save();
       return reRender();
     }
@@ -3364,12 +4189,18 @@
       /* 删之前问一句，避免误触 */
       return askConfirm('删掉这一项？',
         '「' + removed.title + '」' +
-        (removed.kind === 'course' ? '——这节课会顺延到后面。' : '——不影响后面的安排。'),
+        (removed.continuation ? '——原课程只算完成一半。'
+          : removed.kind === 'course' ? '——这节课会顺延到后面。'
+          : '——不影响后面的安排。'),
         function () {
           var before = takeSnapshot();
           var dd2 = state.days[ddk];
           if (!dd2) return;
-          if (removed.kind === 'course') {
+          if (removed.continuation) {
+            /* 续听只是一条补课，删掉它不等于把整节课删掉。 */
+            dd2.tasks = dd2.tasks.filter(function (t) { return t.id !== dtid; });
+            finishChange(before, '已删除「' + removed.title + '」');
+          } else if (removed.kind === 'course') {
             /* 同一天同一模块的课全一起去掉，不然"下半节"会挂在上半节没了的情况下 */
             dd2.tasks = dd2.tasks.filter(function (t) {
               return !(t.kind === 'course' && t.moduleId === removed.moduleId);
@@ -3629,84 +4460,21 @@
       state.profile.tuning = state.profile.tuning || {};
       state.profile.tuning.essayStartStage = el.getAttribute('data-v');
       save();
-      return reRender();
+      reRender();
+      return scheduleRegen(0);
     }
-    if (act === 'toggle-dev') {
-      state.ui.showDev = !state.ui.showDev;
+
+    /* 换主题色。不重排计划也不动数据，只是把 html[data-theme] 换掉。 */
+    if (act === 'set-theme') {
+      var tid = el.getAttribute('data-v');
+      var themeList = (window.YT && window.YT.THEMES) || [];
+      var ok = themeList.some(function (t) { return t.id === tid; });
+      if (!ok) return;
+      state.profile.theme = tid;
       save();
-      return reRender();
-    }
-    if (act === 'sim-rate') {
-      state.ui.simRate = Number(el.getAttribute('data-v'));
-      save();
-      return reRender();
-    }
-    if (act === 'sim-run') {
-      var nDays = Number(el.getAttribute('data-v'));
-      var rate = state.ui.simRate || 0.75;
-      var startKey = todayKey();
-      var ran = simulateForward(nDays, rate);
-      toast('已快进 ' + nDays + ' 天（' + ran + ' 个学习日）');
-      go('plan');
-      return;
-    }
-    if (act === 'sim-restore') {
-      if (restoreDev()) { toast('已还原'); go('today'); }
-      else toast('没有可还原的快照');
-      return;
-    }
-    if (act === 'sim-restart') {
-      state.devBackup = JSON.stringify({
-        simDate: state.simDate, days: state.days, roadmap: state.roadmap,
-        weeklyLog: state.weeklyLog, weekMark: state.weekMark,
-        profile: state.profile, onboarding: true,
-      });
-      state.profile = null;
-      state.days = {};
-      state.roadmap = null;
-      state.weeklyLog = [];
-      state.weekMark = {};
-      state.rounds = [];
-      state.simDate = null;
-      state.ui.onboardStep = 0;
-      state.ui.screen = 'today';
-      draft = null;
-      save();
-      render();
-      toast('已重置，可以重新走问卷');
-      return;
-    }
-    /* 只拨日期，不自动打卡。让用户像平常一样自己点一遍，验证真实的操作路径。 */
-    if (act === 'sim-next') {
-      var nd = E.addDays(E.parseKey(todayKey()), 1);
-      state.simDate = E.toKey(nd);
-      dailyRoll();
-      save();
-      go('today');
-      toast('现在是 ' + state.simDate + '（模拟）');
-      return;
-    }
-    if (act === 'sim-today') {
-      state.simDate = null;
-      dailyRoll();
-      save();
-      go('today');
-      toast('已回到真实今天');
-      return;
-    }
-    /* 断更测试：直接跳到"上次学习结束 N 天之后"，走真实的重启逻辑 */
-    if (act === 'sim-break') {
-      var bd = Number(el.getAttribute('data-v')) || 8;
-      /* 边界要放到"明天"，否则今天本来就是学习日时会被跳过，
-       * 结果是点了「停 5 天」却只断了 4 天——按钮上的字和实际对不上。 */
-      var tomorrowK = E.toKey(E.addDays(E.parseKey(todayKey()), 1));
-      var lastK = E.lastActiveKey(state, tomorrowK) || todayKey();
-      state.simDate = E.toKey(E.addDays(E.parseKey(lastK), bd));
-      state.ui.restartSeenOn = null;   // 让学习档案重新弹出来
-      dailyRoll();
-      save();
-      go('today');
-      return;
+      /* 先把色换掉再重画，点下去是立刻变色，不用等重画完 */
+      applyTheme();
+      return reRenderKeepPlace();
     }
 
     /* ---- 设置 ---- */
@@ -3717,26 +4485,44 @@
       else state.profile.restDays.splice(idx, 1);
       state.profile.restDays.sort();
       save();
-      return reRender();
+      reRender();
+      return scheduleRegen(0);
     }
     if (act === 'set-strength') {
       state.profile.strength[el.getAttribute('data-m')] = el.getAttribute('data-v');
       save();
-      return reRender();
+      reRender();
+      return scheduleRegen(0);
     }
     if (act === 'clear-boost') {
       var cbMid = el.getAttribute('data-m');
       if (state.profile.practiceBoost) delete state.profile.practiceBoost[cbMid];
       save();
-      toast('已取消。改完点最下面重排一次就生效');
-      return reRender();
+      reRender();
+      return scheduleRegen(0);
     }
     if (act === 'set-mode') {
       state.profile.mode = el.getAttribute('data-v');
       save();
-      /* 换模式等于换一套排法，直接重排一次，别让用户自己记得去点 */
+      /* 换模式等于换一套排法，立刻重排 */
+      reRender();
       var modeName = { auto: '全自动', semi: '半自动', manual: '自己排' }[state.profile.mode] || '';
-      generateWithOverlay(function () { toast('已切到' + modeName + '，后面的安排重排好了'); });
+      return scheduleRegen(0, '已切到' + modeName + '，后面的安排重排好了');
+    }
+    if (act === 'phase-reset') {
+      state.profile.phasePlan = { custom: false };
+      save();
+      reRender();
+      return scheduleRegen(0, '已恢复系统推荐的阶段安排');
+    }
+    if (act === 'phase-open') {
+      state.ui.screen = 'settings';
+      state.ui.folds = state.ui.folds || {};
+      state.ui.folds['settings:phase'] = true;
+      save();
+      render();
+      var ph = document.getElementById('phase-plan');
+      if (ph && ph.scrollIntoView) ph.scrollIntoView({ block: 'start' });
       return;
     }
     /* 上移/下移一科：顺序即刻生效，后面没动过的天立刻重排 */
@@ -3749,23 +4535,18 @@
       var tmpId = arr[oi]; arr[oi] = arr[oj]; arr[oj] = tmpId;
       state.profile.moduleOrder = arr;
       save();
-      generateAll(function () { reRender(); });
-      return;
-    }
-    if (act === 'regen') {
-      generateWithOverlay(function () {
-        toast('已按新设置重排');
-        go('today');
-      });
-      return;
+      return scheduleRegen(0);
     }
     /* 砍课：把每科的课节数按同一个比例缩小，然后重排。
      * 只动听课，一道题都不动——刷题是提分主力。 */
     if (act === 'cut-course') {
+      var beforeCut = takeSnapshot();
+      var snapCut = planSnapshot();
       var cf = Number(el.getAttribute('data-f')) || 0.6;
       var p0 = state.profile;
       var changed = 0;
       MODULES.forEach(function (m) {
+        if (m.essay) return;   // 申论不跟行测一起砍
         var v = (p0.courseUnits && p0.courseUnits[m.id] !== undefined && p0.courseUnits[m.id] !== '')
           ? p0.courseUnits[m.id] : m.courseUnits;
         var nv = Math.max(0.5, Math.round(Number(v) * cf * 2) / 2);
@@ -3774,8 +4555,9 @@
       });
       save();
       generateWithOverlay(function () {
-        toast('已把 ' + changed + ' 个模块的课砍到 ' + Math.round(cf * 100) + '%，题一道没动');
         go('plan');
+        finishChange(beforeCut, '课已经砍完', ['把 ' + changed + ' 个模块的课砍到约 ' +
+          Math.round(cf * 100) + '%，题一道没动。'].concat(planDiff(snapCut)));
       });
       return;
     }
@@ -3809,7 +4591,8 @@
       return;
     }
     if (act === 'wipe') {
-      return askConfirm('清空全部数据', '所有计划、打卡记录和统计都会删掉，没有办法恢复。确定吗？', function () {
+      return askConfirm('重新开始？',
+        '计划、打卡记录和统计都会删掉，然后回到问卷第一页。想留个底请先导出数据。确定吗？', function () {
         state = store.reset();
         draft = null;
         save();
@@ -3823,6 +4606,14 @@
       state.days = lastUndo.days;
       state.weeklyLog = lastUndo.weeklyLog;
       state.weekMark = lastUndo.weekMark;
+      if (lastUndo.courseUnits && state.profile) state.profile.courseUnits = lastUndo.courseUnits;
+      if (lastUndo.lessonMinutes !== undefined && state.profile) state.profile.lessonMinutes = lastUndo.lessonMinutes;
+      if (lastUndo.speed !== undefined && state.profile) state.profile.speed = lastUndo.speed;
+      if (lastUndo.adjustId) {
+        state.adjustLog = (state.adjustLog || []).filter(function (e) {
+          return e.id !== lastUndo.adjustId;
+        });
+      }
       lastUndo = null;
       save();
       closeModal();
@@ -3831,6 +4622,8 @@
       return;
     }
     if (act === 'chg-ok') { lastUndo = null; return closeModal(); }
+    if (act === 'adj-open') return openAdjustLog();
+    if (act === 'adj-close') return closeModal();
 
     /* ---- 成绩记录 ---- */
     if (act === 'score-open') return openScoreForm();
@@ -4003,6 +4796,7 @@
       if (!skT) { taskMenu = null; return closeModal(); }
       skT.skip = true;
       skT.skipAt = taskMenu.dateKey;
+      syncHalfCourse(state.days[taskMenu.dateKey], skT);
       /* 记一笔：连着几天不做同一科，系统要开口问一句 */
       state.skipLog = state.skipLog || [];
       state.skipLog.push({ date: taskMenu.dateKey, moduleId: skT.moduleId });
@@ -4020,6 +4814,7 @@
       if (unT) {
         unT.skip = false;
         delete unT.skipAt;
+        syncHalfCourse(state.days[taskMenu.dateKey], unT);
         state.skipLog = (state.skipLog || []).filter(function (x) {
           return !(x.date === taskMenu.dateKey && x.moduleId === unT.moduleId);
         });
@@ -4139,16 +4934,32 @@
     var el = ev.target.closest('[data-act]');
     if (!el) return;
     var act = el.getAttribute('data-act');
+    /* 设置页的输入框改完就自动重排。放到 setTimeout 里是因为这里刚读完 el.value，
+     * profile 还没更新；等这次处理跑完再看。延迟由 scheduleRegen 自己兜（防抖）。 */
+    setTimeout(function () { scheduleRegen(); }, 0);
 
     if (act === 'set-units') {
       var mid = el.getAttribute('data-m');
       var val = el.value === '' ? '' : Number(el.value);
-      if (state.profile) { state.profile.courseUnits[mid] = val; save(); }
+      if (state.profile) {
+        state.profile.courseUnits[mid] = val;
+        save();
+        /* 旁边那行"已听 X · 剩 Y"立刻跟着变。
+         * 不更新的话，用户改完数字看到旁边纹丝不动，会以为没存进去。
+         * （整页重画由 scheduleRegen 那边做，这里先给个即时反馈。） */
+        var live = el.parentNode && el.parentNode.querySelector
+          ? el.parentNode.querySelector('.unit-live') : null;
+        if (live) {
+          var mm = MODULE_BY_ID[mid];
+          var need2 = E.targetUnits(mm, state.profile);
+          var done2 = Math.min(need2, E.courseProgress(state)[mid] || 0);
+          live.textContent = need2 > 0 ? ('已听 ' + done2 + ' · 剩 ' + (need2 - done2)) : '';
+        }
+      }
       else if (draft) {
         draft.courseUnits[mid] = val;
         /* 不整页重渲染（会丢焦点），只把下面那块预览换掉 */
-        var pv = document.getElementById('ob-preview');
-        if (pv) pv.innerHTML = previewHtml();
+        refreshObPreview();
       }
       return;
     }
@@ -4212,17 +5023,57 @@
       return;
     }
     if (act === 'set-lesson') {
-      if (draft) draft.lessonMinutes = Number(el.value);
+      if (draft) { draft.lessonMinutes = Number(el.value); refreshObPreview(); }
       else { state.profile.lessonMinutes = Number(el.value); save(); }
       return;
     }
     if (act === 'set-speed') {
       var v = Math.max(1, Math.min(3, Number(el.value) || 1));
-      if (draft) draft.speed = v;
+      if (draft) { draft.speed = v; refreshObPreview(); }
       else { state.profile.speed = v; save(); }
       return;
     }
-    if (act === 'set-exam') { state.profile.examDate = el.value; save(); return; }
+    /* 阶段安排：只让用户改两个日期。校验不通过就把输入框退回上一个有效值。 */
+    if (act === 'set-base-end' || act === 'set-sprint-start') {
+      var phase = state.profile.phasePlan = state.profile.phasePlan || {};
+      var prm = state.roadmap || E.buildRoadmap(state.profile, todayKey());
+      var pRec = prm.phasePlan || {};
+      var curBase = (phase.baseEnd) || pRec.baseEnd || '';
+      var curSprint = (phase.sprintStart) || pRec.sprintStart || '';
+      var otherDate = act === 'set-base-end' ? curSprint : curBase;
+      var nv = el.value;
+      var revert = function (msg) {
+        toast(msg);
+        el.value = act === 'set-base-end' ? curBase : curSprint;
+      };
+      if (!nv) return revert('日期不能为空');
+      if (nv < todayKey()) return revert('日期不能早于今天');
+      if (act === 'set-base-end' && otherDate && nv >= otherDate) {
+        return revert('基础期结束要早于冲刺期开始');
+      }
+      if (act === 'set-base-end' && state.profile.examDate && nv >= state.profile.examDate) {
+        return revert('基础期结束要早于考试日');
+      }
+      if (act === 'set-sprint-start' && otherDate && nv <= otherDate) {
+        return revert('冲刺期开始要晚于基础期结束');
+      }
+      if (act === 'set-sprint-start' && state.profile.examDate && nv > state.profile.examDate) {
+        return revert('冲刺期开始不能晚于考试日');
+      }
+      phase.custom = true;
+      if (act === 'set-base-end') phase.baseEnd = nv;
+      else phase.sprintStart = nv;
+      if (!phase.baseEnd) phase.baseEnd = curBase;
+      if (!phase.sprintStart) phase.sprintStart = curSprint;
+      save();
+      return;
+    }
+    if (act === 'set-exam') {
+      state.profile.examDate = el.value;
+      state.profile.phasePlan = { custom: false };
+      save();
+      return;
+    }
     if (act === 'set-wd') { state.profile.weekdayMinutes = Number(el.value); save(); return; }
     if (act === 'set-we') { state.profile.weekendMinutes = Number(el.value); save(); return; }
   });
@@ -4231,7 +5082,11 @@
     var el = ev.target.closest('[data-act]');
     if (!el) return;
     var act = el.getAttribute('data-act');
-    if (act === 'set-exam') { state.profile.examDate = el.value; save(); }
+    if (act === 'set-exam') {
+      state.profile.examDate = el.value;
+      state.profile.phasePlan = { custom: false };
+      save();
+    }
     if (act === 'switch-date' && switchDraft) { switchDraft.examDate = el.value; }
     if (act === 'switch-name' && switchDraft) { switchDraft.name = el.value; }
     if (act === 'switch-wd' && switchDraft) { switchDraft.weekdayMinutes = Number(el.value); }
@@ -4290,6 +5145,21 @@
 
   /* 调试用：在浏览器控制台里输入 __ytDebug() 就能看到当前状态 */
   window.__ytDebug = function () { return state; };
+
+  /* 安卓 / Chrome 的"添加到桌面"事件。iOS 没有这个事件，
+   * 走 openInstallHelp() 里的 Safari 步骤说明。 */
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (state.profile && (state.ui.screen || 'today') === 'mine') render();
+  });
+  window.addEventListener('appinstalled', function () {
+    deferredInstallPrompt = null;
+    state.ui.installed = true;
+    save();
+    toast('已经添加到桌面');
+    render();
+  });
 
   boot();
 })();

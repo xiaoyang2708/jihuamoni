@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>字体方案样张</title>
+<!-- 思源黑体 / 思源宋体的可变字体版本。Google Fonts 按 unicode-range 切片，
+     只下载用到的那些字，不会一次性拉几兆。 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@100..900&family=Noto+Serif+SC:wght@200..900&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+
+  body {
+    margin: 0; padding: 46px 56px 60px;
+    background: #cfcbc4;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+    color: #2a2724;
+  }
+
+  .board-title { margin: 0 0 8px; font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
+  .board-sub { margin: 0 0 38px; font-size: 13.5px; line-height: 1.85; color: #5d574f; }
+  .board-sub b { color: #2a2724; }
+  .board-sub code {
+    font-family: Consolas, monospace; font-size: 12px;
+    background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px;
+  }
+
+  h2.sec {
+    margin: 0 0 6px; font-size: 15px; font-weight: 700; letter-spacing: -.2px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  h2.sec span { font-size: 12.5px; font-weight: 400; color: #6f685f; }
+  .hint { margin: 0 0 20px; font-size: 12.5px; color: #6f685f; line-height: 1.8; }
+  .hint b { color: #2a2724; }
+
+  .block { margin-bottom: 48px; }
+
+  /* ---------------- 一、大字号字形对比 ---------------- */
+  .bigrow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .bigbox {
+    background: #fff; border-radius: 20px; padding: 22px 24px 20px;
+    box-shadow: 0 14px 32px rgba(38,32,24,.13);
+  }
+  .bigbox .lb { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: #9a8046; }
+  .bigbox .big { font-size: 62px; line-height: 1.15; font-weight: 600; letter-spacing: -2px; margin: 6px 0 8px; }
+  .bigbox .nt { font-size: 12px; color: #8a8278; line-height: 1.65; }
+  .bigbox .bigsub { margin-top: 12px; font-size: 22px; font-weight: 400; color: #2a2724; letter-spacing: -.4px; }
+
+  /* ---------------- 二、字重阶梯 ---------------- */
+  .ladder { background: #fff; border-radius: 22px; padding: 10px 26px; box-shadow: 0 16px 34px rgba(38,32,24,.14); }
+  .lrow {
+    display: flex; align-items: center; gap: 22px;
+    padding: 20px 0; border-bottom: 1px solid rgba(26,24,21,.08);
+  }
+  .lrow:last-child { border-bottom: 0; }
+  .lrow .lname { flex: 0 0 108px; font-size: 14px; font-weight: 700; letter-spacing: -.2px; }
+  .lrow .lsamples { flex: 1; display: flex; gap: 26px; align-items: baseline; }
+  .lrow .lsamples span { font-size: 27px; letter-spacing: -.5px; }
+  .lrow .lsamples em {
+    display: block; font-style: normal; font-size: 10.5px;
+    font-weight: 400; color: #a49b8f; letter-spacing: 0; margin-top: 2px;
+  }
+  .lrow .lnote { flex: 0 0 216px; font-size: 12px; color: #7a7268; line-height: 1.65; }
+
+  /* ---------------- 三、实际界面 ---------------- */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .fcard { background: #fff; border-radius: 22px; overflow: hidden; box-shadow: 0 16px 34px rgba(38,32,24,.14); }
+  .fcard .head { padding: 17px 22px 15px; border-bottom: 1px solid rgba(26,24,21,.07); }
+  .fcard .name { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
+  .fcard .note { margin-top: 3px; font-size: 11.5px; color: #7a7268; line-height: 1.6; }
+  .fcard .body { padding: 18px 20px 20px; background: #f7f5f1; }
+
+  .mini {
+    background: #fff; border-radius: 15px; padding: 15px 16px 4px;
+    box-shadow: 0 1px 2px rgba(26,24,21,.05), 0 10px 22px -16px rgba(26,24,21,.4);
+  }
+  .mini .date { font-size: 11.5px; color: rgba(26,24,21,.36); }
+  .mini h3 { margin: 2px 0 0; font-size: 24px; font-weight: 750; letter-spacing: -1px; line-height: 1.2; }
+  .mini .st { margin-top: 3px; font-size: 12.5px; color: rgba(26,24,21,.58); }
+  .mini .st b { color: #1a1815; font-weight: 650; }
+  .mini .st i { font-style: normal; color: #bb9455; font-weight: 650; }
+
+  .mrow {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid rgba(26,24,21,.06);
+  }
+  .mrow:last-of-type { border-bottom: 0; }
+  .mrow .mt { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -.35px; }
+  .mrow .ms { font-size: 12px; color: rgba(26,24,21,.36); margin-top: 1px; }
+  .mrow .mm { flex: 0 0 auto; font-size: 12.5px; color: rgba(26,24,21,.58); font-variant-numeric: tabular-nums; }
+
+  .mnum { display: flex; gap: 20px; padding: 13px 0 2px; }
+  .mnum div { font-size: 19px; font-weight: 750; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+  .mnum span { display: block; font-size: 10.5px; font-weight: 400; color: rgba(26,24,21,.36); letter-spacing: 0; }
+
+  .mbtn {
+    display: block; text-align: center; margin: 15px 0 14px;
+    padding: 11px 0; border-radius: 12px;
+    background: linear-gradient(180deg,#d9bb7e,#bb9455 52%,#96733a);
+    color: #2c2109; font-size: 14px; font-weight: 650;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.48), 0 8px 16px -10px rgba(90,68,30,.8);
+  }
+
+  .tag2 {
+    display: inline-block; margin-left: 7px; padding: 2px 8px; border-radius: 99px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+    background: rgba(187,148,85,.16); color: #96733a;
+  }
+  .tag2.gray { background: rgba(26,24,21,.06); color: #8a8278; }
+
+  /* 每个卡片各自指定字体 */
+  .f-yahei { font-family: "Microsoft YaHei", "微软雅黑", sans-serif; }
+  .f-noto  { font-family: "Noto Sans SC", "PingFang SC", sans-serif; }
+  .f-iqiyi { font-family: "爱奇艺黑体", "Noto Sans SC", sans-serif; }
+  .f-ser   { font-family: "Noto Serif SC", "Songti SC", serif; }
+  .f-mixtitle .mini h3, .f-mixtitle .name, .f-mixtitle .big { font-family: "Noto Serif SC", "Songti SC", serif; }
+  .f-mixtitle .mini, .f-mixtitle .note, .f-mixtitle .nt { font-family: "Noto Sans SC", "PingFang SC", sans-serif; }
+</style>
+</head>
+<body>
+
+<h1 class="board-title">字体方案样张</h1>
+<p class="board-sub">
+  你现在的字体栈是 <code>-apple-system … "PingFang SC" … "Microsoft YaHei"</code>。<br>
+  苹方是苹果的，只在 iOS / macOS 上有；在这台 Windows 上它一路回退到 <b>微软雅黑</b>——一款 2006 年的字体。<br>
+  你在电脑上看觉得"不够高级"，很大一部分原因就在这儿：不是配色的问题，是<b>字</b>的问题。
+</p>
+
+<!-- ============ 一、字形 ============ -->
+<div class="block">
+  <h2 class="sec">一、先看字形 <span>同一个「今天」，62px</span></h2>
+  <p class="hint">微软雅黑的横竖粗细对比小、笔画末端钝、字面偏方；思源黑体的中宫收得更紧、笔画收得干净，同样的字号看着更"挺"。</p>
+
+  <div class="bigrow">
+    <div class="bigbox f-yahei">
+      <div class="lb">微软雅黑</div>
+      <div class="big">今天</div>
+      <div class="bigsub">资料分析 · 听课</div>
+      <div class="nt">现状。字形偏方，笔画末端钝，中英混排的西文偏窄。</div>
+    </div>
+    <div class="bigbox f-noto">
+      <div class="lb">思源黑体 · 推荐</div>
+      <div class="big">今天</div>
+      <div class="bigsub">资料分析 · 听课</div>
+      <div class="nt">笔画干净、中宫收紧，数字和中文的基线齐。免费商用。</div>
+    </div>
+    <div class="bigbox f-ser">
+      <div class="lb">思源宋体</div>
+      <div class="big">今天</div>
+      <div class="bigsub">资料分析 · 听课</div>
+      <div class="nt">衬线，书卷气最重。适合只做标题，正文用会累。</div>
+    </div>
+    <div class="bigbox f-iqiyi">
+      <div class="lb">爱奇艺黑体</div>
+      <div class="big">今天</div>
+      <div class="bigsub">资料分析 · 听课</div>
+      <div class="nt">更细、更开阔，气质偏轻。手机端不一定装得到。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 二、字重 ============ -->
+<div class="block">
+  <h2 class="sec">二、再看字重 <span>300 → 900，同一个字</span></h2>
+  <p class="hint">
+    这是最要命的一条。你的界面里到处都是 <code>font-weight: 600 / 650 / 750</code>，
+    但<b>微软雅黑只有 400 和 700 两个真字重</b>——中间那些是浏览器自己在常规字形上描粗的，笔画会糊、变胖、结构走形。<br>
+    思源黑体是可变字体，100–900 全都是真的。
+  </p>
+
+  <div class="ladder">
+    <div class="lrow f-yahei">
+      <div class="lname">微软雅黑</div>
+      <div class="lsamples">
+        <span style="font-weight:300">备考节奏<em>300</em></span>
+        <span style="font-weight:400">备考节奏<em>400</em></span>
+        <span style="font-weight:500">备考节奏<em>500</em></span>
+        <span style="font-weight:600">备考节奏<em>600</em></span>
+        <span style="font-weight:700">备考节奏<em>700</em></span>
+        <span style="font-weight:900">备考节奏<em>900</em></span>
+      </div>
+      <div class="lnote">400 → 700 中间是断的，600 和 700 看着差不多，900 和 700 一模一样。</div>
+    </div>
+    <div class="lrow f-noto">
+      <div class="lname">思源黑体</div>
+      <div class="lsamples">
+        <span style="font-weight:300">备考节奏<em>300</em></span>
+        <span style="font-weight:400">备考节奏<em>400</em></span>
+        <span style="font-weight:500">备考节奏<em>500</em></span>
+        <span style="font-weight:600">备考节奏<em>600</em></span>
+        <span style="font-weight:700">备考节奏<em>700</em></span>
+        <span style="font-weight:900">备考节奏<em>900</em></span>
+      </div>
+      <div class="lnote">每一档都真的不一样。标题用 700、正文 400、次要信息 500，层次是靠字重拉开的。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 三、实际界面 ============ -->
+<div class="block">
+  <h2 class="sec">三、放进真界面里 <span>同一屏内容，只换字体</span></h2>
+  <p class="hint">都是 400 / 600 / 750 三档字重、同样的字号和间距，唯一变量是字体。</p>
+
+  <div class="grid">
+
+    <div class="fcard f-yahei">
+      <div class="head">
+        <div class="name">微软雅黑 <span class="tag2 gray">现状</span></div>
+        <div class="note">Windows 自带。两个字重，标题会发糊。</div>
+      </div>
+      <div class="body">
+        <div class="mini">
+          <div class="date">9月19日　周六</div>
+          <h3>今天</h3>
+          <div class="st"><i>基础期</i> · 已完成 <b>1 / 4</b> 项 · 连续 <b>30</b> 天</div>
+          <div class="mrow"><div><div class="mt">资料分析 · 听课</div><div class="ms">第 1 节 + 第 2 节（上半）</div></div><div class="mm">2 小时 30 分</div></div>
+          <div class="mrow"><div><div class="mt">申论 · 听课</div><div class="ms">第 1 节（上半）</div></div><div class="mm">50 分钟</div></div>
+          <div class="mnum"><div>972<span>累计做题</span></div><div>27.8<span>听课节数</span></div></div>
+          <div class="mbtn">今天主攻一科</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fcard f-noto">
+      <div class="head">
+        <div class="name">思源黑体 <span class="tag2">推荐</span></div>
+        <div class="note">Noto Sans SC，100–900 全字重，免费商用。</div>
+      </div>
+      <div class="body">
+        <div class="mini">
+          <div class="date">9月19日　周六</div>
+          <h3>今天</h3>
+          <div class="st"><i>基础期</i> · 已完成 <b>1 / 4</b> 项 · 连续 <b>30</b> 天</div>
+          <div class="mrow"><div><div class="mt">资料分析 · 听课</div><div class="ms">第 1 节 + 第 2 节（上半）</div></div><div class="mm">2 小时 30 分</div></div>
+          <div class="mrow"><div><div class="mt">申论 · 听课</div><div class="ms">第 1 节（上半）</div></div><div class="mm">50 分钟</div></div>
+          <div class="mnum"><div>972<span>累计做题</span></div><div>27.8<span>听课节数</span></div></div>
+          <div class="mbtn">今天主攻一科</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fcard f-mixtitle">
+      <div class="head">
+        <div class="name">思源宋体做标题</div>
+        <div class="note">标题衬线、正文黑体。书卷气最重。</div>
+      </div>
+      <div class="body">
+        <div class="mini">
+          <div class="date">9月19日　周六</div>
+          <h3>今天</h3>
+          <div class="st"><i>基础期</i> · 已完成 <b>1 / 4</b> 项 · 连续 <b>30</b> 天</div>
+          <div class="mrow"><div><div class="mt">资料分析 · 听课</div><div class="ms">第 1 节 + 第 2 节（上半）</div></div><div class="mm">2 小时 30 分</div></div>
+          <div class="mrow"><div><div class="mt">申论 · 听课</div><div class="ms">第 1 节（上半）</div></div><div class="mm">50 分钟</div></div>
+          <div class="mnum"><div>972<span>累计做题</span></div><div>27.8<span>听课节数</span></div></div>
+          <div class="mbtn">今天主攻一科</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fcard f-iqiyi">
+      <div class="head">
+        <div class="name">爱奇艺黑体</div>
+        <div class="note">笔画细、字面开阔。这台机器有，手机上不一定。</div>
+      </div>
+      <div class="body">
+        <div class="mini">
+          <div class="date">9月19日　周六</div>
+          <h3>今天</h3>
+          <div class="st"><i>基础期</i> · 已完成 <b>1 / 4</b> 项 · 连续 <b>30</b> 天</div>
+          <div class="mrow"><div><div class="mt">资料分析 · 听课</div><div class="ms">第 1 节 + 第 2 节（上半）</div></div><div class="mm">2 小时 30 分</div></div>
+          <div class="mrow"><div><div class="mt">申论 · 听课</div><div class="ms">第 1 节（上半）</div></div><div class="mm">50 分钟</div></div>
+          <div class="mnum"><div>972<span>累计做题</span></div><div>27.8<span>听课节数</span></div></div>
+          <div class="mbtn">今天主攻一科</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fcard f-noto">
+      <div class="head">
+        <div class="name">思源黑体 · 数字等宽</div>
+        <div class="note">在上一套基础上开 <code>tnum</code>，时间题量上下对齐。</div>
+      </div>
+      <div class="body">
+        <div class="mini" style="font-feature-settings:'tnum' 1">
+          <div class="date">9月19日　周六</div>
+          <h3>今天</h3>
+          <div class="st"><i>基础期</i> · 已完成 <b>1 / 4</b> 项 · 连续 <b>30</b> 天</div>
+          <div class="mrow"><div><div class="mt">资料分析 · 听课</div><div class="ms">第 1 节 + 第 2 节（上半）</div></div><div class="mm">2 小时 30 分</div></div>
+          <div class="mrow"><div><div class="mt">申论 · 听课</div><div class="ms">第 1 节（上半）</div></div><div class="mm">50 分钟</div></div>
+          <div class="mnum"><div>1,240<span>累计做题</span></div><div>111.5<span>听课节数</span></div></div>
+          <div class="mbtn">今天主攻一科</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fcard f-noto" style="background:#1c1a18">
+      <div class="head" style="border-color:rgba(244,240,232,.10)">
+        <div class="name" style="color:#f4f0e8">思源黑体 · 深色</div>
+        <div class="note" style="color:rgba(244,240,232,.55)">同一个字体换底色。思源在深色下比雅黑稳得多。</div>
+      </div>
+      <div class="body" style="background:#141312">
+        <div class="mini" style="background:#1c1a18;box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 14px 30px -20px #000">
+          <div class="date" style="color:rgba(244,240,232,.30)">9月19日　周六</div>
+          <h3 style="color:#f4f0e8">今天</h3>
+          <div class="st" style="color:rgba(244,240,232,.56)"><i style="color:#d3ac68">基础期</i> · 已完成 <b style="color:#f4f0e8">1 / 4</b> 项 · 连续 <b style="color:#f4f0e8">30</b> 天</div>
+          <div class="mrow" style="border-color:rgba(244,240,232,.07)"><div><div class="mt" style="color:#f4f0e8">资料分析 · 听课</div><div class="ms" style="color:rgba(244,240,232,.30)">第 1 节 + 第 2 节（上半）</div></div><div class="mm" style="color:rgba(244,240,232,.56)">2 小时 30 分</div></div>
+          <div class="mrow" style="border-color:rgba(244,240,232,.07)"><div><div class="mt" style="color:#f4f0e8">申论 · 听课</div><div class="ms" style="color:rgba(244,240,232,.30)">第 1 节（上半）</div></div><div class="mm" style="color:rgba(244,240,232,.56)">50 分钟</div></div>
+          <div class="mnum"><div style="color:#f4f0e8">972<span style="color:rgba(244,240,232,.30)">累计做题</span></div><div style="color:#f4f0e8">27.8<span style="color:rgba(244,240,232,.30)">听课节数</span></div></div>
+          <div class="mbtn">今天主攻一科</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

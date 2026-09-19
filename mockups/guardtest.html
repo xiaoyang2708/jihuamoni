@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>防崩测试</title>
+</head>
+<body>
+<div id="out" style="font:14px/1.9 monospace;padding:20px;white-space:pre-wrap"></div>
+<script src="../js/config.js"></script>
+<script>
+  /* 专门验：往这些函数里塞坏数据，会不会把页面搞崩。
+   * 之前 moduleParam(undefined, …) 会抛 "Cannot read properties of
+   * undefined (reading 'setSize')"，整个页面白屏。 */
+  (function () {
+    var log = [];
+    var badProfile = {};                       // 没改过高级参数的普通档案
+    function t(name, fn) {
+      try { log.push('✅ ' + name + ' → ' + JSON.stringify(fn())); }
+      catch (e) { log.push('❌ ' + name + ' → 抛错 ' + e.message); }
+    }
+    t('moduleParam(undefined)', function () { return YT.moduleParam(undefined, badProfile, 'setSize'); });
+    t('moduleParam(null)',      function () { return YT.moduleParam(null, badProfile, 'setSize'); });
+    t('unitMinutesFor(undefined)', function () { return YT.unitMinutesFor(undefined, 'base', badProfile); });
+    t('unitMinutesFor(null)',      function () { return YT.unitMinutesFor(null, 'base', badProfile); });
+    t('moduleParam(正常模块)',  function () { return YT.moduleParam(YT.MODULES[0], badProfile, 'setSize'); });
+    t('unitMinutesFor(正常模块)', function () { return YT.unitMinutesFor(YT.MODULES[0], 'base', badProfile); });
+    document.getElementById('out').textContent = log.join('\n');
+    document.title = log.join(' | ');
+  })();
+</script>
+</body>
+</html>

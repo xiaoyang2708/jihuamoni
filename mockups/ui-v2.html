@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>备考节奏 · 新结构样图</title>
+<link rel="stylesheet" href="../css/styles.css">
+<style>
+  /* =====================================================================
+   * 这张样图专用。下面 .phone / .app 的规则只是把 app 装进手机框里，
+   * 真实页面里不存在。其余全部复用现有 styles.css —— 包括热力图
+   * (.heatmap/.hm-cell)、月历 (.cal-grid/.cal-cell)、按天记录 (.rec-day/.rec-row)，
+   * 所以「我的」那一屏和现在真机上的「我的记录」页长得一模一样。
+   * ===================================================================== */
+
+  body { background: #d8d5d0; padding: 46px 56px 64px; }
+
+  .board-title { margin: 0 0 6px; font-size: 21px; font-weight: 700; letter-spacing: -.4px; color: #33302a; }
+  .board-sub   { margin: 0 0 34px; font-size: 13.5px; color: #6d665c; line-height: 1.75; }
+  .board-sub b { color: #33302a; font-weight: 650; }
+
+  .brow { display: flex; gap: 40px; align-items: flex-start; }
+  .brow + .brow { margin-top: 46px; }
+  .col  { flex: 0 0 auto; width: 402px; }
+
+  .col-label {
+    display: flex; align-items: baseline; gap: 8px;
+    margin: 0 0 12px; padding-left: 4px;
+    font-size: 13.5px; font-weight: 650; color: #33302a;
+  }
+  .col-label i { font-style: normal; color: #a08a6a; font-weight: 700; }
+  .col-label span { font-weight: 400; color: #7a7268; font-size: 12.5px; }
+
+  .phone {
+    width: 402px; height: 856px;
+    background: #fff; border-radius: 46px; padding: 6px;
+    box-shadow: 0 20px 44px rgba(45,38,30,.20), 0 0 0 1px rgba(45,38,30,.07);
+  }
+  .phone.tall { height: 1250px; }
+
+  .phone .app {
+    width: 390px; height: 844px; max-width: 390px;
+    margin: 0 auto;
+    background: var(--bg); color: var(--ink);
+    position: relative; overflow: hidden;
+    padding-bottom: 84px;
+    border-radius: 40px;
+  }
+  .phone.tall .app { height: 1238px; }
+
+  /* 阶段配色在真实页面里挂在 #app 上，这里改挂 .app */
+  .app.stage-base { --stage-tint: #e7f0ed; --stage-ink: #2f6b5e; }
+
+  /* 底部导航在真实页面里是 fixed，装进手机框后要改成 absolute */
+  .phone .tabbar {
+    position: absolute; left: 0; right: 0;
+    transform: none; width: auto; max-width: none;
+    border-radius: 0 0 40px 40px;
+  }
+
+  /* ---------- 工具页的空状态 ---------- */
+
+  .empty {
+    background: transparent;
+    border: 1.5px dashed rgba(58,53,46,.16);
+    text-align: center;
+    padding: 46px 24px 44px;
+  }
+  .empty-ico { color: rgba(58,53,46,.20); }
+  .empty-ico svg { width: 42px; height: 42px; }
+  .empty-t { margin-top: 16px; font-size: 16px; font-weight: 650; letter-spacing: -.3px; }
+  .empty-d { margin-top: 8px; font-size: 13.5px; line-height: 1.75; color: var(--ink-2); }
+
+  .slot-note {
+    font-size: 12.5px; color: var(--ink-2); line-height: 1.75;
+    background: #f2efe9; border-radius: var(--radius-s); padding: 12px 14px;
+  }
+  .slot-note b { color: var(--ink); font-weight: 650; }
+
+  /* ---------- 我的页：入口列表 ---------- */
+
+  .list { padding: 2px 18px; }
+  .lrow {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 0; border-bottom: 1px solid var(--line);
+    font-size: 15.5px; letter-spacing: -.2px;
+  }
+  .lrow:last-child { border-bottom: 0; }
+  .lrow .gi { flex: 0 0 auto; width: 20px; height: 20px; color: var(--ink-3); }
+  .lrow .grow2 { flex: 1; min-width: 0; }
+  .lrow .note { flex: 0 0 auto; font-size: 12.5px; color: var(--ink-3); }
+  .chev { flex: 0 0 auto; color: rgba(60,60,67,.26); font-size: 19px; line-height: 1; }
+
+  /* ---------- 右侧：功能核对面板 ---------- */
+
+  .panel {
+    width: 844px; flex: 0 0 auto;
+    background: #fff; border-radius: 24px;
+    padding: 30px 34px 32px;
+    box-shadow: 0 20px 44px rgba(45,38,30,.12), 0 0 0 1px rgba(45,38,30,.06);
+  }
+  .panel h2 { margin: 0 0 6px; font-size: 19px; font-weight: 700; letter-spacing: -.3px; }
+  .panel .p-sub { margin: 0 0 22px; font-size: 13px; color: #7a7268; line-height: 1.7; }
+
+  table.map { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.map td { padding: 11px 0; border-bottom: 1px solid rgba(58,53,46,.10); vertical-align: top; }
+  table.map tr:last-child td { border-bottom: 0; }
+  table.map .from { width: 92px; color: #6d665c; }
+  table.map .arrow { width: 34px; color: rgba(58,53,46,.30); }
+  table.map .to b { font-weight: 650; letter-spacing: -.2px; color: #33302a; }
+  table.map .to span { display: block; font-size: 12.5px; color: #8a8278; margin-top: 1px; }
+  table.map tr.new .from { color: #a08a6a; }
+
+  .p-block { margin-top: 28px; }
+  .p-block h3 {
+    margin: 0 0 12px; font-size: 12.5px; font-weight: 650;
+    letter-spacing: .04em; color: #a08a6a;
+  }
+  .p-audit { font-size: 12.5px; line-height: 1.85; color: #6d665c; }
+  .p-audit div { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(58,53,46,.07); }
+  .p-audit div:last-child { border-bottom: 0; }
+  .p-audit b { flex: 0 0 62px; font-weight: 650; color: #33302a; }
+  .p-audit span { flex: 1; min-width: 0; }
+
+  .p-foot {
+    margin-top: 26px; padding: 14px 16px;
+    background: #f7f5f1; border-radius: 14px;
+    font-size: 12.5px; line-height: 1.75; color: #6d665c;
+  }
+  .p-foot b { color: #33302a; }
+</style>
+</head>
+<body>
+
+<h1 class="board-title">备考节奏 · 新结构样图</h1>
+<p class="board-sub">
+  底部固定 <b>4 格</b>（今日 / 计划 / 工具 / 我的）。「工具」现在空着，只写一句"这里以后可能会再开发"。<br>
+  原先的「记录 / 统计 / 设置」三格收进「我的」——<b>我的首屏就是现在那个「我的记录」页，一行没改</b>。
+</p>
+
+<div class="brow">
+
+  <!-- ============================================================
+       ① 今日
+       ============================================================ -->
+  <div class="col">
+    <div class="col-label"><i>①</i>今日 <span>高频 · 和现在完全一样</span></div>
+    <div class="phone">
+      <div class="app stage-base">
+        <div class="screen">
+
+          <div class="stage-band">基础期 <span>· 第 12 / 45 天</span><i>距考试 122 天</i></div>
+
+          <div class="today-head">
+            <div class="date">2026年9月19日　周六</div>
+            <h1>今天</h1>
+            <div class="state"><i>基础期</i> · 已完成 <b>1 / 4</b> 项 · 连续 <b>30</b> 天</div>
+            <div class="daybar"><i style="width:25%"></i></div>
+            <div class="daybar-meta"><span>课 3 / 10 节</span><span>42%</span></div>
+          </div>
+
+          <div class="section">
+            <div class="card tasks">
+
+              <div class="task is-done">
+                <span class="tick done"></span>
+                <div class="task-body">
+                  <div class="task-top">
+                    <span class="task-title">资料分析 · 听课</span>
+                    <span class="task-min">1 小时 40 分</span>
+                  </div>
+                  <div class="task-detail">第 3 节 · 1.5 倍速 · 课件 150 分钟</div>
+                  <div class="task-meta"><span class="pill">已听 3 节</span><span>还剩 7 节</span></div>
+                </div>
+                <button class="del">⋯</button>
+              </div>
+
+              <div class="task">
+                <span class="tick"></span>
+                <div class="task-body">
+                  <div class="task-top">
+                    <span class="task-title">资料分析 · 刷题</span>
+                    <span class="task-min">45 分</span>
+                  </div>
+                  <div class="task-detail">2 组 · 40 题 · 限时 56 分</div>
+                  <div class="task-meta"><span>目标 85%</span><span>基础期按 2.5 分/题</span></div>
+                </div>
+                <button class="del">⋯</button>
+              </div>
+
+              <div class="task">
+                <span class="tick half"></span>
+                <div class="task-body">
+                  <div class="task-top">
+                    <span class="task-title">判推逻辑 · 刷题</span>
+                    <span class="task-min">20 分</span>
+                  </div>
+                  <div class="task-detail">1 组 · 10 题 · 限时 9 分</div>
+                </div>
+                <button class="del">⋯</button>
+              </div>
+
+              <div class="task">
+                <span class="tick"></span>
+                <div class="task-body">
+                  <div class="task-top">
+                    <span class="task-title">申论 · 小题</span>
+                    <span class="task-min">40 分</span>
+                  </div>
+                  <div class="task-detail">1 道 · 归纳概括</div>
+                </div>
+                <button class="del">⋯</button>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="row" style="gap:8px">
+              <button class="btn grow ghost">加一项</button>
+              <button class="btn grow ghost">今天主攻一科</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <p class="section-title">今天感觉</p>
+            <div class="moods">
+              <button class="mood">太轻松</button>
+              <button class="mood on">刚好</button>
+              <button class="mood">有点累</button>
+              <button class="mood">太难了</button>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="tabbar">
+          <button class="tab on">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ② 计划
+       ============================================================ -->
+  <div class="col">
+    <div class="col-label"><i>②</i>计划 <span>本次备考的主线 · 和现在完全一样</span></div>
+    <div class="phone">
+      <div class="app stage-base">
+        <div class="screen">
+
+          <div class="top">
+            <h1>我的计划</h1>
+            <div class="sub">距离 2027年1月19日 还有 122 个学习日</div>
+          </div>
+
+          <div class="section">
+            <p class="section-title">总体节奏</p>
+            <div class="card">
+              <div class="stage cur">
+                <div class="stage-idx">1</div>
+                <div class="grow">
+                  <div class="stage-name">基础期 · 进行中</div>
+                  <div class="stage-date">9月8日 – 11月2日 · 45 个学习日</div>
+                  <div class="tiny muted" style="margin-top:3px">把行测各模块和申论过一遍，建立做题手感</div>
+                </div>
+              </div>
+              <div class="stage">
+                <div class="stage-idx">2</div>
+                <div class="grow">
+                  <div class="stage-name">强化期</div>
+                  <div class="stage-date">11月3日 – 12月20日 · 48 个学习日</div>
+                  <div class="tiny muted" style="margin-top:3px">分模块大量刷题，申论开始动笔写</div>
+                </div>
+              </div>
+              <div class="stage">
+                <div class="stage-idx">3</div>
+                <div class="grow">
+                  <div class="stage-name">冲刺期</div>
+                  <div class="stage-date">12月21日 – 1月18日 · 29 个学习日</div>
+                  <div class="tiny muted" style="margin-top:3px">限时套卷和模考，申论成篇，查漏补缺</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div style="font-size:12.5px;line-height:1.7;background:var(--primary-s);border-radius:12px;padding:12px 14px;color:var(--ink-2)">
+              按现在的进度：<b style="color:var(--ink)">10月12日</b> 听完所有课，<b style="color:var(--ink)">11月3日</b> 开始刷套卷，之后有 <b style="color:var(--ink)">29</b> 个学习日做套卷。
+            </div>
+          </div>
+
+          <div class="section">
+            <p class="section-title">日程</p>
+            <div class="segmented">
+              <button>本周</button>
+              <button class="on">两周</button>
+              <button>30 天</button>
+            </div>
+            <div class="row between" style="margin-top:10px;align-items:center">
+              <span class="range-note" style="margin:0">9月19日 – 10月2日</span>
+              <button class="btn sm ghost">批量排</button>
+            </div>
+            <div class="card" style="margin-top:10px">
+
+              <div class="plan-day">
+                <div class="pd-head">
+                  <div class="pd-date">今天<small>9/19</small></div>
+                  <div class="pd-right">
+                    <span class="pd-total">2 小时 40 分</span>
+                    <button class="pd-add">＋</button>
+                  </div>
+                </div>
+                <div class="pd-tasks">
+                  <div class="pd-task"><span class="pd-t">资料分析 听课</span><span class="pd-d">第 3 节 · 1 小时 40 分</span></div>
+                  <div class="pd-task"><span class="pd-t">资料分析 刷题</span><span class="pd-d">2 组 · 40 题</span></div>
+                  <div class="pd-task"><span class="pd-t">申论 小题</span><span class="pd-d">1 道</span></div>
+                </div>
+              </div>
+
+              <div class="plan-day">
+                <div class="pd-head">
+                  <div class="pd-date">周日<small>9/20</small></div>
+                  <div class="pd-right"><span class="pd-total">不排任务</span></div>
+                </div>
+              </div>
+
+              <div class="plan-day">
+                <div class="pd-head">
+                  <div class="pd-date">周一<small>9/21</small></div>
+                  <div class="pd-right">
+                    <span class="pd-total">3 小时 10 分</span>
+                    <button class="pd-add">＋</button>
+                  </div>
+                </div>
+                <div class="pd-tasks">
+                  <div class="pd-task"><span class="pd-t">资料分析 听课</span><span class="pd-d">第 4 节 · 1 小时 40 分</span></div>
+                  <div class="pd-task"><span class="pd-t">言语理解 刷题</span><span class="pd-d">2 组 · 60 题</span></div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="section">
+            <p class="section-title">听课进度</p>
+            <div class="card">
+              <div class="prog-sum">共 80 节 · 已听 12 节 · 还剩 <b>68</b> 节</div>
+              <div class="prog">
+                <span class="prog-name">资料分析</span>
+                <span class="prog-bar"><i style="width:30%"></i></span>
+                <span class="prog-val">剩 7 节</span>
+                <button class="prog-fix">补记</button>
+              </div>
+              <div class="prog">
+                <span class="prog-name">言语理解</span>
+                <span class="prog-bar"><i style="width:10%"></i></span>
+                <span class="prog-val">剩 9 节</span>
+                <button class="prog-fix">补记</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="tabbar">
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </button>
+          <button class="tab on">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ③ 工具（先空着）
+       ============================================================ -->
+  <div class="col">
+    <div class="col-label"><i>③</i>工具 <span>先空着 · 只告知以后会开发</span></div>
+    <div class="phone">
+      <div class="app stage-base">
+        <div class="screen">
+
+          <div class="top">
+            <h1>工具</h1>
+          </div>
+
+          <div class="section">
+            <div class="card empty">
+              <div class="empty-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+              </div>
+              <div class="empty-t">这里以后可能会再开发</div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="tabbar">
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </button>
+          <button class="tab on">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="brow">
+
+  <!-- ============================================================
+       ④ 我的（整页）
+       ============================================================ -->
+  <div class="col">
+    <div class="col-label"><i>④</i>我的 <span>整页（真机上可以滚）· 记录 + 统计入口 + 设置入口</span></div>
+    <div class="phone tall">
+      <div class="app stage-base">
+        <div class="screen">
+
+          <div class="top">
+            <h1>我的</h1>
+            <div class="sub">你已经坚持了 48 天，从 6月15日 开始</div>
+          </div>
+
+          <div class="section">
+            <div class="card list">
+
+              <div class="lrow">
+                <svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19.4v-6M12 19.4V5.2M18 19.4v-9"/></svg>
+                <span class="grow2">数据统计</span>
+                <span class="note">成绩 · 档位 · 速度 · 学习档案</span>
+                <span class="chev">›</span>
+              </div>
+
+              <div class="lrow">
+                <svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5h8M17 8.5h3M4 15.5h3M12 15.5h8"/><circle cx="14.5" cy="8.5" r="2.2"/><circle cx="9.5" cy="15.5" r="2.2"/></svg>
+                <span class="grow2">设置</span>
+                <span class="note">考试 · 时间 · 各科 · 数据 · 开发者工具</span>
+                <span class="chev">›</span>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- ---- 以下和现在真机上的「我的记录」页完全一致 ---- -->
+
+          <div class="section">
+            <div class="card">
+              <div class="heatmap" id="heatmap"></div>
+              <div class="hm-legend">少
+                <span class="hm-cell lv1"></span><span class="hm-cell lv2"></span>
+                <span class="hm-cell lv3"></span><span class="hm-cell lv4"></span>多
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="metrics">
+              <div class="metric"><div class="v">972</div><div class="k">累计做题</div></div>
+              <div class="metric"><div class="v">27.8</div><div class="k">听课节数</div></div>
+              <div class="metric"><div class="v">111</div><div class="k">学习小时</div></div>
+            </div>
+            <div class="footnote">现在连续 30 天。累计做过 6 套卷。听课大约 46 小时。</div>
+          </div>
+
+          <div class="section">
+            <p class="section-title">按天记录</p>
+            <div class="card">
+
+              <div class="row between" style="align-items:center;margin-bottom:8px">
+                <button class="ord-mv" aria-label="上个月">←</button>
+                <span style="font-size:14px;font-weight:600">2026 年 9 月</span>
+                <button class="ord-mv" disabled aria-label="下个月">→</button>
+              </div>
+
+              <div class="cal-grid" id="calgrid"></div>
+
+              <div class="rec-day">
+                <div class="rec-day-head">2026年9月19日　周六　学了 2 小时 40 分</div>
+                <div class="rec-row"><span class="rm">✓</span><span class="rt">资料分析 · 听课</span><span class="rv">1 小时 40 分</span></div>
+                <div class="rec-row"><span class="rm">◐</span><span class="rt">判推逻辑 · 刷题</span><span class="rv">20 分</span></div>
+                <div class="rec-row"><span class="rm">○</span><span class="rt">资料分析 · 刷题</span><span class="rv">45 分</span></div>
+                <div class="rec-row"><span class="rm">○</span><span class="rt">申论 · 小题</span><span class="rv">40 分</span></div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        <div class="tabbar">
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </button>
+          <button class="tab">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </button>
+          <button class="tab on">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       右侧：功能核对
+       ============================================================ -->
+  <div class="panel">
+    <h2>功能核对：一个都没删</h2>
+    <div class="p-sub">
+      旧的 5 个页面 → 新的 4 个格子。底部导航少了一格，但没有删掉任何一个页面，
+      只是把「记录 / 统计 / 设置」这三个低频页收进了「我的」。
+    </div>
+
+    <table class="map">
+      <tr>
+        <td class="from">今日</td><td class="arrow">→</td>
+        <td class="to"><b>① 今日</b><span>原样不动</span></td>
+      </tr>
+      <tr>
+        <td class="from">计划</td><td class="arrow">→</td>
+        <td class="to"><b>② 计划</b><span>原样不动</span></td>
+      </tr>
+      <tr>
+        <td class="from">记录</td><td class="arrow">→</td>
+        <td class="to"><b>④ 我的（首屏）</b><span>热力图 / 三项累计 / 按天记录，原样搬过来</span></td>
+      </tr>
+      <tr>
+        <td class="from">统计</td><td class="arrow">→</td>
+        <td class="to"><b>④ 我的 › 数据统计</b><span>页内一行没改，学习档案和「考过的轮次」也留在原来的位置</span></td>
+      </tr>
+      <tr>
+        <td class="from">设置</td><td class="arrow">→</td>
+        <td class="to"><b>④ 我的 › 设置</b><span>页内一行没改，包括最下面「重新生成后面的计划」和开发者工具</span></td>
+      </tr>
+      <tr class="new">
+        <td class="from">（新）</td><td class="arrow">→</td>
+        <td class="to"><b>③ 工具</b><span>先空着，只写一句"这里以后可能会再开发"</span></td>
+      </tr>
+    </table>
+
+    <div class="p-block">
+      <h3>逐条核对过的页内入口</h3>
+      <div class="p-audit">
+        <div><b>今日</b><span>打卡三态 · 任务菜单（今天不做 / 换科目 / 删除）· 实际用时（含自定义分钟）· 留白提示 · 加一项（六板块 + 申论，听课 / 刷题 / 小题 / 大作文）· 今天主攻一科 · 今天感觉 + 立刻重排预览 · 太久没练提醒 · 自加偏好建议 · 跳过建议 · 休息日视图 + 今天想学一会儿 · 全部完成提示 · 全自动模式文案 · 自己排模式的复盘建议</span></div>
+        <div><b>计划</b><span>阶段大纲（含"会跳过"）· 进度预测 · 课时量体检三种状态 + 一键砍课 + 去设置 · 上周完成率回执 · 本周 / 两周 / 30 天 · 批量排（科目 + 星期 + 组数 + 周数）· 每天 ＋ 加任务 · 折叠展开 · 听课进度 + 补记</span></div>
+        <div><b>记录</b><span>热力图（只画第一次打卡到现在、没学的那天用最淡底色）· 三项累计 · 连续天数脚注 · 月历翻月 · 点某天看当天明细（✓ ◐ — ○）· 休息日标记</span></div>
+        <div><b>统计</b><span>连续打卡 / 学习天数 / 完成率 · 学习档案（含断更回来自动弹）· 考过的轮次 · 成绩记录（日期 + 来源 + 九科正确率）· 按你的成绩看的建议 + 一键应用 · 各科在第几档 · 做题速度 + 采用实际用时 · 累计时长</span></div>
+        <div><b>设置</b><span>使用模式三档 · 考试日期 · 考完了换下一场（接着学 / 开新一轮）· 工作日和周末时长 · 每周休息日 · 每节课时长 · 听课倍速 · 各模块课节数 + 一键清零 · 各模块强度 · 自加偏好取消 · 学习顺序 ↑↓ · 申论什么时候开始 · 高级参数（申论占比 / 复盘系数 / 复盘上限 / 感受幅度 / 单条最长 / 单日听课上限 / 九科一组题数·目标正确率·限时）· 恢复推荐值 · 导出 / 导入 / 清空 · 开发者工具（快进 / 过一天 / 回到今天 / 重走问卷 / 还原 / 模拟断更）</span></div>
+        <div><b>弹层</b><span>问卷 7 步 · 换考试 · 学习档案 · 任务菜单 · 确认框 · 补记输入框 · 成绩表单 · 批量排表单</span></div>
+      </div>
+    </div>
+
+    <div class="p-foot">
+      这次改动只动<b>导航层</b>：4 个格子之间的跳转关系。<br>
+      每个页面内部的 HTML、交互和计算逻辑都不动，所以不涉及数据结构调整，风险很低。
+    </div>
+  </div>
+
+</div>
+
+<script>
+  /* 热力图：按真实日期算格子。规则和 app.js 里一样——
+   * 一周一列（周一开始），只画"第一次打卡到现在"，没学的那天用最淡底色。 */
+  (function () {
+    var first = new Date(2026, 5, 15);     // 第一次打卡：6月15日
+    var today = new Date(2026, 8, 19);     // 今天：9月19日
+    var mins = [0, 45, 190, 120, 0, 310, 180, 95, 0, 240, 150, 0, 280, 200, 110, 0, 230, 165, 160];
+
+    function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+    function colStart(d) { var wd = d.getDay(); return addDays(d, -(wd === 0 ? 6 : wd - 1)); }
+
+    var cols = '';
+    var d = colStart(first), lastCol = colStart(today), guard = 0;
+    while (d <= lastCol && guard < 60) {
+      guard++;
+      var cells = '';
+      for (var w = 0; w < 7; w++) {
+        var dd = addDays(d, w);
+        if (dd > today || dd < first) { cells += '<span class="hm-cell blank"></span>'; continue; }
+        var m = mins[Math.round((dd - first) / 86400000) % mins.length];
+        var lv = m === 0 ? 0 : m < 60 ? 1 : m < 150 ? 2 : m < 300 ? 3 : 4;
+        cells += '<span class="hm-cell lv' + lv + '"></span>';
+      }
+      cols += '<span class="hm-col">' + cells + '</span>';
+      d = addDays(d, 7);
+    }
+    document.getElementById('heatmap').innerHTML = cols;
+  })();
+
+  /* 按天记录：2026 年 9 月的月历，和 app.js 的 recordCalendarHtml 同一套规则。 */
+  (function () {
+    var y = 2026, mo = 9, todayDay = 19;
+    var dayMin = [0, 45, 0, 190, 120, 0, 310, 180, 95, 0, 240, 150, 0, 280, 200, 110, 0, 230, 165, 160];
+
+    function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+    function lvOf(m) { return m === 0 ? 0 : m < 60 ? 1 : m < 150 ? 2 : m < 300 ? 3 : 4; }
+
+    var firstD = new Date(y, mo - 1, 1);
+    var lastD = new Date(y, mo, 0);
+    var back = firstD.getDay() === 0 ? 6 : firstD.getDay() - 1;
+    var gridStart = addDays(firstD, -back);
+    var fwd = lastD.getDay() === 0 ? 0 : 7 - lastD.getDay();
+    var gridEnd = addDays(lastD, fwd);
+
+    var heads = ['一', '二', '三', '四', '五', '六', '日']
+      .map(function (w) { return '<div class="cal-head">' + w + '</div>'; }).join('');
+
+    var cells = '';
+    var d = gridStart, guard = 0;
+    while (d <= gridEnd && guard < 45) {
+      guard++;
+      if (d.getMonth() !== mo - 1 || d.getDate() > todayDay) {
+        cells += '<div class="cal-cell out"></div>';
+      } else {
+        var day = d.getDate();
+        var m = dayMin[day] || 0;
+        var isRest = d.getDay() === 0;                 // 默认周日休息
+        var cls = 'cal-cell rlv' + lvOf(m);
+        if (isRest) cls += ' rest';
+        if (day === todayDay) cls += ' today sel';
+        var label = m ? (Math.round(m / 60 * 10) / 10) + 'h' : (isRest ? '休' : '');
+        cells += '<button class="' + cls + '"><span class="cal-d">' + day + '</span>' +
+                 '<span class="cal-mini">' + label + '</span></button>';
+      }
+      d = addDays(d, 1);
+    }
+
+    document.getElementById('calgrid').innerHTML = heads + cells;
+  })();
+</script>
+
+</body>
+</html>

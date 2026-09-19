@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>截图用 · 备考节奏</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="../css/styles.css">
+<script>
+  /* ---------------------------------------------------------------------
+   * 这个文件只为"截图看效果"用，不是产品的一部分。
+   *
+   * 它会先往 localStorage 里种一份问卷结果（免得每次都手点七步），
+   * 然后按 ?screen= 决定最后停在哪一屏；带 ?sim=30 的话先用开发者工具
+   * 快进 30 天，让热力图、统计这些有数据可看。
+   *
+   *   用法：http://localhost:5173/mockups/shot.html?screen=mine&sim=30
+   * ------------------------------------------------------------------- */
+
+  var UNITS = { zlfx: 6, yy: 6, pdlj: 6, pdtx: 5, pddl: 5, zzll: 4, sl: 4, cs: 3, slw: 6 };
+  var strength = {};
+  Object.keys(UNITS).forEach(function (id) { strength[id] = 'normal'; });
+
+  /* ?theme=mist 可以指定主题；不写就是默认的香槟金 */
+  var THEME = new URLSearchParams(location.search).get('theme') || 'champagne';
+
+  var profile = {
+    examDate: '2027-01-17',
+    base: 'watched',
+    weekdayMinutes: 180,
+    weekendMinutes: 300,
+    restDays: [0],
+    lessonMinutes: 150,
+    speed: 1.5,
+    mode: 'semi',
+    courseUnits: UNITS,
+    benchmarks: {},
+    strength: strength,
+    theme: THEME,
+    createdAt: new Date().toISOString()
+  };
+
+  window.localStorage.setItem('yang-toolbox/v1', JSON.stringify({
+    version: 1,
+    userId: 'shot',
+    profile: profile,
+    roadmap: null,
+    days: {},
+    rounds: [],
+    weeklyLog: [],
+    ui: { screen: 'today' },
+    createdAt: new Date().toISOString()
+  }));
+</script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="overlay" class="overlay hidden"></div>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/engine.js"></script>
+  <script src="../js/stats.js"></script>
+  <script src="../js/archive.js"></script>
+  <script src="../js/store.js"></script>
+  <script src="../js/app.js"></script>
+
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var target = q.get('screen') || 'today';
+      var sim = Number(q.get('sim') || 0);
+
+      function click(sel) {
+        var el = document.querySelector(sel);
+        if (el) { el.click(); return true; }
+        console.warn('点不到：' + sel);
+        return false;
+      }
+
+      var steps = [];
+      if (sim) {
+        /* 开发者工具藏在「我的 › 设置」里，先走过去再点快进 */
+        steps.push(function () { click('[data-act="goto"][data-to="mine"]'); });
+        steps.push(function () { click('[data-act="goto"][data-to="settings"]'); });
+        steps.push(function () { click('[data-act="toggle-dev"]'); });
+        steps.push(function () { click('[data-act="sim-run"][data-v="' + sim + '"]'); });
+      }
+      /* 统计和设置是「我的」下面的二级页，得先落到「我的」再点进去 */
+      if (target === 'stats' || target === 'settings') {
+        steps.push(function () { click('[data-act="goto"][data-to="mine"]'); });
+      }
+      steps.push(function () { click('[data-act="goto"][data-to="' + target + '"]'); });
+
+      /* 计划页可以指定看哪一档：?range=week|two|month */
+      var range = q.get('range');
+      if (range && target === 'plan') {
+        steps.push(function () { click('[data-act="plan-range"][data-v="' + range + '"]'); });
+      }
+      /* 顺便看展开状态：?fold=第几个（从 1 数） */
+      var foldN = Number(q.get('fold') || 0);
+      if (foldN) {
+        steps.push(function () {
+          var rows = document.querySelectorAll('.plan-day.foldable');
+          if (rows[foldN - 1]) rows[foldN - 1].click();
+        });
+      }
+      /* 通用：?click=.fold-head&clickN=2 —— 点第 2 个匹配的元素 */
+      var clickSel = q.get('click');
+      var st = q.get('scrolltest');
+      /* scrolltest 那一步自己会点，别在这里先点一次——点两次等于开了又关 */
+      if (clickSel && !st) {
+        steps.push(function () {
+          var els = document.querySelectorAll(clickSel);
+          var n = Number(q.get('clickN') || 1);
+          if (els[n - 1]) els[n - 1].click();
+          else console.warn('没找到 ' + clickSel);
+        });
+      }
+
+      /* ?scrolltest=1200 —— 滚到某处，点一下目标，把滚动前后的位置写进标题，
+       * 用 --dump-dom 读出来。用来量"点一下折叠会不会被弹回页首"。 */
+      /* ?preopen=2 —— 先展开前两个分组，把页面撑长，
+       * 否则页短得根本滚不下去，测不出滚动被弹走的问题 */
+      var preopen = Number(q.get('preopen') || 0);
+      for (var pi = 0; pi < preopen; pi++) {
+        (function (idx) {
+          steps.push(function () {
+            var els = document.querySelectorAll('.fold-head');
+            if (els[idx]) els[idx].click();
+          });
+        })(pi);
+      }
+
+      if (st) {
+        steps.push(function () { window.scrollTo(0, Number(st)); });
+        steps.push(function () {
+          var sel = clickSel || '.fold-head';
+          var n = Number(q.get('clickN') || 1);
+          var el = document.querySelectorAll(sel)[n - 1];
+          if (!el) { document.title = 'SCROLLTEST 没找到 ' + sel; return; }
+          var y0 = Math.round(window.scrollY);
+          var h0 = document.documentElement.scrollHeight;
+          /* .click() 是程序调用，不会像真人那样把焦点给按钮。
+           * 先手动 focus 一下，才和用户真点的情况一致。
+           * preventScroll 是为了别让"聚焦"本身把页面滚一下，污染测量。 */
+          if (el.focus) {
+            try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+          }
+          var yBase = Math.round(window.scrollY);
+          el.click();
+          var y1 = Math.round(window.scrollY);
+          var h1 = document.documentElement.scrollHeight;
+          var ae = document.activeElement;
+          var aeTag = ae ? (ae.tagName + '.' + (ae.className || '')) : '无';
+          setTimeout(function () {
+            var y2 = Math.round(window.scrollY);
+            var h2 = document.documentElement.scrollHeight;
+            document.title = 'SCROLLTEST y ' + y0 + '→' + yBase + '/' + y1 + '/' + y2 +
+              '  h ' + h0 + '/' + h1 + '/' + h2 +
+              '  vh ' + window.innerHeight + '  focus ' + aeTag;
+          }, 400);
+        });
+      }
+
+      var i = 0;
+      function next() {
+        if (i >= steps.length) {
+          /* 等 toast 自己消失，免得截进去 */
+          if (!q.get('scrolltest')) document.title = 'ready';
+          return;
+        }
+        steps[i++]();
+        setTimeout(next, 90);
+      }
+      window.addEventListener('load', function () { setTimeout(next, 120); });
+    })();
+  </script>
+</body>
+</html>

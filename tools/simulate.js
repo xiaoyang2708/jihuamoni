@@ -69,17 +69,20 @@ state.roadmap.stages.forEach(st => {
 console.log('');
 
 const lc = state.roadmap.lessonCheck;
+const courseWindowDays = (state.roadmap.stages[0].studyDays || 0) +
+                         (state.roadmap.stages[1].studyDays || 0);
 console.log('听课体检：共需 ' + lc.totalMinutes + ' 分钟（' + (lc.totalMinutes / 60).toFixed(1) +
-            ' 小时），按当前节奏需要 ' + lc.needDays + ' 个学习日，基础期有 ' + lc.baseDays + ' 天 → ' +
+            ' 小时），按当前节奏需要 ' + lc.needDays + ' 个学习日，基础期+强化期有 ' +
+            courseWindowDays + ' 天 → ' +
             (lc.fit ? '排得下' : '排不下，会挤压后面的阶段'));
 console.log('');
 
 E.ensureAhead(state, todayKey, Math.min(state.roadmap.totalStudyDays, 60));
 
-/* 阶段是"学完了没有"算出来的，不是按日期切的——单独看一眼实际形状 */
+/* 阶段按用户定的日期（或系统推荐值）切——单独看一眼实际形状 */
 const fc = E.forecast(state, todayKey);
 if (fc) {
-  console.log('按进度推进算出来（不是按日期切）：');
+  console.log('按阶段日期算出来：');
   fc.stages.forEach(st => {
     console.log('  【' + st.name + '】' + (st.startKey || '—') + ' → ' + (st.endKey || '—') +
                 '　' + st.studyDays + ' 个学习日');

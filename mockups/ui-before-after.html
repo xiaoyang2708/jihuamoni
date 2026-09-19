@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>界面调整 · 前后对比</title>
+<style>
+  body {
+    margin: 0; padding: 44px 56px 60px;
+    background: #d8d5d0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #33302a;
+  }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -.4px; }
+  p  { margin: 0 0 30px; font-size: 13px; color: #6d665c; line-height: 1.7; }
+  .pair { display: flex; gap: 36px; align-items: flex-start; margin-bottom: 40px; }
+  .shot { width: 340px; flex: 0 0 auto; }
+  .shot .lb {
+    display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; padding-left: 2px;
+    font-size: 13px; font-weight: 650;
+  }
+  .shot .lb em { font-style: normal; color: #a08a6a; font-weight: 700; }
+  /* 只取页面下半段——要看的折叠行都在这一截里 */
+  .shot img {
+    display: block; width: 340px; height: 620px;
+    object-fit: cover; object-position: 50% 100%;
+    border-radius: 24px;
+    box-shadow: 0 16px 34px rgba(45,38,30,.18), 0 0 0 1px rgba(45,38,30,.07);
+  }
+  .shot.tall img { height: 700px; }
+</style>
+</head>
+<body>
+  <h1>界面调整 · 前后对比</h1>
+  <p>都是真页面截的，同一份数据、同一个窗口尺寸。取的是页面下半段，折叠行都在这一截里。</p>
+
+  <div class="pair">
+    <div class="shot">
+      <div class="lb"><em>改之前</em>计划 · 两周（折叠）</div>
+      <img src="shot-plan-two.png" alt="改之前">
+    </div>
+    <div class="shot">
+      <div class="lb"><em>改之后</em>计划 · 两周（折叠）</div>
+      <img src="after-plan-two.png" alt="改之后">
+    </div>
+    <div class="shot">
+      <div class="lb"><em>改之后</em>计划 · 两周（展开）</div>
+      <img src="after-plan-open.png" alt="展开">
+    </div>
+  </div>
+
+  <div class="pair">
+    <div class="shot tall">
+      <div class="lb"><em>改之前</em>今日</div>
+      <img src="now-today.png" alt="改之前">
+    </div>
+    <div class="shot tall">
+      <div class="lb"><em>改之后</em>今日</div>
+      <img src="v2-today.png" alt="改之后">
+    </div>
+    <div class="shot tall">
+      <div class="lb"><em>改之后</em>设置（折叠分组）</div>
+      <img src="after-settings.png" alt="设置">
+    </div>
+  </div>
+</body>
+</html>

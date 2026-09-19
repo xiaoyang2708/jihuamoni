@@ -19,6 +19,7 @@ window.YT = window.YT || {};
       days: {},
       rounds: [],        // 已经考完并封存的历史轮次
       weeklyLog: [],
+      adjustLog: [],     // 计划调整记录：跨周、断更、阶段变化、结构性改动
       ui: { screen: 'today', onboardStep: 0 },
       createdAt: new Date().toISOString(),
     };

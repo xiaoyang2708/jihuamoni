@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>备考节奏 · 界面自测</title>
+  <link rel="stylesheet" href="../css/styles.css">
+  <script>
+    /* 提前挂上，任何脚本一报错就被记下来 */
+    window.__errs = [];
+    window.onerror = function (m) { window.__errs.push(String(m)); };
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="toast" class="toast"></div>
+  <div id="overlay" class="overlay hidden"></div>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/engine.js"></script>
+  <script src="../js/stats.js"></script>
+  <script src="../js/archive.js"></script>
+  <script src="../js/store.js"></script>
+
+  <script>
+    /* =====================================================================
+     * 造一份"刚走完问卷"的存档，塞进 localStorage。
+     * 必须在 app.js 之前跑——app.js 是在加载时就把存档读进去的。
+     *
+     *   node server.js
+     *   chrome --headless=new --virtual-time-budget=9000 \
+     *          --dump-dom "http://localhost:5173/tools/uitest.html?case=demo&demo=1"
+     * =================================================================== */
+
+    (function () {
+      var E = window.YT.engine;
+      var MODULES = window.YT.MODULES;
+      var today = E.toKey(new Date());
+
+      var profile = {
+        examDate: E.toKey(E.addDays(new Date(), 100)),
+        base: 'zero',
+        weekdayMinutes: 120,
+        weekendMinutes: 240,
+        restDays: [],
+        lessonMinutes: 150,
+        speed: 1.5,
+        mode: 'semi',
+        courseUnits: {},
+        benchmarks: {},
+        strength: {},
+        createdAt: new Date().toISOString(),
+      };
+      MODULES.forEach(function (m) {
+        profile.courseUnits[m.id] = m.courseUnits;
+        profile.strength[m.id] = 'normal';
+      });
+
+      /* 问卷那一步要的是"还没生成计划"的状态 */
+      var CASE0 = new URLSearchParams(location.search).get('case');
+      if (CASE0 === 'onboard') {
+        window.localStorage.setItem('yang-toolbox/v1', JSON.stringify({
+          version: 1,
+          userId: 'local-user',
+          profile: null,
+          roadmap: null,
+          days: {},
+          rounds: [],
+          weeklyLog: [],
+          ui: { screen: 'today', onboardStep: 0 },
+          createdAt: new Date().toISOString(),
+        }));
+        return;
+      }
+      window.localStorage.setItem('yang-toolbox/v1', JSON.stringify({
+        version: 1,
+        userId: 'local-user',
+        profile: profile,
+        roadmap: E.buildRoadmap(profile, today),
+        days: {},
+        rounds: [],
+        weeklyLog: [],
+        weekMark: {},
+        ui: { screen: 'today', onboardStep: 0 },
+        createdAt: new Date().toISOString(),
+      }));
+    })();
+  </script>
+
+  <script src="../js/demo.js"></script>
+  <script src="../js/app.js"></script>
+
+  <script>
+    /* =====================================================================
+     * 驱动：一步步点，检查每一步的结果，最后把结论写回页面。
+     * 用 --dump-dom 跑的时候，看到的就是下面这段文本。
+     * =================================================================== */
+
+    (function () {
+      var CASE = new URLSearchParams(location.search).get('case') || 'demo';
+      var out = [];
+      var bad = 0;
+
+      function ok(m) { out.push('ok    ' + m); }
+      function fail(m) { bad++; out.push('FAIL  ' + m); }
+      function info(m) { out.push('      ' + m); }
+
+      function $(sel) { return document.querySelector(sel); }
+      function stored() {
+        return JSON.parse(window.localStorage.getItem('yang-toolbox/v1'));
+      }
+      function click(sel) {
+        var el = $(sel);
+        if (!el) { fail('missing element: ' + sel); return false; }
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        return true;
+      }
+      function doneCount() {
+        var st = stored();
+        var day = st.days[st.simDate || window.YT.engine.toKey(new Date())];
+        if (!day) return -1;
+        return (day.tasks || []).filter(function (t) { return t.status === 'done'; }).length;
+      }
+      function taskCount() {
+        var st = stored();
+        var day = st.days[st.simDate || window.YT.engine.toKey(new Date())];
+        return day ? (day.tasks || []).length : -1;
+      }
+
+      var steps = [];
+      function step(name, fn, wait) { steps.push({ name: name, fn: fn, wait: wait }); }
+      /* 更多面板是切换式的，先确认它开着再点里面的东西 */
+      function openMore() {
+        if (!$('[data-act="demo-run"]')) click('[data-act="demo-more"]');
+      }
+
+      /* ---------------- 正式版的样子（不带 ?demo=1） ---------------- */
+      /* ---------------- 体验模式 ---------------- */
+      /* 问卷最后一步"每个模块你打算听多少节课？"——改了数字，下面那块预览要跟着变 */
+      if (CASE === 'onboard') {
+        step('walk to the last step', function () {
+          click('[data-act="exam-preset"][data-months="4"]');
+          for (var i = 0; i < 6; i++) click('[data-act="ob-next"]');
+          var h2 = document.querySelector('.onboard h2');
+          var t = h2 ? h2.textContent : '';
+          if (t.indexOf('每个模块') >= 0) ok('走到问卷最后一步：' + t);
+          else fail('没走到最后一步，当前是：' + (t || '(没有 h2)'));
+          if ($('#ob-preview')) ok('下面有那块"会是这样"的预览');
+          else fail('没有预览块');
+        });
+
+        step('改课节数，预览要跟着变', function () {
+          var before = $('#ob-preview').textContent;
+          var el = $('[data-act="set-units"][data-m="zlfx"]');
+          if (!el) return fail('找不到课节数输入框');
+          el.value = '2';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          var after = $('#ob-preview').textContent;
+          if (after !== before) ok('改了，预览跟着变');
+          else fail('改了课节数，预览没变');
+        });
+
+        step('改每节课时长，预览要跟着变', function () {
+          var before = $('#ob-preview').textContent;
+          var beforeBase = before.match(/基础期(\d+)/);
+          var el = $('[data-act="set-lesson"]');
+          if (!el) return fail('找不到时长输入框');
+          el.value = '100';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          var after = $('#ob-preview').textContent;
+          if (after !== before) ok('改了时长，预览跟着变');
+          else fail('改了每节课时长，预览没变');
+          var afterBase = after.match(/基础期(\d+)/);
+          if (beforeBase && afterBase && beforeBase[1] !== afterBase[1]) {
+            ok('基础期天数也跟着重算了：' + beforeBase[1] + ' → ' + afterBase[1] + ' 天');
+          } else {
+            info('基础期天数没变（' + (beforeBase ? beforeBase[1] : '?') + '）');
+          }
+          out.push('      预览：' + after.replace(/\s+/g, ' ').slice(0, 90));
+        });
+
+        step('改听课倍速，预览要跟着变', function () {
+          var before = $('#ob-preview').textContent;
+          var el = $('[data-act="set-speed"]');
+          if (!el) return fail('找不到倍速输入框');
+          el.value = '2';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          var after = $('#ob-preview').textContent;
+          if (after !== before) ok('改了倍速，预览跟着变');
+          else fail('改了听课倍速，预览没变');
+          out.push('      预览：' + after.replace(/\s+/g, ' ').slice(0, 90));
+        });
+
+        /* 走到这一步的最后一关：问卷能不能正常收尾、生成计划 */
+        step('生成我的备考计划', function () {
+          click('[data-act="ob-next"]');
+        }, 6000);
+
+        step('计划生成成功', function () {
+          var st = stored();
+          if (st && st.profile && st.roadmap) ok('问卷正常收尾，计划生成了');
+          else fail('问卷走完却没有 profile/roadmap');
+          if ($('.today-head')) ok('落在今日页');
+          else fail('没有落在今日页');
+          var txt = $('#app').textContent || '';
+          if (txt.indexOf('今天') >= 0) ok('今日页正常渲染');
+          else fail('今日页没渲染出来');
+        });
+      }
+
+      /* 改"每个模块听多少节"之后点重排，计划到底变不变 */
+      if (CASE === 'units') {
+        var snap = {};
+        function look() {
+          var E = window.YT.engine, st = stored();
+          var tk = E.toKey(new Date());
+          var byModule = {}, total = 0, days = 0;
+          Object.keys(st.days).forEach(function (k) {
+            if (k < tk) return;
+            var d = st.days[k];
+            var hasCourse = false;
+            (d.tasks || []).forEach(function (t) {
+              if (t.kind !== 'course') return;
+              hasCourse = true;
+              total += t.units || 0;
+              byModule[t.moduleId] = (byModule[t.moduleId] || 0) + (t.units || 0);
+            });
+            if (hasCourse) days++;
+          });
+          return {
+            declared: st.profile.courseUnits.zlfx,
+            need: E.targetUnits(window.YT.MODULE_BY_ID.zlfx, st.profile),
+            speed: st.profile.speed,
+            base: (st.roadmap && st.roadmap.stages && st.roadmap.stages[0])
+              ? st.roadmap.stages[0].studyDays : null,
+            total: total,
+            zlfx: byModule.zlfx || 0,
+            days: days,
+            forecast: JSON.stringify(st.forecast || null).slice(0, 120),
+          };
+        }
+
+        step('open settings', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          if (document.body.textContent.indexOf('添加到桌面') >= 0) {
+            ok('我的页有「添加到桌面」入口');
+            click('[data-act="install-open"]');
+            var ov = $('#overlay');
+            if (ov && ov.textContent.indexOf('长按桌面图标') >= 0) ok('添加到桌面弹窗有删除说明');
+            else fail('添加到桌面弹窗没有删除说明');
+            click('[data-act="install-close"]');
+          } else {
+            fail('我的页没有「添加到桌面」入口');
+          }
+          click('[data-act="goto"][data-to="settings"]');
+          if ($('[data-act="set-units"][data-m="zlfx"]')) ok('设置页打开了');
+          else fail('设置页没打开，或找不到课节数输入框');
+          if ($('.regen-note') && !$('[data-act="regen"]')) ok('底部是自动重排的状态行，不再需要手点按钮');
+          else fail('设置页底部还是老样子（还有"重新生成"按钮？）');
+        });
+
+        step('before', function () {
+          snap.before = look();
+          out.push('      改之前：' + JSON.stringify(snap.before));
+        });
+
+        step('change to 2 auto-regens', function () {
+          var el = $('[data-act="set-units"][data-m="zlfx"]');
+          if (!el) return fail('找不到资料的输入框');
+          var live = el.parentNode.querySelector('.unit-live');
+          var liveBefore = live ? live.textContent : '(没有)';
+          el.value = '2';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          var st = stored();
+          if (Number(st.profile.courseUnits.zlfx) === 2) ok('输入框的值存进 profile 了（' + st.profile.courseUnits.zlfx + '）');
+          else fail('输入框的值没存进去（' + st.profile.courseUnits.zlfx + '）');
+          var liveAfter = live ? live.textContent : '(没有)';
+          if (live && liveAfter !== liveBefore) ok('旁边的进度立刻跟着变：' + liveBefore + ' → ' + liveAfter);
+          else fail('旁边的进度没跟着变（还是 ' + liveAfter + '）');
+        }, 1200);
+
+        step('after', function () {
+          snap.after = look();
+          out.push('      改之后：' + JSON.stringify(snap.after));
+          var b = snap.before, a = snap.after;
+          if (a.need !== b.need) ok('目标节数变了：' + b.need + ' → ' + a.need);
+          else fail('目标节数没变（还是 ' + a.need + '）');
+          if (a.zlfx !== b.zlfx) ok('资料排到的课变了：' + b.zlfx + ' → ' + a.zlfx + ' 节');
+          else fail('资料排到的课没变（还是 ' + a.zlfx + ' 节）');
+          /* 总课时不变是这个场景的正常结果：每天排多少听课是按当天时间的固定比例算的，
+           * 少听的那部分时间会分给别的科目。面板里会说清楚。 */
+          info('未来两周排的课总节数 ' + b.total + ' → ' + a.total +
+               '（排不完的情况下总数不变，只是换了科目）');
+          var note = $('.regen-note');
+          var noteTxt = note ? note.textContent : '';
+          if (noteTxt.indexOf('已重排') >= 0) ok('底部显示了重排结果：' + noteTxt);
+          else fail('底部没显示重排结果：' + (noteTxt || '(没有这行)'));
+        });
+
+        step('plan page explains the leftover', function () {
+          click('[data-act="goto"][data-to="plan"]');
+          var planTxt = $('#app').textContent || '';
+          if (planTxt.indexOf('排不进去') >= 0) ok('计划页写清了有课排不进去');
+          else fail('计划页没说明为什么改了没反应：' + planTxt.slice(0, 120));
+        });
+
+        /* 用户报的第二件事：改"每节课时长"和"听课倍速"，计划应该立刻跟着变 */
+        step('change speed auto-regens', function () {
+          click('[data-act="goto"][data-to="settings"]');
+          snap.preSpeed = look();
+          var el = $('[data-act="set-speed"]');
+          if (!el) return fail('找不到倍速输入框');
+          el.value = '2';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }, 1200);
+
+        step('speed took effect', function () {
+          var now = look();
+          out.push('      改倍速后：' + JSON.stringify(now));
+          if (Number(now.speed) === 2) ok('倍速存进去了（' + now.speed + '）');
+          else fail('倍速没存进去（' + now.speed + '）');
+          var note = $('.regen-note');
+          var noteTxt = note ? note.textContent : '';
+          if (noteTxt.indexOf('听课时长') >= 0) ok('底部立刻写出变化：' + noteTxt);
+          else fail('底部没写出变化：' + (noteTxt || '(没有这行)'));
+          /* 这个用例是"每天 120 分钟、每科 10 节"的极端档：课本来就排不完，
+           * 提速只是让每天多听一点、排不进去的课从 24 节降到 18.5 节，
+           * 基础期长度被冲刺窗口卡着，不会提前。 */
+          info('基础期 ' + snap.preSpeed.base + ' → ' + now.base + ' 天' +
+               '（课排不完时日期不动，但排不进去的量会减少）');
+        });
+      }
+
+      if (CASE === 'restart') {
+        step('restart goes back to the questionnaire', function () {
+          openMore();
+          if (!click('[data-act="demo-restart"]')) return;
+          if (!$('[data-act="confirm-yes"]')) return fail('「重新开始」没弹确认框');
+          click('[data-act="confirm-yes"]');
+          var st = stored();
+          if (!st || !st.profile) ok('重新开始：profile 清空了');
+          else fail('重新开始没清掉 profile');
+          if (!$('.demo-bar')) ok('回到问卷第一页，体验工具条不再显示');
+          else fail('已经回到问卷了，体验工具条还在');
+          var txt = $('#app').textContent;
+          if (txt.indexOf('考试日期') >= 0 && $('#app').querySelector('[data-act="set-exam-draft"]')) {
+            ok('问卷第一页（考试日期）渲染出来了');
+          } else fail('问卷第一页没渲染出来：' + txt.slice(0, 60));
+        });
+      }
+
+      if (CASE === 'newbits') {
+        var phaseTest = {};
+        step('回顾任务置顶', function () {
+          var E = window.YT.engine;
+          var live = window.__ytDebug();
+          var tk = live.simDate || E.toKey(new Date());
+          var day = live.days[tk];
+          if (!day) return fail('今日没有排出来');
+          day.tasks = (day.tasks || []).filter(function (t) { return t.id !== 'test-review-1'; });
+          day.tasks.push({
+            id: 'test-review-1',
+            moduleId: 'zl',
+            moduleName: '资料分析',
+            kind: 'practice',
+            title: '测试回顾任务XYZ',
+            detail: '',
+            amount: 20,
+            sets: 1,
+            amountText: '20 题',
+            minutes: 20,
+            status: 'todo',
+            actualMinutes: null,
+            userAdded: true,
+            review: true,
+          });
+          click('[data-act="goto"][data-to="today"]');
+          var card = $('.card.tasks');
+          var txt = card ? card.textContent : '';
+          if (txt.indexOf('先回顾，再做今天的任务') >= 0 &&
+              txt.indexOf('测试回顾任务XYZ') < txt.indexOf('资料')) {
+            ok('回顾任务排在最上面，并且有分组提示');
+          } else {
+            fail('回顾任务没有置顶：' + txt.slice(0, 80));
+          }
+        });
+
+        step('课程完成一半会拆出续听', function () {
+          var E = window.YT.engine;
+          var live = window.__ytDebug();
+          var tk = live.simDate || E.toKey(new Date());
+          var day = live.days[tk];
+          var course = (day.tasks || []).filter(function (t) {
+            return t.kind === 'course' && !t.noSeq && !t.continuation;
+          })[0];
+          if (!course) return fail('今日没有听课任务');
+          click('[data-act="cycle"][data-task="' + course.id + '"]');
+          click('[data-act="cycle"][data-task="' + course.id + '"]');
+          var now = window.__ytDebug().days[tk].tasks;
+          var cont = now.filter(function (t) { return t.continuationOf === course.id; })[0];
+          if (course.status === 'half' && cont) ok('完成一半后出现续听任务');
+          else fail('续听任务没出现（status=' + course.status + '）');
+          click('[data-act="cycle"][data-task="' + course.id + '"]');
+          var after = window.__ytDebug().days[tk].tasks.filter(function (t) {
+            return t.continuationOf === course.id;
+          });
+          if (!after.length) ok('改回未完成后续听任务自动撤掉');
+          else fail('改回未完成后续听任务还在');
+        });
+
+        step('半节课顺延到第二天最前面', function () {
+          var E = window.YT.engine;
+          var live = window.__ytDebug();
+          var tk = live.simDate || E.toKey(new Date());
+          var course = (live.days[tk].tasks || []).filter(function (t) {
+            return t.kind === 'course' && !t.noSeq && !t.continuation;
+          })[0];
+          if (!course) return fail('找不到可以标半节的听课任务');
+          click('[data-act="cycle"][data-task="' + course.id + '"]');
+          click('[data-act="cycle"][data-task="' + course.id + '"]');
+          var cont = (live.days[tk].tasks || []).filter(function (t) {
+            return t.continuationOf === course.id;
+          })[0];
+          if (!cont) return fail('标半节后没有生成续听任务');
+          click('[data-act="demo-next"]');
+          var after = window.__ytDebug();
+          var nextDay = after.days[after.simDate];
+          var first = nextDay && (nextDay.tasks || [])[0];
+          if (first && first.continuation && first.carried) {
+            ok('续听排到了 ' + after.simDate + ' 最前面');
+          } else {
+            fail('续听没有排到下一天最前面：' + JSON.stringify(first && {
+              title: first.title, continuation: !!first.continuation, carried: !!first.carried
+            }));
+          }
+        });
+
+        step('跨周调整有提示和记录', function () {
+          openMore();
+          click('[data-act="demo-run"][data-v="30"]');
+          var live = window.__ytDebug();
+          if ((live.adjustLog || []).length) ok('调整记录已生成 ' + live.adjustLog.length + ' 条');
+          else return fail('跨周后没有调整记录');
+          click('[data-act="goto"][data-to="today"]');
+          if ($('.adjust-banner')) ok('今日页出现「计划有调整」提示');
+          else fail('今日页没有调整提示');
+          click('[data-act="adj-open"]');
+          var ov = $('#overlay');
+          if (ov && ov.textContent.indexOf('计划调整记录') >= 0) ok('调整记录弹窗能打开');
+          else fail('调整记录弹窗没打开');
+          click('[data-act="adj-close"]');
+          click('[data-act="goto"][data-to="plan"]');
+          if (document.body.textContent.indexOf('计划调整') >= 0) ok('计划页有调整记录入口');
+          else fail('计划页没有调整记录入口');
+        });
+
+        step('阶段日期可以自己改', function () {
+          click('[data-act="phase-open"]');
+          var E = window.YT.engine;
+          var live = window.__ytDebug();
+          var rm0 = live.roadmap;
+          phaseTest.recBaseEnd = rm0.phasePlan && rm0.phasePlan.baseEnd;
+          phaseTest.recSprintStart = rm0.phasePlan && rm0.phasePlan.sprintStart;
+          var baseInput = $('[data-act="set-base-end"]');
+          var sprintInput = $('[data-act="set-sprint-start"]');
+          if (!baseInput || !sprintInput) return fail('找不到阶段日期输入');
+          var tk = live.simDate || E.toKey(new Date());
+          var exam = live.profile.examDate;
+          var nb = E.toKey(E.addDays(E.parseKey(tk), 20));
+          var ns = E.toKey(E.addDays(E.parseKey(tk), 45));
+          if (ns > exam) ns = exam;
+          if (nb >= ns) nb = E.toKey(E.addDays(E.parseKey(ns), -5));
+          baseInput.value = nb;
+          baseInput.dispatchEvent(new Event('input', { bubbles: true }));
+          sprintInput.value = ns;
+          sprintInput.dispatchEvent(new Event('input', { bubbles: true }));
+          return 900;
+        });
+
+        step('阶段日期改动生效', function () {
+          var live = window.__ytDebug();
+          var rm = live.roadmap;
+          if (live.profile.phasePlan && live.profile.phasePlan.custom === true &&
+              rm.phasePlan && rm.phasePlan.custom === true) {
+            ok('自定义阶段已保存并重排');
+          } else {
+            fail('自定义阶段没有生效：' + JSON.stringify({ p: live.profile.phasePlan, r: rm.phasePlan }));
+          }
+          if (rm.phasePlan.baseEnd !== phaseTest.recBaseEnd ||
+              rm.phasePlan.sprintStart !== phaseTest.recSprintStart) {
+            ok('阶段日期确实变了：' + rm.phasePlan.baseEnd + ' / ' + rm.phasePlan.sprintStart);
+          } else {
+            fail('阶段日期和推荐值一样，改动没体现出来');
+          }
+        });
+
+        step('恢复推荐值生效', function () {
+          click('[data-act="phase-reset"]');
+          return 900;
+        });
+
+        step('恢复推荐值后检查', function () {
+          var live = window.__ytDebug();
+          var rm = live.roadmap;
+          if (live.profile.phasePlan && live.profile.phasePlan.custom === false &&
+              rm.phasePlan && rm.phasePlan.custom === false) {
+            ok('恢复推荐值后回到自动推荐');
+          } else {
+            fail('恢复推荐值没有生效');
+          }
+        });
+
+        step('到阶段边界但没完成时有预警', function () {
+          click('[data-act="goto"][data-to="today"]');
+          openMore();
+          click('[data-act="demo-run"][data-v="30"]');
+          openMore();
+          click('[data-act="demo-run"][data-v="30"]');
+          click('[data-act="goto"][data-to="today"]');
+          var txt = document.body.textContent;
+          if (txt.indexOf('基础期结束了') >= 0 ||
+              txt.indexOf('冲刺期开始了') >= 0 ||
+              txt.indexOf('课排不完') >= 0) {
+            ok('阶段到点未完成有提醒');
+          } else {
+            info('这次模拟里没有触发阶段提醒（可能课程已完成）');
+          }
+        });
+      }
+
+      if (CASE === 'fresh') {
+        setTimeout(function () {
+          var txt = ($('#app') || document.body).textContent;
+          if ($('[data-act="set-exam-draft"]') || txt.indexOf('考试日期') >= 0) {
+            ok('fresh=1 回到了问卷第一页');
+          } else {
+            fail('fresh=1 没有回到问卷：' + txt.slice(0, 80));
+          }
+          if (location.search.indexOf('fresh=1') === -1) ok('fresh 参数已经从网址里去掉');
+          else fail('fresh 参数还挂在网址上');
+          var errs = window.__errs || [];
+          if (errs.length) { bad += errs.length; out.push('FAIL  运行时报错 ' + errs.length + ' 条'); errs.forEach(function (e) { out.push('      ' + e); }); }
+          else ok('全程没有 JS 报错');
+          out.push('');
+          out.push(bad ? ('结果：' + bad + ' 处不对') : '结果：全部通过');
+          document.body.innerHTML = '<pre id="result">' + out.join('\n') + '</pre>';
+        }, 600);
+      }
+
+      if (CASE === 'demo') {
+        step('bar appears', function () {
+          if ($('.demo-bar')) ok('体验工具条出现了');
+          else fail('体验工具条没出现（?demo=1 没生效）');
+          info('bar date: ' + (($('.demo-date') || {}).textContent || '?'));
+        });
+
+        step('fill today', function () {
+          var before = doneCount();
+          click('[data-act="demo-fill"]');
+          var after = doneCount();
+          if (after > 0 && after >= before) ok('模拟完成今天：' + before + ' -> ' + after + ' / ' + taskCount());
+          else fail('模拟完成今天没生效（' + before + ' -> ' + after + '）');
+        });
+
+        step('next day', function () {
+          var st0 = stored();
+          click('[data-act="demo-next"]');
+          var st = stored();
+          if (st.simDate && st.simDate !== st0.simDate && !st0.simDate) ok('下一天：simDate=' + st.simDate);
+          else fail('下一天没生效（simDate=' + st.simDate + '）');
+          info('bar date: ' + (($('.demo-date') || {}).textContent || '?'));
+        });
+
+        step('prev day', function () {
+          before = stored().simDate;
+          click('[data-act="demo-prev"]');
+          var st = stored();
+          if (st.simDate < before) ok('前一天：' + before + ' -> ' + st.simDate);
+          else fail('前一天没生效（' + st.simDate + '）');
+        });
+
+        step('two more days then back', function () {
+          click('[data-act="demo-next"]');
+          click('[data-act="demo-next"]');
+          var E = window.YT.engine;
+          var ahead = stored().simDate;
+          var wk = E.weekKeyOf(ahead);
+          info('forward to ' + ahead + ', weekMark=' + JSON.stringify(stored().weekMark));
+          click('[data-act="demo-prev"]');
+          click('[data-act="demo-prev"]');
+          var st = stored();
+          if (st.simDate !== '2026-09-19') return fail('往回走两次没回到第一天（' + st.simDate + '）');
+          if (!st.weekMark[wk]) ok('往回走清掉了重排标记，再往前走才会按新数据重算');
+          else fail('往回走没清重排标记：' + JSON.stringify(st.weekMark));
+        });
+
+        step('open more', function () {
+          openMore();
+          if ($('[data-act="demo-run"][data-v="30"]')) ok('更多选项展开了');
+          else fail('更多选项没展开');
+        });
+
+        step('date input is clickable', function () {
+          /* 回归用例：体验模式的 click 监听绝对不能对日历控件调 preventDefault，
+           * 一调整个控件就点不动了。 */
+          var el = $('[data-act="demo-goto"]');
+          if (!el) return fail('找不到"跳到某一天"的日期输入框');
+          var ev = new MouseEvent('click', { bubbles: true, cancelable: true });
+          el.dispatchEvent(ev);
+          if (ev.defaultPrevented) fail('日历控件的点击被 preventDefault 拦住了，点不动');
+          else ok('日历控件点得动（点击没被拦）');
+        });
+
+        step('date jump works', function () {
+          var E = window.YT.engine;
+          var st0 = stored();
+          var target = E.toKey(E.addDays(E.parseKey(st0.simDate || E.toKey(new Date())), 3));
+          var el = $('[data-act="demo-goto"]');
+          el.value = target;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          var st = stored();
+          if (st.simDate === target) ok('跳到 ' + target + ' 生效了');
+          else fail('跳日期没生效（simDate=' + st.simDate + '，想要 ' + target + '）');
+        });
+
+        step('quick jump chips', function () {
+          var E = window.YT.engine;
+          var st0 = stored();
+          var want = E.toKey(E.addDays(E.parseKey(st0.profile.examDate), -7));
+          click('[data-act="demo-jump"][data-v="exam-7"]');
+          var st = stored();
+          if (st.simDate === want) ok('「跳到考试前 7 天」生效（' + want + '）');
+          else fail('快捷跳转没生效（' + st.simDate + '，想要 ' + want + '）');
+          click('[data-act="demo-jump"][data-v="exam"]');
+          if (stored().simDate === st0.profile.examDate) ok('「跳到考试日」生效');
+          else fail('跳到考试日没生效');
+          /* 跳走之后回到今天，免得影响后面的用例（比如再往后跑 30 天会撞上考试日） */
+          click('[data-act="demo-today"]');
+        });
+
+        step('rate chips', function () {
+          click('[data-act="demo-rate"][data-v="1"]');
+          var st = stored();
+          if (Number(st.ui.demoRate) === 1) ok('完成率切成全部完成');
+          else fail('完成率没切成 1（' + st.ui.demoRate + '）');
+          click('[data-act="demo-fill"]');
+          if (doneCount() === taskCount() && taskCount() > 0) ok('全部完成：' + doneCount() + ' / ' + taskCount());
+          else fail('全部完成没生效（' + doneCount() + ' / ' + taskCount() + '）');
+        });
+
+        step('run 30 days', function () {
+          /* 可能是"回到今天"之后（simDate 为 null），拿真实今天当基准 */
+          var before = stored().simDate || window.YT.engine.toKey(new Date());
+          click('[data-act="demo-run"][data-v="30"]');
+          var st = stored();
+          if (st.simDate > before) ok('自动跑 30 天：' + before + ' -> ' + st.simDate);
+          else fail('自动跑没生效（' + st.simDate + '）');
+        });
+
+        step('back to today', function () {
+          click('[data-act="demo-today"]');
+          var st = stored();
+          var E = window.YT.engine;
+          if (!st.simDate && $('.demo-bar')) ok('回到真实今天，工具条还在');
+          else fail('回到今天没生效（simDate=' + st.simDate + '）');
+          info('today=' + E.toKey(new Date()));
+        });
+
+        step('skip 5 days', function () {
+          openMore();
+          if (!$('[data-act="demo-skip"][data-v="5"]')) return fail('更多面板里的"停 5 天"没找到');
+          click('[data-act="demo-skip"][data-v="5"]');
+          var st = stored();
+          if (st.ui.restartSeenOn === st.simDate) ok('模拟断更：跳到 ' + st.simDate + '，断更提示只弹一次');
+          else fail('模拟断更的 restartSeenOn 不对（' + st.ui.restartSeenOn + ' vs ' + st.simDate + '）');
+          var ov = $('#overlay');
+          info('restartInfo=' + JSON.stringify(window.YT.engine.restartInfo(st, st.simDate)));
+          if (ov && ov.className.indexOf('overlay hidden') === -1) ok('断更回来弹出了学习档案');
+          else info('断更回来没有弹学习档案（可能这天是休息日）');
+          if (ov) { ov.className = 'overlay hidden'; ov.innerHTML = ''; }
+        });
+
+        step('rewind', function () {
+          openMore();
+          var st0 = stored();
+          var keep = st0.simDate;
+          click('[data-act="demo-rewind"]');
+          if (!$('[data-act="confirm-yes"]')) { fail('从这天重来没弹确认框'); return; }
+          click('[data-act="confirm-yes"]');
+          var st = stored();
+          var later = Object.keys(st.days).filter(function (k) { return k > keep; });
+          var touchedLater = later.filter(function (k) {
+            var d = st.days[k];
+            return d && ((d.tasks || []).some(function (t) { return t.status !== 'todo'; }) || d.mood);
+          });
+          if (touchedLater.length === 0) ok('从这天重来：' + keep + ' 之后的记录清掉了，还剩 ' + later.length + ' 天（都是重排出来的）');
+          else fail('从这天重来没清干净，还剩 ' + touchedLater.length + ' 天有记录');
+        });
+
+        step('exit demo', function () {
+          openMore();
+          if (!click('[data-act="demo-off"]')) return;
+          if (!$('.demo-bar')) ok('退出体验模式后工具条消失');
+          else fail('退出体验模式后工具条还在');
+          if (location.search.indexOf('demo=1') === -1) ok('退出后网址里的 ?demo=1 也去掉了');
+          else fail('退出后网址还挂着 ?demo=1');
+        });
+      }
+
+      /* ---------------- 逐步执行 ---------------- */
+
+      var i = 0;
+      function run() {
+        if (i >= steps.length) return finish();
+        var s = steps[i++];
+        out.push('-- ' + s.name);
+        try {
+          var r = s.fn();
+          if (typeof r === 'number') s.wait = r;
+        } catch (e) { fail('抛异常：' + (e && e.message)); }
+        setTimeout(run, s.wait || 40);
+      }
+
+      function finish() {
+        var errs = window.__errs || [];
+        if (errs.length) { bad += errs.length; out.push('FAIL  运行时报错 ' + errs.length + ' 条'); errs.forEach(function (e) { out.push('      ' + e); }); }
+        else ok('全程没有 JS 报错');
+        out.push('');
+        out.push(bad ? ('结果：' + bad + ' 处不对') : '结果：全部通过');
+        document.body.innerHTML = '<pre id="result">' + out.join('\n') + '</pre>';
+      }
+
+      /* plain 那一档最后会 reload，所以只在 demo 档跑驱动 */
+      if (CASE === 'plain') {
+        setTimeout(function () {
+          if ($('.demo-bar')) fail('没有 ?demo=1，体验工具条不该出现');
+          else ok('没有 ?demo=1 时不显示体验工具');
+          if ($('.today-head')) ok('今日页正常渲染');
+          else fail('今日页没渲染出来');
+          var stateLine = $('.today-head .state');
+          if (stateLine && stateLine.textContent.indexOf('听课') >= 0) {
+            ok('今日页顶部有课程总进度：' + stateLine.textContent.trim());
+          } else {
+            fail('今日页顶部没有课程总进度');
+          }
+
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          if (document.body.textContent.indexOf('重新开始') >= 0) ok('设置页里有「重新开始」');
+          else fail('设置页里没有「重新开始」');
+          if (document.body.textContent.indexOf('常识不专门学') >= 0 &&
+              document.body.textContent.indexOf('常识靠平时积累') >= 0) {
+            ok('常识有单独的「不专门学」入口和说明');
+          } else {
+            fail('常识的「不专门学」入口没渲染出来');
+          }
+          if ($('[data-act="set-base-end"]') && $('[data-act="set-sprint-start"]')) {
+            ok('设置页有阶段边界输入');
+          } else {
+            fail('设置页没有阶段边界输入');
+          }
+          /* 折叠头展开后，标题不应该在内容里再出现一次 */
+          click('[data-act="fold-toggle"][data-k="settings:strength"]');
+          var foldTxt = ($('#app') || document.body).textContent;
+          var foldCount = (foldTxt.match(/各模块强度/g) || []).length;
+          if (foldCount === 1) ok('折叠展开后没有重复标题');
+          else fail('折叠展开后标题重复了 ' + foldCount + ' 次');
+          click('[data-act="goto"][data-to="plan"]');
+          if (document.body.textContent.indexOf('调整阶段') >= 0) {
+            ok('计划页有「调整阶段」入口');
+          } else {
+            fail('计划页没有「调整阶段」入口');
+          }
+
+          var errs = window.__errs || [];
+          if (errs.length) { bad += errs.length; out.push('FAIL  ' + errs.length + ' 处运行时报错'); errs.forEach(function (e) { out.push('      ' + e); }); }
+          else ok('全程没有 JS 报错');
+
+          out.push('');
+          out.push(bad ? ('结果：' + bad + ' 处不对') : '结果：全部通过');
+          document.body.innerHTML = '<pre id="result">' + out.join('\n') + '</pre>';
+        }, 600);
+      } else if (CASE === 'shot') {
+        /* 只为了截图：摆一个"走了一周、今天模拟完成"的样子，不动 DOM */
+        setTimeout(function () {
+          var q = new URLSearchParams(location.search);
+          if (q.get('to') === 'settings') {
+            click('[data-act="goto"][data-to="mine"]');
+            click('[data-act="goto"][data-to="settings"]');
+            var w = $('[data-act="wipe"]');
+            if (w) w.scrollIntoView({ block: 'center' });
+            return;
+          }
+          if (q.get('to') === 'settings-top') {
+            click('[data-act="goto"][data-to="mine"]');
+            click('[data-act="goto"][data-to="settings"]');
+            return;
+          }
+          if (q.get('to') === 'phase') {
+            click('[data-act="goto"][data-to="mine"]');
+            click('[data-act="goto"][data-to="settings"]');
+            var ph = $('#phase-plan');
+            if (ph) ph.scrollIntoView({ block: 'start' });
+            return;
+          }
+          if (q.get('to') === 'plan') {
+            click('[data-act="goto"][data-to="plan"]');
+            return;
+          }
+          if (q.get('to') === 'install') {
+            click('[data-act="goto"][data-to="mine"]');
+            click('[data-act="install-open"]');
+            return;
+          }
+          click('[data-act="demo-fill"]');
+          click('[data-act="demo-next"]');
+          click('[data-act="demo-fill"]');
+          click('[data-act="demo-next"]');
+          if (q.get('more') === '1') click('[data-act="demo-more"]');
+        }, 400);
+      } else if (steps.length) {
+        setTimeout(run, 300);
+      }
+    })();
+  </script>
+</body>
+</html>

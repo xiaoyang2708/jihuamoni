@@ -43,6 +43,17 @@ YT.MODULES = [
 
 /* 取模块参数。用户在设置里改过的存在 profile.moduleParams 里，没改就用上面的默认值。 */
 YT.moduleParam = function (module, profile, key) {
+  /* 传进来的模块不存在就直接返回 undefined。
+   * 以前这里直接 module[key]，一旦某条数据里带着一个认不出的模块 id，
+   * 整个页面会白屏——为了一个数字把整个工具打不开，不值得。 */
+  if (!module) {
+    /* 顺手把调用位置打出来。以后万一还有哪条路会传进来坏数据，
+     * 打开控制台（F12）就能看到是谁调的，不用再靠猜。 */
+    if (window.console && console.warn) {
+      console.warn('moduleParam：不认识的模块（key=' + key + '）', new Error('调用位置').stack);
+    }
+    return undefined;
+  }
   var over = profile && profile.moduleParams && profile.moduleParams[module.id];
   if (over && over[key] !== undefined && over[key] !== null && over[key] !== '') {
     return Number(over[key]);
@@ -53,6 +64,7 @@ YT.moduleParam = function (module, profile, key) {
 /* 提速曲线：基础期按"练会"的速度，冲刺期压到考试速度。
  * 强化期取两者之间。这样"限时提速"就不是模糊的感觉，而是一个算得出来的数。 */
 YT.unitMinutesFor = function (module, stage, profile) {
+  if (!module) return 0;
   var setSize = YT.moduleParam(module, profile, 'setSize');
   var examMinutes = YT.moduleParam(module, profile, 'examMinutes');
   if (!setSize || !examMinutes) return module.unitMinutes;
@@ -218,5 +230,38 @@ YT.BASE_PRESET = {
 
 /* 每周休息日的默认值：0=周日 */
 YT.DEFAULT_REST_DAYS = [0];
+
+/* =========================================================================
+ * 主题
+ *
+ * 界面里所有跟"品牌色"有关的地方（按钮、选中、进度、打卡、当前阶段）
+ * 都由这一组值派生。一个主题只要四个数：
+ *   accent  主色   —— 按钮、进度条、打卡圆点
+ *   lite    亮色   —— 按钮上缘的高光
+ *   deep    深色   —— 按钮下缘的收边，以及浅色主题上的深色文字
+ *   ink     字色   —— 压在主色上面的字
+ *
+ * ⚠️ 加主题要改两个地方：这里加一条，再去 css/styles.css 里
+ * 抄一段 html[data-theme="同名的 id"]，把那四个变量写进去。
+ * 两边 id 必须一模一样，否则会静默回退到默认色。
+ *
+ * 注意：警告橙、危险红、半完成琥珀、三个阶段的配色**故意不跟主题走**。
+ * 它们表达的是状态，不是品牌——换个主题颜色就变，用户会看不懂。
+ * ========================================================================= */
+YT.THEMES = [
+  { id: 'champagne', name: '香槟金', accent: '#BB9455', lite: '#D9BB7E', deep: '#96733A', ink: '#2C2109' },
+  { id: 'rose',      name: '玫瑰金', accent: '#C08A7A', lite: '#DDAFA2', deep: '#9C6555', ink: '#3A1E17' },
+  { id: 'mist',      name: '雾蓝',   accent: '#5A7FA8', lite: '#86A5C7', deep: '#3D5F85', ink: '#FFFFFF' },
+  { id: 'celadon',   name: '青瓷',   accent: '#4E8C86', lite: '#7DB0AA', deep: '#366964', ink: '#0A2422' },
+  { id: 'bamboo',    name: '竹青',   accent: '#6B8F5A', lite: '#93B183', deep: '#4C6B3E', ink: '#1B2913' },
+  { id: 'cinnabar',  name: '朱砂',   accent: '#B04C3E', lite: '#D07A6A', deep: '#8A372C', ink: '#FFFFFF' },
+  { id: 'cocoa',     name: '可可',   accent: '#8A6A55', lite: '#AC8D77', deep: '#664B3A', ink: '#FFFFFF' },
+];
+
+/* 没选过主题的老用户落到最前面这个 */
+YT.DEFAULT_THEME = 'champagne';
+
+YT.THEME_BY_ID = {};
+YT.THEMES.forEach(function (t) { YT.THEME_BY_ID[t.id] = t; });
 
 YT.WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];

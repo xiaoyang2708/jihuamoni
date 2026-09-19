@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>主题配色样张</title>
+<style>
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+
+  body {
+    margin: 0; padding: 46px 56px 60px;
+    background: #cfcbc4;
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #2a2724;
+  }
+
+  .board-title { margin: 0 0 8px; font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
+  .board-sub { margin: 0 0 34px; font-size: 13.5px; line-height: 1.85; color: #5d574f; }
+  .board-sub b { color: #2a2724; }
+
+  h2.sec { margin: 0 0 6px; font-size: 15px; font-weight: 700; letter-spacing: -.2px; }
+  .hint { margin: 0 0 20px; font-size: 12.5px; color: #6f685f; line-height: 1.8; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .block { margin-bottom: 46px; }
+
+  /* ---------------- 每个色卡 ---------------- */
+  .c {
+    background: #fff; border-radius: 20px; overflow: hidden;
+    box-shadow: 0 14px 30px rgba(38,32,24,.13);
+  }
+  .c .ch {
+    display: flex; align-items: center; gap: 9px;
+    padding: 15px 18px 12px;
+  }
+  .c .dot {
+    flex: 0 0 auto; width: 22px; height: 22px; border-radius: 8px;
+    background: linear-gradient(150deg, var(--a-l), var(--a) 55%, var(--a-d));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 3px 7px -3px var(--a-d);
+  }
+  .c .ch b { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; letter-spacing: -.3px; }
+  .c .ch code {
+    flex: 0 0 auto; font-family: Consolas, monospace; font-size: 10.5px;
+    color: #a49b8f; letter-spacing: .02em;
+  }
+  .c .cb { padding: 4px 18px 18px; }
+
+  .c .btn {
+    text-align: center; padding: 11px 0; border-radius: 12px;
+    font-size: 14px; font-weight: 650; color: var(--a-ink, #fff);
+    background: linear-gradient(180deg, var(--a-l), var(--a) 52%, var(--a-d));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(0,0,0,.10),
+                0 8px 16px -10px var(--a-d);
+  }
+
+  .c .chips { display: flex; gap: 6px; margin-top: 12px; }
+  .c .chip {
+    flex: 1; text-align: center; padding: 6px 0; border-radius: 99px;
+    font-size: 12px; font-weight: 600;
+    background: rgba(26,24,21,.055); color: #8a8278;
+  }
+  .c .chip.on { background: var(--a-soft); color: var(--a-d); box-shadow: inset 0 0 0 1px var(--a-line); }
+
+  .c .bar {
+    height: 7px; border-radius: 99px; margin-top: 13px;
+    background: rgba(26,24,21,.06);
+    box-shadow: inset 0 1px 1px rgba(26,24,21,.05);
+    overflow: hidden;
+  }
+  .c .bar > i {
+    display: block; height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--a-d), var(--a) 60%, var(--a-l));
+  }
+
+  .c .marks { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .c .mk {
+    width: 21px; height: 21px; border-radius: 50%; position: relative;
+    background: #f8f7f4; box-shadow: inset 0 0 0 1.5px rgba(26,24,21,.10);
+  }
+  .c .mk.done {
+    background: linear-gradient(180deg, var(--a-l), var(--a) 60%, var(--a-d));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 2px 5px -2px var(--a-d);
+  }
+  .c .mk.done::after {
+    content: ""; position: absolute; left: 6px; top: 3px;
+    width: 5.5px; height: 9px;
+    border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  .c .mk.half {
+    background: linear-gradient(to right, var(--a) 0 50%, #f8f7f4 50% 100%);
+    box-shadow: inset 0 0 0 1.5px var(--a-line);
+  }
+  .c .mk-t { margin-left: 2px; font-size: 11.5px; color: #a49b8f; }
+
+  .c .band {
+    display: flex; align-items: baseline; gap: 6px;
+    margin-top: 13px; padding: 8px 11px; border-radius: 10px;
+    background: var(--a-soft); color: var(--a-d);
+    font-size: 11.5px; font-weight: 650;
+  }
+  .c .band span { font-weight: 400; opacity: .75; }
+  .c .band i { margin-left: auto; font-style: normal; opacity: .85; }
+
+  /* ---------------- 深色预览 ---------------- */
+  .darkrow { display: flex; gap: 20px; }
+  .dbox {
+    flex: 1; border-radius: 20px; padding: 20px;
+    background: #1c1a18; box-shadow: 0 14px 30px rgba(38,32,24,.22);
+  }
+  .dbox .dn { font-size: 13px; font-weight: 700; color: #f4f0e8; margin-bottom: 12px; }
+  .dbox .dbtn {
+    text-align: center; padding: 11px 0; border-radius: 12px;
+    font-size: 14px; font-weight: 650; color: var(--a-ink, #fff);
+    background: linear-gradient(180deg, var(--a-l), var(--a) 52%, var(--a-d));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.42), 0 10px 20px -12px var(--a-d);
+  }
+  .dbox .dchip {
+    margin-top: 10px; padding: 7px 0; border-radius: 99px; text-align: center;
+    font-size: 12px; font-weight: 650; color: var(--a-l);
+    background: color-mix(in srgb, var(--a) 18%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a) 40%, transparent);
+  }
+  .dbox .dbar { height: 7px; border-radius: 99px; margin-top: 12px; background: rgba(244,240,232,.10); overflow: hidden; }
+  .dbox .dbar > i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--a-d), var(--a) 55%, var(--a-l)); }
+  .dbox .dtxt { margin-top: 12px; font-size: 11.5px; color: rgba(244,240,232,.5); }
+</style>
+</head>
+<body>
+
+<h1 class="board-title">主题配色样张</h1>
+<p class="board-sub">
+  十六个主色，每个都放进真组件里看——按钮、标签、进度条、打卡圆点、阶段条。<br>
+  底色统一用<b>象牙白 #F1EFEA</b>，金色系那几张就是现在这套的提纯版。你可以直接按编号挑，也可以挑几个让我再细调。
+</p>
+
+<div class="block">
+  <h2 class="sec">浅色底 · 十六个主色</h2>
+  <p class="hint">同一个金色系里，越往下越冷；蓝绿红紫各自一组。每一张下面那条「基础期」是它在浅底上的弱化色，用来看整体是否协调。</p>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="block">
+  <h2 class="sec">同一组色放到深色底上</h2>
+  <p class="hint">如果以后加深色主题，就是这几只。深底上主色要提亮一档，按钮上的字改成深色才压得住。</p>
+  <div class="darkrow" id="darkrow"></div>
+</div>
+
+<script>
+  /* 主色表。a = 主色，d = 深色（按钮下缘、文字），l = 亮色（按钮上缘、高光）
+     ink = 按钮上的字色，深金、浅蓝这类亮色按钮用深字才够对比 */
+  var COLORS = [
+    { n: '香槟金',   a: '#BB9455', d: '#96733A', l: '#D9BB7E', ink: '#2C2109' },
+    { n: '玫瑰金',   a: '#C08A7A', d: '#9C6555', l: '#DDAFA2', ink: '#3A1E17' },
+    { n: '焦糖',     a: '#A9713F', d: '#824F27', l: '#C89363' },
+    { n: '琥珀',     a: '#C08A2E', d: '#96661A', l: '#DCAE5C', ink: '#2E2004' },
+
+    { n: '靛青',     a: '#2F548C', d: '#1F3A63', l: '#5B7FBB' },
+    { n: '藏蓝',     a: '#24406E', d: '#16294A', l: '#4A6C9E' },
+    { n: '雾蓝',     a: '#5A7FA8', d: '#3D5F85', l: '#86A5C7' },
+    { n: '石板蓝',   a: '#4A6076', d: '#33465A', l: '#7389A0' },
+
+    { n: '墨绿',     a: '#235C4C', d: '#163F34', l: '#4F8B74' },
+    { n: '松柏',     a: '#2F6B5E', d: '#1E4C41', l: '#5C9484' },
+    { n: '青瓷',     a: '#4E8C86', d: '#366964', l: '#7DB0AA', ink: '#0A2422' },
+    { n: '竹青',     a: '#6B8F5A', d: '#4C6B3E', l: '#93B183', ink: '#1B2913' },
+
+    { n: '朱砂',     a: '#B04C3E', d: '#8A372C', l: '#D07A6A' },
+    { n: '胭脂',     a: '#A94E63', d: '#83374A', l: '#C87D8E' },
+    { n: '紫檀',     a: '#6B4A6E', d: '#4C3350', l: '#937596' },
+    { n: '可可',     a: '#8A6A55', d: '#664B3A', l: '#AC8D77' }
+  ];
+
+  function hexToRgb(h) {
+    h = h.replace('#', '');
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function rgba(h, a) {
+    var c = hexToRgb(h);
+    return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')';
+  }
+
+  document.getElementById('grid').innerHTML = COLORS.map(function (c, i) {
+    var style = '--a:' + c.a + ';--a-d:' + c.d + ';--a-l:' + c.l +
+      ';--a-soft:' + rgba(c.a, .13) + ';--a-line:' + rgba(c.a, .30) +
+      (c.ink ? ';--a-ink:' + c.ink : '');
+    return '<div class="c" style="' + style + '">' +
+      '<div class="ch">' +
+        '<span class="dot"></span>' +
+        '<b>' + (i + 1 < 10 ? '0' : '') + (i + 1) + '　' + c.n + '</b>' +
+        '<code>' + c.a.toUpperCase() + '</code>' +
+      '</div>' +
+      '<div class="cb">' +
+        '<div class="btn">今天主攻一科</div>' +
+        '<div class="chips"><span class="chip on">基础期</span><span class="chip">冲刺期</span></div>' +
+        '<div class="bar"><i style="width:62%"></i></div>' +
+        '<div class="marks">' +
+          '<span class="mk done"></span><span class="mk half"></span><span class="mk"></span>' +
+          '<span class="mk-t">完成 / 半 / 未</span>' +
+        '</div>' +
+        '<div class="band">基础期 <span>第 12 / 45 天</span><i>距考试 122 天</i></div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  /* 深色底上只挑代表性的八只 */
+  var pick = [0, 3, 4, 5, 8, 10, 12, 13];
+  document.getElementById('darkrow').innerHTML = pick.map(function (i) {
+    var c = COLORS[i];
+    var style = '--a:' + c.a + ';--a-d:' + c.d + ';--a-l:' + c.l;
+    return '<div class="dbox" style="' + style + '">' +
+      '<div class="dn">' + c.n + '</div>' +
+      '<div class="dbtn">今天主攻一科</div>' +
+      '<div class="dchip">基础期 · 第 12 / 45 天</div>' +
+      '<div class="dbar"><i style="width:62%"></i></div>' +
+      '<div class="dtxt">2 小时 30 分 · 40 题</div>' +
+    '</div>';
+  }).join('');
+</script>
+
+</body>
+</html>

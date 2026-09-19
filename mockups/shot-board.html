@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>真机截图拼版 · 备考节奏</title>
+<style>
+  /* 把 shot.html 截出来的六张图拼成一张，方便一眼看全。
+   * 生成方式见本文件同目录的 README 说明，或直接看 shot.html 里的注释。 */
+  body {
+    margin: 0; padding: 44px 56px 56px;
+    background: #d8d5d0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #33302a;
+  }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -.4px; }
+  p  { margin: 0 0 30px; font-size: 13px; color: #6d665c; }
+  .grid { display: grid; grid-template-columns: repeat(3, 300px); gap: 40px 36px; }
+  .cell .lb {
+    display: flex; align-items: baseline; gap: 7px;
+    margin: 0 0 10px; padding-left: 2px;
+    font-size: 13px; font-weight: 650;
+  }
+  .cell .lb i { font-style: normal; color: #a08a6a; font-weight: 700; }
+  .cell .lb span { font-weight: 400; color: #7a7268; font-size: 12.5px; }
+  .cell img {
+    display: block; width: 300px; height: auto;
+    border-radius: 22px;
+    box-shadow: 0 16px 34px rgba(45,38,30,.18), 0 0 0 1px rgba(45,38,30,.07);
+  }
+</style>
+</head>
+<body>
+  <h1>真机截图 · 改完之后的样子</h1>
+  <p>跑的是真代码（http://localhost:5173），冷启动走完问卷后用开发者工具快进 30 天，所以数字和热力图都是引擎真算出来的。</p>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="lb"><i>①</i>今日 <span>原样</span></div>
+      <img src="shot-today.png" alt="今日">
+    </div>
+    <div class="cell">
+      <div class="lb"><i>②</i>计划 <span>原样</span></div>
+      <img src="shot-plan.png" alt="计划">
+    </div>
+    <div class="cell">
+      <div class="lb"><i>③</i>工具 <span>新增，先空着</span></div>
+      <img src="shot-tools.png" alt="工具">
+    </div>
+    <div class="cell">
+      <div class="lb"><i>④</i>我的 <span>记录 + 两个入口</span></div>
+      <img src="shot-mine.png" alt="我的">
+    </div>
+    <div class="cell">
+      <div class="lb"><i>⑤</i>数据统计 <span>我的 › 数据统计</span></div>
+      <img src="shot-stats.png" alt="数据统计">
+    </div>
+    <div class="cell">
+      <div class="lb"><i>⑥</i>设置 <span>我的 › 设置</span></div>
+      <img src="shot-settings.png" alt="设置">
+    </div>
+  </div>
+</body>
+</html>

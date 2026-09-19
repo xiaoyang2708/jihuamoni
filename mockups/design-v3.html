@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>界面方向样张 · 备考节奏</title>
+<style>
+  /* =====================================================================
+   * 界面方向样张（v3）
+   *
+   * 这份文件跟产品代码完全无关，只是拿来比方向的：
+   *   方案 A · 象牙金（浅色）
+   *   方案 B · 曜石金（深色）
+   * 两套共用同一份组件样式，配色靠 CSS 变量切。
+   * 结构、间距、字号、圆角都是照真机尺寸（390 × 844）做的。
+   * ===================================================================== */
+
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+
+  body {
+    margin: 0; padding: 46px 56px 60px;
+    background: #cfcbc4;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+    color: #2a2724;
+  }
+
+  .board-title { margin: 0 0 8px; font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
+  .board-sub { margin: 0 0 36px; font-size: 13.5px; line-height: 1.8; color: #5d574f; }
+  .board-sub b { color: #2a2724; }
+
+  .brow { display: flex; gap: 40px; align-items: flex-start; }
+  .brow + .brow { margin-top: 48px; }
+  .bcol { flex: 0 0 auto; width: 402px; }
+
+  .col-label {
+    display: flex; align-items: baseline; gap: 9px;
+    margin: 0 0 13px; padding-left: 4px;
+    font-size: 14px; font-weight: 700; letter-spacing: -.2px;
+  }
+  .col-label em { font-style: normal; color: #9a8046; font-weight: 800; }
+  .col-label span { font-weight: 400; color: #6f685f; font-size: 12.5px; }
+
+  .phone {
+    width: 402px; height: 856px;
+    padding: 6px; border-radius: 46px;
+    background: #ffffff;
+    box-shadow: 0 22px 48px rgba(38,32,24,.22), 0 0 0 1px rgba(38,32,24,.08);
+  }
+  .phone.dark {
+    background: #2b2926;
+    box-shadow: 0 22px 48px rgba(20,16,10,.38), 0 0 0 1px rgba(255,255,255,.08);
+  }
+
+  /* =====================================================================
+   * 主题 · 象牙金（浅色）
+   * ===================================================================== */
+  .ui.ivory {
+    --bg:         #f1efea;
+    --surface:    #ffffff;
+    --surface-2:  #f8f7f4;
+    --ink:        #1a1815;
+    --ink-2:      rgba(26,24,21,.58);
+    --ink-3:      rgba(26,24,21,.33);
+    --hair:       rgba(26,24,21,.085);
+    --hair-soft:  rgba(26,24,21,.05);
+    --gold-lite:  #d9bb7e;
+    --gold:       #bb9455;
+    --gold-deep:  #96733a;
+    --gold-ink:   #3a2b10;
+    --gold-soft:  rgba(187,148,85,.12);
+    --gold-line:  rgba(187,148,85,.28);
+    --on-gold:    #2c2109;
+    --sh-sm: 0 1px 2px rgba(26,24,21,.05);
+    --sh-md: 0 1px 2px rgba(26,24,21,.04), 0 12px 26px -18px rgba(26,24,21,.34);
+    --bar:    rgba(255,255,255,.74);
+    --bar-line: rgba(26,24,21,.09);
+  }
+
+  /* =====================================================================
+   * 主题 · 曜石金（深色）
+   * ===================================================================== */
+  .ui.obsidian {
+    --bg:         #121110;
+    --surface:    #1c1a18;
+    --surface-2:  #232120;
+    --ink:        #f4f0e8;
+    --ink-2:      rgba(244,240,232,.56);
+    --ink-3:      rgba(244,240,232,.30);
+    --hair:       rgba(244,240,232,.10);
+    --hair-soft:  rgba(244,240,232,.055);
+    --gold-lite:  #f0dba8;
+    --gold:       #d3ac68;
+    --gold-deep:  #a9853f;
+    --gold-soft:  rgba(211,172,104,.14);
+    --gold-line:  rgba(211,172,104,.30);
+    --on-gold:    #241a06;
+    --sh-sm: 0 1px 2px rgba(0,0,0,.30);
+    --sh-md: 0 1px 0 rgba(255,255,255,.035) inset, 0 16px 34px -22px rgba(0,0,0,.85);
+    --bar:    rgba(18,17,16,.72);
+    --bar-line: rgba(244,240,232,.10);
+  }
+
+  /* =====================================================================
+   * 手机屏
+   * ===================================================================== */
+  .ui {
+    width: 390px; height: 844px; border-radius: 40px;
+    background: var(--bg); color: var(--ink);
+    position: relative; overflow: hidden;
+    padding-bottom: 78px;
+    font-size: 16px; line-height: 1.55;
+  }
+
+  .page { padding: 0 0 20px; }
+
+  /* ---------- 顶部 ---------- */
+  .phead { padding: 20px 22px 0; }
+  .phead .eyebrow {
+    font-size: 12px; font-weight: 600;
+    letter-spacing: .1em; color: var(--ink-3);
+  }
+  .phead h1 {
+    margin: 5px 0 0;
+    font-size: 33px; font-weight: 750; letter-spacing: -1px; line-height: 1.12;
+  }
+  .phead .meta {
+    margin-top: 7px; font-size: 14px; color: var(--ink-2); letter-spacing: -.1px;
+  }
+  .phead .meta b { color: var(--ink); font-weight: 650; }
+  .phead .meta i { font-style: normal; color: var(--gold); font-weight: 650; }
+
+  /* 进度：一条带金属感的细条 */
+  .meter {
+    margin-top: 14px; height: 7px; border-radius: 99px;
+    background: var(--hair-soft);
+    box-shadow: inset 0 1px 1px rgba(26,24,21,.06);
+    overflow: hidden;
+  }
+  .meter > i {
+    display: block; height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--gold-deep), var(--gold) 60%, var(--gold-lite));
+    box-shadow: 0 1px 2px rgba(150,115,58,.45);
+  }
+  .meter-meta {
+    display: flex; justify-content: space-between;
+    margin-top: 8px; font-size: 11.5px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- 区块 ---------- */
+  .sec { padding: 0 16px; margin-top: 24px; }
+  .sec-title {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 0 6px; margin: 0 0 10px;
+    font-size: 12px; font-weight: 700;
+    letter-spacing: .11em; color: var(--ink-3);
+  }
+
+  /* 分组标题右边的入口做成小胶囊：白底 + 金色描边 + 箭头。
+   * 光写一行金字，用户还是看不出能点。 */
+  .pillbtn {
+    display: inline-flex; align-items: center; gap: 3px;
+    height: 29px; padding: 0 11px;
+    border-radius: 99px;
+    background: var(--surface); color: var(--gold);
+    font-size: 12.5px; font-weight: 650; letter-spacing: -.1px;
+    box-shadow: inset 0 0 0 1px var(--gold-line), var(--sh-sm);
+  }
+  .pillbtn .bi { width: 12px; height: 12px; }
+
+  .card {
+    background: var(--surface);
+    border-radius: 20px;
+    box-shadow: var(--sh-md);
+  }
+
+  /* ---------- 任务行 ---------- */
+  .tasks { padding: 6px 20px; }
+  .task {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 15px 0; border-bottom: 1px solid var(--hair-soft);
+  }
+  .task:last-child { border-bottom: 0; }
+
+  .tick {
+    flex: 0 0 auto; width: 23px; height: 23px; margin-top: 2px;
+    border-radius: 50%; position: relative;
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1.5px var(--hair);
+  }
+  .tick.done {
+    background: linear-gradient(180deg, var(--gold-lite), var(--gold) 60%, var(--gold-deep));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 2px 6px -2px rgba(150,115,58,.7);
+  }
+  .tick.done::after {
+    content: ""; position: absolute; left: 6.5px; top: 3.5px;
+    width: 6px; height: 10px;
+    border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .tick.half {
+    background: linear-gradient(to right,
+      var(--gold) 0 50%, var(--surface-2) 50% 100%);
+    box-shadow: inset 0 0 0 1.5px var(--gold-line);
+  }
+
+  .t-body { flex: 1; min-width: 0; }
+  .t-top { display: flex; align-items: baseline; gap: 10px; }
+  .t-title {
+    flex: 1; min-width: 0;
+    font-size: 16.5px; font-weight: 600; letter-spacing: -.35px;
+  }
+  .t-min {
+    flex: 0 0 auto; font-size: 13px; font-weight: 500;
+    color: var(--ink-2); font-variant-numeric: tabular-nums;
+  }
+  .t-sub { margin-top: 3px; font-size: 13.5px; color: var(--ink-2); letter-spacing: -.1px; }
+  .t-tags { display: flex; gap: 6px; margin-top: 8px; }
+  .tag {
+    font-size: 11px; font-weight: 600; letter-spacing: .02em;
+    padding: 2px 8px; border-radius: 99px;
+    background: var(--gold-soft); color: var(--gold);
+  }
+  .tag.plain { background: var(--hair-soft); color: var(--ink-3); }
+  .task.done .t-title { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+  .task.done .t-sub, .task.done .t-min { color: var(--ink-3); }
+
+  /* ---------- 按钮 ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 46px; padding: 0 18px;
+    border: 0; border-radius: 14px;
+    font: inherit; font-size: 15px; font-weight: 650; letter-spacing: .01em;
+    cursor: pointer;
+  }
+  /* 实体金色：上缘高光 + 下缘收边 + 落地阴影，看起来是"一块"而不是一块色 */
+  .btn.primary {
+    background: linear-gradient(180deg, var(--gold-lite) 0%, var(--gold) 52%, var(--gold-deep) 100%);
+    color: var(--on-gold);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.48),
+      inset 0 -1px 0 rgba(0,0,0,.10),
+      0 1px 1.5px rgba(90,68,30,.28),
+      0 10px 20px -12px rgba(90,68,30,.75);
+  }
+  .btn.secondary {
+    background: var(--surface); color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--hair), var(--sh-sm);
+  }
+  .btn.soft {
+    background: var(--gold-soft); color: var(--gold);
+    box-shadow: inset 0 0 0 1px var(--gold-line);
+  }
+  .btn.block { display: flex; width: 100%; }
+  .btn.sm { height: 38px; padding: 0 14px; font-size: 13.5px; border-radius: 12px; }
+  .btn .bi { width: 14px; height: 14px; }
+
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+
+  /* ---------- 分段控件 ---------- */
+  .seg {
+    display: flex; gap: 3px; padding: 3px;
+    background: var(--hair-soft); border-radius: 13px;
+  }
+  .seg button {
+    flex: 1; border: 0; background: transparent;
+    font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink-2);
+    padding: 9px 0; border-radius: 10px; cursor: pointer;
+  }
+  .seg button.on {
+    background: var(--surface); color: var(--ink);
+    box-shadow: 0 1px 2px rgba(26,24,21,.10);
+  }
+  .ui.obsidian .seg button.on { box-shadow: 0 1px 3px rgba(0,0,0,.55); }
+
+  /* ---------- 折叠行 ---------- */
+  .fold {
+    display: flex; align-items: center; gap: 10px;
+    padding: 17px 20px;
+    background: var(--surface); border-radius: 18px;
+    box-shadow: var(--sh-md);
+  }
+  .fold .ft { flex: 0 0 auto; font-size: 15px; font-weight: 650; letter-spacing: -.2px; }
+  .fold .fn { flex: 1; min-width: 0; text-align: right; font-size: 12.5px; color: var(--ink-3); }
+  .fold.open .fn { color: var(--gold); }
+  .chev { flex: 0 0 auto; width: 17px; height: 17px; color: var(--ink-3); }
+  .fold.open .chev { transform: rotate(180deg); color: var(--gold); }
+
+  /* ---------- 阶段卡 ---------- */
+  .stage { padding: 4px 20px; }
+  .stage-row {
+    display: flex; gap: 13px; padding: 14px 0;
+    border-bottom: 1px solid var(--hair-soft);
+  }
+  .stage-row:last-child { border-bottom: 0; }
+  .stage-no {
+    flex: 0 0 auto; width: 27px; height: 27px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 750;
+    background: var(--hair-soft); color: var(--ink-3);
+  }
+  .stage-row.now .stage-no {
+    background: linear-gradient(180deg, var(--gold-lite), var(--gold) 55%, var(--gold-deep));
+    color: var(--on-gold);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 3px 8px -3px rgba(150,115,58,.8);
+  }
+  .stage-name { font-size: 15px; font-weight: 650; letter-spacing: -.2px; }
+  .stage-row.now .stage-name { color: var(--gold); }
+  .stage-date { margin-top: 2px; font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  /* ---------- 日程行 ---------- */
+  .days { padding: 6px 20px; }
+  .day { padding: 14px 0; border-bottom: 1px solid var(--hair-soft); }
+  .day:last-child { border-bottom: 0; }
+  .day-head { display: flex; align-items: center; gap: 10px; }
+  .day-date { flex: 0 0 auto; font-size: 14px; font-weight: 650; letter-spacing: -.2px; }
+  .day-date small {
+    margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .day-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .day-min { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .iconbtn {
+    flex: 0 0 auto; width: 28px; height: 28px; border: 0; border-radius: 9px;
+    background: transparent; color: var(--ink-3);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .day-brief { margin-top: 3px; font-size: 12.5px; color: var(--ink-3); }
+  .day.now .day-date { color: var(--gold); }
+
+  /* ---------- 指标 ---------- */
+  .metrics { display: flex; gap: 10px; }
+  .metric {
+    flex: 1; background: var(--surface); border-radius: 18px;
+    box-shadow: var(--sh-md); padding: 16px 10px 14px; text-align: center;
+  }
+  .metric .v { font-size: 23px; font-weight: 750; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+  .metric .k { margin-top: 2px; font-size: 11.5px; color: var(--ink-3); }
+
+  /* ---------- 提示条 ---------- */
+  .note {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 16px; border-radius: 15px;
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--hair-soft);
+    font-size: 12.5px; color: var(--ink-2);
+  }
+  .note b { color: var(--ink); font-weight: 650; }
+  .note .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); flex: 0 0 auto; }
+
+  /* ---------- 底部导航 ---------- */
+  /* ---------- 按天记录（列表式明细） ---------- */
+  .rec-day {
+    padding: 15px 20px 0;
+    font-size: 12.5px; color: var(--ink-2);
+  }
+  .rec { padding: 6px 20px; }
+  .rec-row {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 11px 0; border-bottom: 1px solid var(--hair-soft);
+    font-size: 13.5px; letter-spacing: -.1px;
+  }
+  .rec-row:last-child { border-bottom: 0; }
+  .rec-row .rm { flex: 0 0 15px; color: var(--ink-3); }
+  .rec-row .rt { flex: 1; min-width: 0; }
+  .rec-row .rv { flex: 0 0 auto; font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  /* ---------- 底部导航 ---------- */
+  /* ---------- 我的 · 入口行 ---------- */
+  .list { padding: 4px 20px; }
+  .lrow {
+    display: flex; align-items: center; gap: 13px;
+    padding: 15px 0; border-bottom: 1px solid var(--hair-soft);
+  }
+  .lrow:last-child { border-bottom: 0; }
+  .lrow .gi { flex: 0 0 auto; width: 19px; height: 19px; color: var(--gold); }
+  .lrow .lt { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; letter-spacing: -.2px; }
+  .lrow .ln { flex: 0 0 auto; font-size: 12.5px; color: var(--ink-3); }
+
+  /* ---------- 热力图 ---------- */
+  .heat-card { padding: 20px; }
+  .heat { display: flex; gap: 4px; }
+  .hcol { display: flex; flex-direction: column; gap: 4px; }
+  .hcell { width: 13px; height: 13px; border-radius: 4px; background: var(--hair-soft); }
+  .hcell.l1 { background: var(--gold-soft); }
+  .hcell.l2 { background: rgba(187,148,85,.34); }
+  .hcell.l3 { background: rgba(187,148,85,.62); }
+  .hcell.l4 { background: linear-gradient(180deg, var(--gold-lite), var(--gold)); }
+  .ui.obsidian .hcell.l2 { background: rgba(211,172,104,.30); }
+  .ui.obsidian .hcell.l3 { background: rgba(211,172,104,.58); }
+  .heat-legend {
+    display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+    margin-top: 12px; font-size: 11px; color: var(--ink-3);
+  }
+  .heat-legend .hcell { width: 11px; height: 11px; }
+
+  /* ---------- 月历 ---------- */
+  .cal { padding: 18px 20px 20px; }
+  .cal-head-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .cal-head-row .m { font-size: 14.5px; font-weight: 700; letter-spacing: -.2px; }
+  .cal-head-row .nav {
+    width: 28px; height: 28px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-2); color: var(--ink-2); font-size: 13px;
+    box-shadow: inset 0 0 0 1px var(--hair-soft);
+  }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .cal-w { text-align: center; font-size: 11px; color: var(--ink-3); padding-bottom: 2px; }
+  .cday {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1px; min-height: 47px; border-radius: 12px;
+    font-size: 13px; font-weight: 650; letter-spacing: -.2px;
+    background: var(--surface-2); color: var(--ink-2);
+    box-shadow: inset 0 0 0 1px var(--hair-soft);
+  }
+  .cday .h { font-size: 9.5px; font-weight: 500; color: var(--ink-3); }
+  .cday.on { background: var(--gold-soft); color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold-line); }
+  .cday.rest { background: transparent; color: var(--ink-3); }
+  .cday.sel {
+    background: linear-gradient(180deg, var(--gold-lite), var(--gold) 55%, var(--gold-deep));
+    color: var(--on-gold);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 6px 14px -8px rgba(150,115,58,.9);
+  }
+  .cday.sel .h { color: rgba(44,33,9,.72); }
+
+  /* ---------- 底部导航 ---------- */
+  .tabbar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex;
+    padding: 9px 0 14px;
+    background: var(--bar);
+    -webkit-backdrop-filter: saturate(180%) blur(22px);
+    backdrop-filter: saturate(180%) blur(22px);
+    border-top: .5px solid var(--bar-line);
+  }
+  .tab {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10.5px; font-weight: 600; color: var(--ink-3);
+  }
+  .tab svg { width: 23px; height: 23px; }
+  .tab.on { color: var(--gold); }
+
+  /* =====================================================================
+   * 右侧：组件样张 / 备选强调色
+   * ===================================================================== */
+  .panel {
+    width: 620px; flex: 0 0 auto;
+    background: #fff; border-radius: 26px; padding: 30px 34px 32px;
+    box-shadow: 0 20px 44px rgba(38,32,24,.14), 0 0 0 1px rgba(38,32,24,.06);
+  }
+  .panel h2 { margin: 0 0 6px; font-size: 19px; font-weight: 700; letter-spacing: -.3px; }
+  .panel .psub { margin: 0 0 24px; font-size: 13px; color: #6f685f; line-height: 1.7; }
+  .panel h3 {
+    margin: 26px 0 12px; font-size: 12px; font-weight: 700;
+    letter-spacing: .1em; color: #9a8046;
+  }
+  .panel h3:first-of-type { margin-top: 0; }
+
+  .specimen { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+  /* 在面板里复用按钮视觉，但按浅色主题取色 */
+  .p-ivory {
+    --surface: #fff; --surface-2: #f8f7f4;
+    --ink: #1a1815; --ink-2: rgba(26,24,21,.58); --ink-3: rgba(26,24,21,.33);
+    --hair: rgba(26,24,21,.085); --hair-soft: rgba(26,24,21,.05);
+    --gold-lite: #d9bb7e; --gold: #bb9455; --gold-deep: #96733a;
+    --gold-soft: rgba(187,148,85,.12); --gold-line: rgba(187,148,85,.28);
+    --on-gold: #2c2109;
+    --sh-sm: 0 1px 2px rgba(26,24,21,.05);
+    --sh-md: 0 1px 2px rgba(26,24,21,.04), 0 12px 26px -18px rgba(26,24,21,.34);
+  }
+
+  .swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .sw {
+    flex: 1; border-radius: 18px; padding: 16px;
+    background: #f8f7f4; box-shadow: inset 0 0 0 1px rgba(26,24,21,.06);
+  }
+  .sw .name { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .sw .desc { font-size: 11.5px; color: #6f685f; line-height: 1.6; margin-bottom: 12px; }
+  .sw .chipdemo {
+    display: flex; gap: 6px; margin-bottom: 10px;
+  }
+  .sw .chipdemo span {
+    flex: 1; text-align: center; font-size: 11.5px; font-weight: 650;
+    padding: 6px 0; border-radius: 9px;
+  }
+  .sw .minibtn {
+    text-align: center; font-size: 13px; font-weight: 700;
+    padding: 9px 0; border-radius: 11px; color: #fff;
+  }
+
+  .spec-list { font-size: 13px; line-height: 1.9; color: #5d574f; }
+  .spec-list div { display: flex; gap: 12px; padding: 6px 0; border-bottom: 1px solid rgba(26,24,21,.07); }
+  .spec-list div:last-child { border-bottom: 0; }
+  .spec-list b { flex: 0 0 108px; font-weight: 650; color: #2a2724; }
+</style>
+</head>
+<body>
+
+<h1 class="board-title">界面方向样张 · 备考节奏 v3</h1>
+<p class="board-sub">
+  两套方向，同一套组件、同一份数据。左边浅色，右边深色，都是 390 × 844 的真机尺寸。<br>
+  这次动的是<b>材质</b>：按钮做成有厚度和高光的实体，卡片靠柔和投影分层，金色从"土黄"提纯成"香槟金"。
+</p>
+
+<div class="brow">
+
+  <!-- ================= 方案 A · 象牙金 · 今日 ================= -->
+  <div class="bcol">
+    <div class="col-label"><em>方案 A</em>象牙金 · 今日 <span>浅色主推</span></div>
+    <div class="phone">
+      <div class="ui ivory">
+        <div class="page">
+          <div class="phead">
+            <div class="eyebrow">9月19日　周六</div>
+            <h1>今天</h1>
+            <div class="meta"><i>基础期</i> · 已完成 <b>1 / 4</b> 项 · 连续 <b>30</b> 天</div>
+            <div class="meter"><i style="width:25%"></i></div>
+            <div class="meter-meta"><span>课 1 / 6 节</span><span>25%</span></div>
+          </div>
+
+          <div class="sec">
+            <div class="card tasks">
+              <div class="task done">
+                <span class="tick done"></span>
+                <div class="t-body">
+                  <div class="t-top"><span class="t-title">申论 · 听课</span><span class="t-min">50 分钟</span></div>
+                  <div class="t-sub">第 1 节（上半）</div>
+                  <div class="t-tags"><span class="tag">已听 1 节</span><span class="tag plain">还剩 5 节</span></div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="tick"></span>
+                <div class="t-body">
+                  <div class="t-top"><span class="t-title">资料分析 · 听课</span><span class="t-min">2 小时 30 分</span></div>
+                  <div class="t-sub">第 1 节 + 第 2 节（上半）</div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="tick half"></span>
+                <div class="t-body">
+                  <div class="t-top"><span class="t-title">资料分析 · 刷题</span><span class="t-min">50 分钟</span></div>
+                  <div class="t-sub">20 题 · 限时 28 分</div>
+                  <div class="t-tags"><span class="tag plain">目标 85%</span></div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="tick"></span>
+                <div class="t-body">
+                  <div class="t-top"><span class="t-title">错题复盘</span><span class="t-min">30 分钟</span></div>
+                  <div class="t-sub">把今天做错的题重做一遍，记下错因</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="row">
+              <button class="btn secondary">加一项</button>
+              <button class="btn primary">今天主攻一科</button>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="note"><span class="dot"></span><span>基础任务之外还剩 <b>20 分钟</b>，你自己安排</span></div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab on">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 方案 A · 象牙金 · 计划 ================= -->
+  <div class="bcol">
+    <div class="col-label"><em>方案 A</em>象牙金 · 计划 <span>浅色主推</span></div>
+    <div class="phone">
+      <div class="ui ivory">
+        <div class="page">
+          <div class="phead">
+            <div class="eyebrow">2027年1月17日考试</div>
+            <h1>我的计划</h1>
+            <div class="meta">还有 <b>103</b> 个学习日</div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-title"><span>总体节奏</span><span class="pillbtn">调整阶段 ›</span></div>
+            <div class="card stage">
+              <div class="stage-row now">
+                <div class="stage-no">1</div>
+                <div>
+                  <div class="stage-name">基础期 · 进行中</div>
+                  <div class="stage-date">9月19日 – 10月30日 · 36 个学习日</div>
+                </div>
+              </div>
+              <div class="stage-row">
+                <div class="stage-no">2</div>
+                <div>
+                  <div class="stage-name">强化期</div>
+                  <div class="stage-date">10月31日 – 12月23日 · 46 个学习日</div>
+                </div>
+              </div>
+              <div class="stage-row">
+                <div class="stage-no">3</div>
+                <div>
+                  <div class="stage-name">冲刺期</div>
+                  <div class="stage-date">12月24日 – 1月16日 · 21 个学习日</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="fold">
+              <span class="ft">计划详情</span>
+              <span class="fn">预测 · 听课进度 · 计划调整</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 10.2l3.6 3.6 3.6-3.6"/></svg>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-title"><span>日程</span><span class="pillbtn">批量排 ›</span></div>
+            <div class="seg">
+              <button>本周</button>
+              <button class="on">两周</button>
+              <button>30 天</button>
+            </div>
+
+            <div class="card days" style="margin-top:12px">
+              <div class="day now">
+                <div class="day-head">
+                  <span class="day-date">今天<small>9/19</small></span>
+                  <span class="day-right">
+                    <span class="day-min">3 小时 10 分</span>
+                    <span class="iconbtn">＋</span>
+                    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 10.2l3.6 3.6 3.6-3.6"/></svg>
+                  </span>
+                </div>
+                <div class="day-brief">申论 · 资料分析 · 复盘</div>
+              </div>
+              <div class="day">
+                <div class="day-head">
+                  <span class="day-date">周日<small>9/20</small></span>
+                  <span class="day-right"><span class="day-min">休息</span></span>
+                </div>
+              </div>
+              <div class="day">
+                <div class="day-head">
+                  <span class="day-date">周一<small>9/21</small></span>
+                  <span class="day-right">
+                    <span class="day-min">2 小时 54 分</span>
+                    <span class="iconbtn">＋</span>
+                    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 10.2l3.6 3.6 3.6-3.6"/></svg>
+                  </span>
+                </div>
+                <div class="day-brief">申论 · 资料分析 · 复盘</div>
+              </div>
+              <div class="day">
+                <div class="day-head">
+                  <span class="day-date">周二<small>9/22</small></span>
+                  <span class="day-right">
+                    <span class="day-min">2 小时 57 分</span>
+                    <span class="iconbtn">＋</span>
+                    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 10.2l3.6 3.6 3.6-3.6"/></svg>
+                  </span>
+                </div>
+                <div class="day-brief">申论 · 资料分析 · 复盘</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </div>
+          <div class="tab on">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 右侧面板：材质与备选色 ================= -->
+  <!-- ================= 方案 A · 象牙金 · 我的 ================= -->
+  <div class="bcol">
+    <div class="col-label"><em>方案 A</em>象牙金 · 我的 <span>浅色主推</span></div>
+    <div class="phone">
+      <div class="ui ivory">
+        <div class="page">
+          <div class="phead">
+            <div class="eyebrow">从 6月15日 开始</div>
+            <h1>我的</h1>
+            <div class="meta">你已经坚持了 <b>48</b> 天</div>
+          </div>
+
+          <div class="sec">
+            <div class="card list">
+              <div class="lrow">
+                <svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19.4v-6M12 19.4V5.2M18 19.4v-9"/></svg>
+                <span class="lt">数据统计</span>
+                <span class="ln">成绩 · 档位 · 速度</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 6.8l5.2 5.2-5.2 5.2"/></svg>
+              </div>
+              <div class="lrow">
+                <svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5h8M17 8.5h3M4 15.5h3M12 15.5h8"/><circle cx="14.5" cy="8.5" r="2.2"/><circle cx="9.5" cy="15.5" r="2.2"/></svg>
+                <span class="lt">设置</span>
+                <span class="ln">考试 · 时间 · 各科</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 6.8l5.2 5.2-5.2 5.2"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="card heat-card">
+              <div class="heat" data-heat></div>
+              <div class="heat-legend">
+                少
+                <span class="hcell l1"></span><span class="hcell l2"></span>
+                <span class="hcell l3"></span><span class="hcell l4"></span>
+                多
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="metrics">
+              <div class="metric"><div class="v">972</div><div class="k">累计做题</div></div>
+              <div class="metric"><div class="v">27.8</div><div class="k">听课节数</div></div>
+              <div class="metric"><div class="v">111</div><div class="k">学习小时</div></div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-title"><span>按天记录</span></div>
+            <div class="card cal">
+              <div class="cal-head-row">
+                <span class="nav">←</span>
+                <span class="m">2026 年 9 月</span>
+                <span class="nav">→</span>
+              </div>
+              <div class="cal-grid" data-cal></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </div>
+          <div class="tab on">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel p-ivory">
+    <h2>这次到底动了什么</h2>
+    <div class="psub">
+      颜色只是表面。真正让界面显不显高级的是三样：<b>按钮有没有厚度</b>、<b>卡片有没有层次</b>、<b>字重和间距够不够果断</b>。
+    </div>
+
+    <h3>按钮 · 有厚度的实体</h3>
+    <div class="specimen">
+      <button class="btn primary">主要动作</button>
+      <button class="btn secondary">次要动作</button>
+      <button class="btn soft">浅金</button>
+      <button class="btn sm secondary">小号</button>
+    </div>
+    <div class="spec-list" style="margin-top:14px">
+      <div><b>上缘高光</b><span>一条 1px 的白色内阴影，让金面像被打磨过</span></div>
+      <div><b>下缘收边</b><span>一条深色内阴影，按钮才有"厚度"而不是一块色</span></div>
+      <div><b>落地投影</b><span>只往下投一点点，让按钮浮在卡片上</span></div>
+    </div>
+
+    <h3>卡片 · 靠投影分层，不靠描边</h3>
+    <div class="spec-list">
+      <div><b>底色</b><span>底 <code>#F1EFEA</code>、卡片纯白，把对比交给明度</span></div>
+      <div><b>投影</b><span>12px 偏移、26px 模糊、负扩散，柔和而不脏</span></div>
+      <div><b>圆角</b><span>卡片 20px、按钮 14px、小控件 10px，三档到底</span></div>
+    </div>
+
+    <h3>强调色 · 四个备选</h3>
+    <div class="swatches">
+      <div class="sw">
+        <div class="name">香槟金</div>
+        <div class="desc">现在这套，提纯后更贵气，也最贴"备考"的克制感</div>
+        <div class="chipdemo"><span style="background:rgba(187,148,85,.14);color:#96733a">基础期</span></div>
+        <div class="minibtn" style="background:linear-gradient(180deg,#d9bb7e,#bb9455 52%,#96733a)">主按钮</div>
+      </div>
+      <div class="sw">
+        <div class="name">靛青</div>
+        <div class="desc">偏"体制内"，冷静、正式，长时间看不累</div>
+        <div class="chipdemo"><span style="background:rgba(47,84,140,.14);color:#2f548c">基础期</span></div>
+        <div class="minibtn" style="background:linear-gradient(180deg,#5b7fbb,#2f548c 52%,#1f3a63)">主按钮</div>
+      </div>
+      <div class="sw">
+        <div class="name">墨绿</div>
+        <div class="desc">沉稳、耐看，和"学习"这件事的气质最合</div>
+        <div class="chipdemo"><span style="background:rgba(35,92,76,.14);color:#235c4c">基础期</span></div>
+        <div class="minibtn" style="background:linear-gradient(180deg,#4f8b74,#235c4c 52%,#163f34)">主按钮</div>
+      </div>
+      <div class="sw">
+        <div class="name">朱砂</div>
+        <div class="desc">最有劲，但容易显得吵，适合只用在冲刺期</div>
+        <div class="chipdemo"><span style="background:rgba(176,76,62,.14);color:#b04c3e">基础期</span></div>
+        <div class="minibtn" style="background:linear-gradient(180deg,#d07a6a,#b04c3e 52%,#8a372c)">主按钮</div>
+      </div>
+    </div>
+
+    <h3>还没解决的</h3>
+    <div class="spec-list">
+      <div><b>三个入口</b><span>「调整阶段」「计划详情」「批量排」这次把文字改成了金色 + 箭头。它们本来就该显眼到这个程度——如果还是不够，下一步给它们整条带底色的行。</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- =====================================================================
+     第二行 · 深色
+     ===================================================================== -->
+<div class="brow">
+
+  <div class="bcol">
+    <div class="col-label"><em>方案 B</em>曜石金 · 今日 <span>深色</span></div>
+    <div class="phone dark">
+      <div class="ui obsidian">
+        <div class="page">
+          <div class="phead">
+            <div class="eyebrow">9月19日　周六</div>
+            <h1>今天</h1>
+            <div class="meta"><i>基础期</i> · 已完成 <b>1 / 4</b> 项 · 连续 <b>30</b> 天</div>
+            <div class="meter"><i style="width:25%"></i></div>
+            <div class="meter-meta"><span>课 1 / 6 节</span><span>25%</span></div>
+          </div>
+
+          <div class="sec">
+            <div class="card tasks">
+              <div class="task done">
+                <span class="tick done"></span>
+                <div class="t-body">
+                  <div class="t-top"><span class="t-title">申论 · 听课</span><span class="t-min">50 分钟</span></div>
+                  <div class="t-sub">第 1 节（上半）</div>
+                  <div class="t-tags"><span class="tag">已听 1 节</span><span class="tag plain">还剩 5 节</span></div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="tick"></span>
+                <div class="t-body">
+                  <div class="t-top"><span class="t-title">资料分析 · 听课</span><span class="t-min">2 小时 30 分</span></div>
+                  <div class="t-sub">第 1 节 + 第 2 节（上半）</div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="tick half"></span>
+                <div class="t-body">
+                  <div class="t-top"><span class="t-title">资料分析 · 刷题</span><span class="t-min">50 分钟</span></div>
+                  <div class="t-sub">20 题 · 限时 28 分</div>
+                  <div class="t-tags"><span class="tag plain">目标 85%</span></div>
+                </div>
+              </div>
+              <div class="task">
+                <span class="tick"></span>
+                <div class="t-body">
+                  <div class="t-top"><span class="t-title">错题复盘</span><span class="t-min">30 分钟</span></div>
+                  <div class="t-sub">把今天做错的题重做一遍，记下错因</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="row">
+              <button class="btn secondary">加一项</button>
+              <button class="btn primary">今天主攻一科</button>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="note"><span class="dot"></span><span>基础任务之外还剩 <b>20 分钟</b>，你自己安排</span></div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab on">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bcol">
+    <div class="col-label"><em>方案 B</em>曜石金 · 计划 <span>深色</span></div>
+    <div class="phone dark">
+      <div class="ui obsidian">
+        <div class="page">
+          <div class="phead">
+            <div class="eyebrow">2027年1月17日考试</div>
+            <h1>我的计划</h1>
+            <div class="meta">还有 <b>103</b> 个学习日</div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-title"><span>总体节奏</span><span class="pillbtn">调整阶段 ›</span></div>
+            <div class="card stage">
+              <div class="stage-row now">
+                <div class="stage-no">1</div>
+                <div>
+                  <div class="stage-name">基础期 · 进行中</div>
+                  <div class="stage-date">9月19日 – 10月30日 · 36 个学习日</div>
+                </div>
+              </div>
+              <div class="stage-row">
+                <div class="stage-no">2</div>
+                <div>
+                  <div class="stage-name">强化期</div>
+                  <div class="stage-date">10月31日 – 12月23日 · 46 个学习日</div>
+                </div>
+              </div>
+              <div class="stage-row">
+                <div class="stage-no">3</div>
+                <div>
+                  <div class="stage-name">冲刺期</div>
+                  <div class="stage-date">12月24日 – 1月16日 · 21 个学习日</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="fold">
+              <span class="ft">计划详情</span>
+              <span class="fn">预测 · 听课进度 · 计划调整</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 10.2l3.6 3.6 3.6-3.6"/></svg>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-title"><span>日程</span><span class="pillbtn">批量排 ›</span></div>
+            <div class="seg">
+              <button>本周</button>
+              <button class="on">两周</button>
+              <button>30 天</button>
+            </div>
+
+            <div class="card days" style="margin-top:12px">
+              <div class="day now">
+                <div class="day-head">
+                  <span class="day-date">今天<small>9/19</small></span>
+                  <span class="day-right">
+                    <span class="day-min">3 小时 10 分</span>
+                    <span class="iconbtn">＋</span>
+                    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 10.2l3.6 3.6 3.6-3.6"/></svg>
+                  </span>
+                </div>
+                <div class="day-brief">申论 · 资料分析 · 复盘</div>
+              </div>
+              <div class="day">
+                <div class="day-head">
+                  <span class="day-date">周日<small>9/20</small></span>
+                  <span class="day-right"><span class="day-min">休息</span></span>
+                </div>
+              </div>
+              <div class="day">
+                <div class="day-head">
+                  <span class="day-date">周一<small>9/21</small></span>
+                  <span class="day-right">
+                    <span class="day-min">2 小时 54 分</span>
+                    <span class="iconbtn">＋</span>
+                    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 10.2l3.6 3.6 3.6-3.6"/></svg>
+                  </span>
+                </div>
+                <div class="day-brief">申论 · 资料分析 · 复盘</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </div>
+          <div class="tab on">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 方案 B · 曜石金 · 我的 ================= -->
+  <div class="bcol">
+    <div class="col-label"><em>方案 B</em>曜石金 · 我的 <span>深色</span></div>
+    <div class="phone dark">
+      <div class="ui obsidian">
+        <div class="page">
+          <div class="phead">
+            <div class="eyebrow">从 6月15日 开始</div>
+            <h1>我的</h1>
+            <div class="meta">你已经坚持了 <b>48</b> 天</div>
+          </div>
+
+          <div class="sec">
+            <div class="card list">
+              <div class="lrow">
+                <svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19.4v-6M12 19.4V5.2M18 19.4v-9"/></svg>
+                <span class="lt">数据统计</span>
+                <span class="ln">成绩 · 档位 · 速度</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 6.8l5.2 5.2-5.2 5.2"/></svg>
+              </div>
+              <div class="lrow">
+                <svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5h8M17 8.5h3M4 15.5h3M12 15.5h8"/><circle cx="14.5" cy="8.5" r="2.2"/><circle cx="9.5" cy="15.5" r="2.2"/></svg>
+                <span class="lt">设置</span>
+                <span class="ln">考试 · 时间 · 各科</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 6.8l5.2 5.2-5.2 5.2"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="card heat-card">
+              <div class="heat" data-heat></div>
+              <div class="heat-legend">
+                少
+                <span class="hcell l1"></span><span class="hcell l2"></span>
+                <span class="hcell l3"></span><span class="hcell l4"></span>
+                多
+              </div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="metrics">
+              <div class="metric"><div class="v">972</div><div class="k">累计做题</div></div>
+              <div class="metric"><div class="v">27.8</div><div class="k">听课节数</div></div>
+              <div class="metric"><div class="v">111</div><div class="k">学习小时</div></div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-title"><span>按天记录</span><span class="pillbtn">9 月 ›</span></div>
+            <div class="card">
+              <div class="rec-day">2026年9月19日　周六　学了 2 小时 40 分</div>
+              <div class="rec">
+                <div class="rec-row"><span class="rm">✓</span><span class="rt">资料分析 · 听课</span><span class="rv">1 小时 40 分</span></div>
+                <div class="rec-row"><span class="rm">◐</span><span class="rt">判推逻辑 · 刷题</span><span class="rv">20 分</span></div>
+                <div class="rec-row"><span class="rm">○</span><span class="rt">资料分析 · 刷题</span><span class="rv">45 分</span></div>
+                <div class="rec-row"><span class="rm">○</span><span class="rt">申论 · 小题</span><span class="rv">40 分</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/></svg>
+            今日
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/></svg>
+            计划
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/></svg>
+            工具
+          </div>
+          <div class="tab on">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/></svg>
+            我的
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel p-ivory">
+    <h2>浅色还是深色</h2>
+    <div class="psub">
+      两套用的是<b>同一个金色</b>，只是底色反过来。深色更适合晚上学、也更容易显贵；浅色白天舒服、打印感的"纸面"更适合长时间看。
+    </div>
+
+    <h3>深色这一套的取舍</h3>
+    <div class="spec-list">
+      <div><b>好的地方</b><span>金色在黑底上最亮，按钮和进度条一眼就跳出来；晚上学不刺眼；截图给别人看最显档次</span></div>
+      <div><b>要付的代价</b><span>热力图、日历、月历这些靠"深浅"表达数据的图要整体翻一遍配色；白天在强光下不如浅色清楚</span></div>
+      <div><b>折中方案</b><span>两套都做，设置里给一个开关，跟着系统走。但这是额外工作量，第一期可以先只做浅色</span></div>
+    </div>
+
+    <h3>我建议的路线</h3>
+    <div class="spec-list">
+      <div><b>第一步</b><span>先上「象牙金」浅色：把材质、层次、字重一次改到位，配色不动，风险最小、变化最大</span></div>
+      <div><b>第二步</b><span>浅色稳了之后，再把深色作为可选主题加上——组件是同一套，只是换变量</span></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  /* 热力图和月历用脚本生成，免得在 HTML 里手写上百个格子。
+   * 图案是固定的，每次生成出来一样。 */
+  (function () {
+    document.querySelectorAll('[data-heat]').forEach(function (el) {
+      var out = '';
+      for (var c = 0; c < 13; c++) {
+        var cells = '';
+        for (var r = 0; r < 7; r++) {
+          var n = (c * 7 + r) % 11;
+          var lv = n === 3 ? 0 : Math.min(4, 1 + ((c + r * 3) % 4));
+          cells += '<span class="hcell' + (lv ? ' l' + lv : '') + '"></span>';
+        }
+        out += '<span class="hcol">' + cells + '</span>';
+      }
+      el.innerHTML = out;
+    });
+
+    /* 2026 年 9 月：1 号是周二，所以第一格空着；周日休息（6/13/20/27）。 */
+    var mins = [0, 45, 0, 190, 120, 0, 310, 180, 95, 0, 240, 150, 0, 280, 200, 110, 0, 230, 165, 160];
+    document.querySelectorAll('[data-cal]').forEach(function (el) {
+      var heads = ['一', '二', '三', '四', '五', '六', '日'].map(function (w) {
+        return '<div class="cal-w">' + w + '</div>';
+      }).join('');
+      var cells = '<div class="cday" style="visibility:hidden"></div>';
+      for (var d = 1; d <= 30; d++) {
+        var m = mins[d % mins.length];
+        var isRest = d % 7 === 6;
+        var cls = 'cday';
+        var sub = '';
+        if (d === 19) {
+          cls = 'cday sel';
+          sub = '2.7h';
+        } else if (m) {
+          cls = 'cday on';
+          sub = (Math.round(m / 60 * 10) / 10) + 'h';
+        } else if (isRest) {
+          cls = 'cday rest';
+          sub = '休';
+        }
+        cells += '<div class="' + cls + '"><span>' + d + '</span>' +
+                 (sub ? '<span class="h">' + sub + '</span>' : '') + '</div>';
+      }
+      el.innerHTML = heads + cells;
+    });
+  })();
+</script>
+
+</body>
+</html>

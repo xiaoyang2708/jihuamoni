@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>折叠的两处改动 · 前后对比</title>
+<style>
+  body {
+    margin: 0; padding: 44px 56px 60px;
+    background: #d8d5d0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #33302a;
+  }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -.4px; }
+  p  { margin: 0 0 30px; font-size: 13px; color: #6d665c; line-height: 1.7; }
+  .row { display: flex; gap: 32px; align-items: flex-start; }
+  .shot { width: 330px; flex: 0 0 auto; }
+  .shot .lb {
+    display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; padding-left: 2px;
+    font-size: 13px; font-weight: 650;
+  }
+  .shot .lb em { font-style: normal; color: #a08a6a; font-weight: 700; }
+  .shot img {
+    display: block; width: 330px;
+    border-radius: 24px;
+    box-shadow: 0 16px 34px rgba(45,38,30,.18), 0 0 0 1px rgba(45,38,30,.07);
+  }
+  /* 只看要对比的那一段：计划看上半截（调整阶段 + 计划详情），
+   * 设置看下半截（六个折叠分组） */
+  .crop { border-radius: 24px; }
+  .crop img { height: 620px; object-fit: cover; }
+  .crop.top img { object-position: 50% 0%; }
+  .crop.bottom img { object-position: 50% 100%; }
+</style>
+</head>
+<body>
+  <h1>折叠的两处改动 · 前后对比</h1>
+  <p>同一份数据、同一个窗口尺寸。左边是上一版，右边是现在。</p>
+
+  <div class="row">
+    <div class="shot">
+      <div class="lb"><em>上一版</em>计划</div>
+      <div class="crop top"><img src="after-plan-two.png" alt="上一版"></div>
+    </div>
+    <div class="shot">
+      <div class="lb"><em>现在</em>计划</div>
+      <div class="crop top"><img src="fix-plan.png" alt="现在"></div>
+    </div>
+    <div class="shot">
+      <div class="lb"><em>上一版</em>设置</div>
+      <div class="crop bottom"><img src="after-settings.png" alt="上一版"></div>
+    </div>
+    <div class="shot">
+      <div class="lb"><em>现在</em>设置</div>
+      <div class="crop bottom"><img src="fix-settings.png" alt="现在"></div>
+    </div>
+  </div>
+</body>
+</html>

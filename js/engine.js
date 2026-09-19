@@ -93,65 +93,198 @@ window.YT = window.YT || {};
    * 第一部分：生成阶段大纲
    * ------------------------------------------------------------------- */
 
-  function buildRoadmap(profile, todayKey) {
-    var total = countStudyDays(todayKey, profile.examDate, profile);
-    var preset = YT.BASE_PRESET[profile.base] || YT.BASE_PRESET.zero;
+  function nextStudyDay(d, profile) {
+    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var guard = 0;
+    while (isRest(x, profile) && guard < 30) {
+      guard++;
+      x = addDays(x, 1);
+    }
+    return x;
+  }
 
-    var sprint = Math.round(total * C.stage.sprintRatio);
-    sprint = Math.max(C.stage.sprintMin, Math.min(C.stage.sprintMax, sprint));
-    if (total - sprint < 10) sprint = Math.max(5, Math.floor(total * 0.25));
+  function prevStudyDay(d, profile) {
+    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var guard = 0;
+    while (isRest(x, profile) && guard < 30) {
+      guard++;
+      x = addDays(x, -1);
+    }
+    return x;
+  }
 
-    var rest = Math.max(0, total - sprint);
-    var base = Math.round(rest * preset.baseRatioOfRest);
-    var strengthen = rest - base;
-
-    var stages = [
-      { key: 'base',       name: YT.STAGE_META.base.name,       studyDays: base,       goal: YT.STAGE_META.base.goal },
-      { key: 'strengthen', name: YT.STAGE_META.strengthen.name, studyDays: strengthen, goal: YT.STAGE_META.strengthen.goal },
-      { key: 'sprint',     name: YT.STAGE_META.sprint.name,     studyDays: sprint,     goal: YT.STAGE_META.sprint.goal },
-    ];
-
-    /* 把学习日数量落到具体日历日期上 */
+  /* 把三个阶段的学习日数量落到具体日期上。 */
+  function stageDatesFromCounts(profile, todayKey, counts) {
     var cursor = parseKey(todayKey);
-    var remaining = total;
-    stages.forEach(function (st) {
-      var used = 0;
-      st.startKey = null;
-      st.endKey = null;
-      while (used < st.studyDays && remaining > 0) {
+    var remaining = (counts.base || 0) + (counts.strengthen || 0) + (counts.sprint || 0);
+    var defs = [
+      { key: 'base',       n: counts.base || 0 },
+      { key: 'strengthen', n: counts.strengthen || 0 },
+      { key: 'sprint',     n: counts.sprint || 0 },
+    ];
+    var stages = defs.map(function (def) {
+      var st = {
+        key: def.key,
+        name: YT.STAGE_META[def.key].name,
+        goal: YT.STAGE_META[def.key].goal,
+        startKey: null,
+        endKey: null,
+        studyDays: 0,
+      };
+      var used = 0, guard = 0;
+      while (used < def.n && remaining > 0 && guard < 1000) {
+        guard++;
         if (!isRest(cursor, profile)) {
           if (st.startKey === null) st.startKey = toKey(cursor);
           st.endKey = toKey(cursor);
           used++;
           remaining--;
         }
-        if (used < st.studyDays) cursor = addDays(cursor, 1);
+        if (used < def.n && remaining > 0) cursor = addDays(cursor, 1);
       }
       /* 下一个阶段从次日开始，否则两个阶段会共用同一天 */
       cursor = addDays(cursor, 1);
       if (st.startKey === null) { st.startKey = ''; st.endKey = ''; }
+      st.studyDays = used;
+      return st;
+    });
+    return stages;
+  }
+
+  /* 系统推荐的阶段安排。
+   * 逻辑：
+   *   1. 冲刺期先按总学习日的 20% 留，至少 14 天、最多 30 天。
+   *   2. 剩下的时间按基础/强化比例分。
+   *   3. 如果课量在当前基础期里装不下，就把基础期往后延到刚好装下；
+   *      但强化期至少保留总学习日的 20%。再装不下，就明确告诉用户要砍课。 */
+  function recommendPhasePlan(profile, todayKey) {
+    var total = countStudyDays(todayKey, profile.examDate, profile);
+    var preset = YT.BASE_PRESET[profile.base] || YT.BASE_PRESET.zero;
+    if (total <= 0) {
+      return {
+        totalDays: 0, baseDays: 0, strengthenDays: 0, sprintDays: 0,
+        baseEnd: '', sprintStart: '', stages: [], courseOverflow: false,
+        requiredBaseDays: 0, minStrengthenDays: 0,
+      };
+    }
+
+    var sprint = Math.round(total * C.stage.sprintRatio);
+    sprint = Math.max(C.stage.sprintMin, Math.min(C.stage.sprintMax, sprint));
+    if (total - sprint < 10) sprint = Math.max(5, Math.floor(total * 0.25));
+    sprint = Math.max(0, Math.min(total, sprint));
+
+    var rest = Math.max(0, total - sprint);
+    var minStrengthen = Math.max(7, Math.round(total * 0.20));
+    if (rest - minStrengthen < 7) minStrengthen = Math.max(0, Math.floor(rest * 0.35));
+
+    var base = Math.round(rest * (preset.baseRatioOfRest || 0.45));
+    base = Math.max(0, Math.min(rest, base));
+
+    /* 听课容量：按基础期每天能分给听课的时间，算一遍至少要多少天。 */
+    var totalLessonMinutes = 0;
+    YT.MODULES.forEach(function (m) {
+      if (m.essay) return;
+      totalLessonMinutes += targetUnits(m, profile) * effectiveLesson(profile);
+    });
+    var perDay = averageCourseMinutes(profile, 'base');
+    var requiredBase = perDay > 0 ? Math.ceil(totalLessonMinutes / perDay) : 999;
+    var overflow = false;
+    if (requiredBase > base) {
+      if (requiredBase <= rest - minStrengthen) {
+        base = requiredBase;
+      } else {
+        base = Math.max(0, rest - minStrengthen);
+        overflow = true;
+      }
+    }
+
+    var strengthen = Math.max(0, rest - base);
+    var stages = stageDatesFromCounts(profile, todayKey, {
+      base: base, strengthen: strengthen, sprint: sprint,
     });
 
-    /* 听课容量体检：这些课在基础期内排得下吗 */
+    return {
+      totalDays: total,
+      baseDays: base,
+      strengthenDays: strengthen,
+      sprintDays: sprint,
+      baseEnd: stages[0].endKey,
+      sprintStart: stages[2].startKey,
+      stages: stages,
+      courseOverflow: overflow,
+      requiredBaseDays: requiredBase,
+      minStrengthenDays: minStrengthen,
+    };
+  }
+
+  function buildRoadmap(profile, todayKey) {
+    var total = countStudyDays(todayKey, profile.examDate, profile);
+    var rec = recommendPhasePlan(profile, todayKey);
+
+    /* 用户自己改过阶段就按用户的日期来；没改过就用推荐值。
+     * 用户填的是"哪天结束/哪天开始"，这里换算成三个阶段的
+     * 学习日数量，再统一落到日期上，休息日不会把阶段切乱。 */
+    var custom = !!(profile.phasePlan && profile.phasePlan.custom
+      && profile.phasePlan.baseEnd && profile.phasePlan.sprintStart);
+    var stages = rec.stages;
+    if (custom) {
+      var baseEnd = profile.phasePlan.baseEnd;
+      var sprintStart = profile.phasePlan.sprintStart;
+      if (baseEnd < todayKey) baseEnd = todayKey;
+      if (sprintStart <= baseEnd) {
+        sprintStart = toKey(nextStudyDay(addDays(parseKey(baseEnd), 1), profile));
+      }
+      if (sprintStart > profile.examDate) sprintStart = profile.examDate;
+
+      var baseDays = countStudyDays(todayKey, toKey(addDays(parseKey(baseEnd), 1)), profile);
+      var strengthenDays = countStudyDays(
+        toKey(addDays(parseKey(baseEnd), 1)), sprintStart, profile);
+      if (baseDays > total) baseDays = total;
+      if (baseDays + strengthenDays > total) strengthenDays = Math.max(0, total - baseDays);
+      var sprintDays = Math.max(0, total - baseDays - strengthenDays);
+      stages = stageDatesFromCounts(profile, todayKey, {
+        base: baseDays, strengthen: strengthenDays, sprint: sprintDays,
+      });
+    }
+
+    var base = stages[0].studyDays;
+    var strengthen = stages[1].studyDays;
+    var sprint = stages[2].studyDays;
+
+    /* 听课容量体检：这些课在基础期 + 强化期排得下吗 */
     var totalLessonMinutes = 0;
     YT.MODULES.forEach(function (m) {
       /* 申论有自己的预算线，不算进行测的听课体检里 */
       if (m.essay) return;
       totalLessonMinutes += targetUnits(m, profile) * effectiveLesson(profile);
     });
-    /* 听课不是只在基础期——没听完的课会一路排到强化期。
-     * 所以容量要把强化期也算进来，否则课多的人会被误判成"排不下"。 */
     var baseCap = base * averageCourseMinutes(profile, 'base');
     var strCap = strengthen * averageCourseMinutes(profile, 'strengthen');
     var capacity = baseCap + strCap;
     var capacityPerDay = averageCourseMinutes(profile, 'base');
     var needDays = capacityPerDay > 0 ? Math.ceil(totalLessonMinutes / capacityPerDay) : 999;
     var freeDays = Math.floor(capacity / (capacityPerDay || 1));
+    var fit = totalLessonMinutes <= capacity * 1.15;
 
     return {
       startKey: todayKey,
       totalStudyDays: total,
       stages: stages,
+      phasePlan: {
+        custom: custom,
+        baseEnd: stages[0].endKey,
+        sprintStart: stages[2].startKey,
+        recommended: {
+          baseEnd: rec.baseEnd,
+          sprintStart: rec.sprintStart,
+          baseDays: rec.baseDays,
+          strengthenDays: rec.strengthenDays,
+          sprintDays: rec.sprintDays,
+        },
+        courseOverflow: !fit,
+        requiredBaseDays: rec.requiredBaseDays,
+        minStrengthenDays: rec.minStrengthenDays,
+      },
       lessonCheck: {
         totalMinutes: Math.round(totalLessonMinutes),
         needDays: needDays,
@@ -160,7 +293,7 @@ window.YT = window.YT || {};
         capacityMinutes: Math.round(capacity),
         /* 容量是按平均值估的，实际排课会把零头也用上，所以给 10% 的余量，
          * 否则"刚好差一点"的情况会一直亮着警告。 */
-        fit: totalLessonMinutes <= capacity * 1.15,
+        fit: fit,
       },
       generatedAt: new Date().toISOString(),
     };
@@ -202,7 +335,17 @@ window.YT = window.YT || {};
   }
 
   function stageOf(dateKey, roadmap) {
-    if (!roadmap || !roadmap.stages) return 'base';
+    if (!roadmap) return 'base';
+    var pp = roadmap.phasePlan;
+    if (pp && (pp.baseEnd || pp.sprintStart)) {
+      if (!pp.sprintStart) return pp.baseEnd && dateKey <= pp.baseEnd ? 'base' : 'strengthen';
+      if (dateKey < pp.sprintStart) {
+        if (!pp.baseEnd || dateKey <= pp.baseEnd) return 'base';
+        return 'strengthen';
+      }
+      return 'sprint';
+    }
+    if (!roadmap.stages) return 'base';
     for (var i = 0; i < roadmap.stages.length; i++) {
       var st = roadmap.stages[i];
       if (st.startKey && dateKey >= st.startKey && dateKey <= st.endKey) return st.key;
@@ -212,10 +355,11 @@ window.YT = window.YT || {};
   }
 
   /* ---------------------------------------------------------------------
-   * 阶段推进：不看日历，看学完了没有
+   * 阶段完成度：只用于提醒，不再硬卡阶段
    *
-   * 用户的原话：专项没做完就让人开始刷套卷，这个尴尬必须避免。
-   * 所以阶段的开关是三条硬条件，而不是"到了几月几号"。
+   * 现在每天排什么由用户定的阶段日期（或系统推荐值）决定。
+   * allLessonsDone / readyModuleCount 仍然有用——到点了但没听完、
+   * 没刷够时，计划页和今日页要据此提醒用户砍课或取舍。
    * ------------------------------------------------------------------- */
 
   /* 每个模块累计做完了多少组（半完成的算半组） */
@@ -257,6 +401,8 @@ window.YT = window.YT || {};
     return n;
   }
 
+  /* 旧的"按进度卡阶段"判断，保留给兼容和提醒逻辑用；
+   * 每日排课现在走 stageOf(dateKey, roadmap)。 */
   function stageFor(profile, progress, sets, daysLeft) {
     /* 快到考试了就别管进度了，直接上套卷——不然会一路练到考前 */
     if (daysLeft !== undefined && daysLeft !== null && daysLeft <= C.stage.forceSprintDays) return 'sprint';
@@ -951,13 +1097,10 @@ window.YT = window.YT || {};
            * 再叠一层"上周完成率低"的话，0.6 × 0.6 = 0.36，
            * 等于回来第一天就给三成任务——那不叫接上，那叫劝退。 */
           var dayFactor = (ri.active && k === todayKey) ? ri.factor : rf.factor;
-          /* 阶段由"到这天为止预计学完了多少"决定，快考试了就直接进冲刺 */
-          var leftDays = countStudyDays(k, profile.examDate, profile);
-          /* 冲刺窗口不能把整个计划吃掉。备考期很短的时候（比如只剩一个月），
-           * 无条件进冲刺会导致一节课都不排——那不是冲刺，那是放弃。 */
-          var totalDays = roadmap.totalStudyDays || 100;
-          var forceDays = Math.max(7, Math.min(C.stage.forceSprintDays, Math.floor(totalDays * 0.25)));
-          var stg = stageFor(profile, projected, projSets, leftDays <= forceDays ? 0 : 999);
+          /* 阶段按用户定（或系统推荐）的日期走。
+           * 进度不再硬卡阶段——没听完的课会在强化期继续排，
+           * 到了冲刺期还没排完的课，由计划页明确提示"建议砍课"。 */
+          var stg = stageOf(k, roadmap);
           day = {
             date: k, isRest: false, stage: stg,
             tasks: buildTasks(d, k, state, roadmap, {
@@ -973,7 +1116,10 @@ window.YT = window.YT || {};
         /* 已有的天也要计入，否则后面的排课会跟它对不上 */
         (day.tasks || []).forEach(function (t) {
           if (t.kind === 'course' && t.units) {
-            projected[t.moduleId] = (projected[t.moduleId] || 0) + t.units;
+            /* 只完成一半的课，先按半节计入；剩下那半节会有一条"续听"
+             * 任务跟在后面，两条合起来正好是一节，不会多算也不会漏算。 */
+            var u = t.status === 'half' ? t.units / 2 : t.units;
+            projected[t.moduleId] = (projected[t.moduleId] || 0) + u;
           } else if (t.kind === 'practice') {
             var st = t.sets || t.amounts || 0;
             if (st) projSets[t.moduleId] = (projSets[t.moduleId] || 0) + st;
@@ -1038,6 +1184,33 @@ window.YT = window.YT || {};
       };
     });
 
+    /* 排完之后还有多少节课没能塞进去。
+     * 光看"总课时 vs 容量"是不够的：每天排的听课量是按当天时间的固定比例算的，
+     * 课排不完的时候，改少几节只是让后面的科目顶上来，日期一天都不会动。
+     * 所以这里直接数"排进去多少节 / 一共要多少节"，是就是，不是就不是。 */
+    var planned = {};
+    Object.keys(probe.days).forEach(function (k) {
+      var day = probe.days[k];
+      if (day.isRest) return;
+      (day.tasks || []).forEach(function (t) {
+        if (t.kind !== 'course' || !t.units) return;
+        planned[t.moduleId] = (planned[t.moduleId] || 0) + t.units;
+      });
+    });
+    var courseTarget = 0, coursePlanned = 0, courseLeftMinutes = 0;
+    YT.MODULES.forEach(function (m) {
+      /* 申论是独立的一条线，不参与行测的"课排不完"警告和砍课建议。 */
+      if (m.essay) return;
+      var need = targetUnits(m, profile);
+      if (need <= 0.001) return;
+      var got = planned[m.id] || 0;
+      courseTarget += need;
+      coursePlanned += Math.min(got, need);
+      if (got < need - 0.001) {
+        courseLeftMinutes += (need - got) * effectiveLesson(profile);
+      }
+    });
+
     return {
       courseDoneKey: lastCourseKey,
       strengthenKey: firstStage.strengthen || null,
@@ -1045,6 +1218,13 @@ window.YT = window.YT || {};
       stages: stages,
       examKey: profile.examDate,
       studyDaysToExam: countStudyDays(todayKey, profile.examDate, profile),
+      /* 排不进去的课。units > 0 说明"按现在的时间，课根本听不完" */
+      courseLeft: {
+        units: Math.round((courseTarget - coursePlanned) * 10) / 10,
+        minutes: Math.round(courseLeftMinutes),
+        target: Math.round(courseTarget * 10) / 10,
+        planned: Math.round(coursePlanned * 10) / 10,
+      },
     };
   }
 
@@ -1343,10 +1523,17 @@ window.YT = window.YT || {};
      * 刷题和申论是弹性的，今天没做就过去了——补回来只是在堆任务，
      * 而堆任务正是让备考的人放弃的原因。 */
     var pending = (day.tasks || []).filter(function (t) {
-      /* 主动跳过的不顺延——已经明确说了今天不做，再搬到明天是耍赖 */
-      return t.status === 'todo' && t.kind === 'course' && !t.noSeq && !t.skip;
+      /* 主动跳过的不顺延——已经明确说了今天不做，再搬到明天是耍赖。
+       * "续听"是半节课剩下的一半，虽然不占节次编号，但必须接上。 */
+      return t.status === 'todo' && t.kind === 'course' &&
+             (!t.noSeq || t.continuation) && !t.skip;
     });
     if (!pending.length) return [];
+
+    /* 补课优先：如果昨天有半节课没听完，先把它放到下一天最前面，
+     * 不要被当天已有的任务挤掉。 */
+    pending = pending.filter(function (t) { return t.continuation; })
+      .concat(pending.filter(function (t) { return !t.continuation; }));
 
     var moved = [];
     var d = addDays(parseKey(fromKey), 1);
@@ -1367,15 +1554,16 @@ window.YT = window.YT || {};
       var used = (target.tasks || []).reduce(function (s, t) { return s + t.minutes; }, 0);
       var room = Math.round(cap.total * C.carryOverCap) - used;
 
-      while (pending.length && room > 0) {
+      while (pending.length) {
         var t = pending.shift();
-        if (t.minutes <= room) {
-          room -= t.minutes;
+        if (t.continuation || t.minutes <= room) {
+          if (!t.continuation) room -= t.minutes;
           var copy = JSON.parse(JSON.stringify(t));
           copy.id = nextId(k);
           copy.carried = true;
           copy.originDate = fromKey;
-          target.tasks.push(copy);
+          if (t.continuation) target.tasks.unshift(copy);
+          else target.tasks.push(copy);
           moved.push({ task: t, to: k });
         } else {
           break;
@@ -1417,6 +1605,8 @@ window.YT = window.YT || {};
     allLessonsDone: allLessonsDone,
     readyModuleCount: readyModuleCount,
     stageFor: stageFor,
+    allLessonsDone: allLessonsDone,
+    recommendPhasePlan: recommendPhasePlan,
     forecast: forecast,
     dayStats: dayStats,
     weekStats: weekStats,
