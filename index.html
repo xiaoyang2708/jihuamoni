@@ -31,6 +31,8 @@
   </div>
   <style>@keyframes bootspin{to{transform:rotate(360deg)}}</style>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <!-- 删掉清单条目后浮出来的后悔药，6 秒后自己消失 -->
+  <div id="undobar" class="undo-bar" role="status" aria-live="polite"></div>
   <div id="overlay" class="overlay hidden"></div>
 
   <script>
@@ -113,6 +115,9 @@
   <script src="js/stats.js"></script>
   <script src="js/archive.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/feedback.js"></script>
+  <script src="js/focus.js"></script>
+  <script src="js/manual.js"></script>
   <!-- 体验模式。正式上架时删掉这一行，再按 js/demo.js 顶部的清单删干净。 -->
   <script src="js/demo.js"></script>
   <script src="js/app.js"></script>

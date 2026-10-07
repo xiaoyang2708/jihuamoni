@@ -12,6 +12,9 @@
   var MODULES = window.YT.MODULES;
   var MODULE_BY_ID = window.YT.MODULE_BY_ID;
   var CFG = window.YT.CONFIG;
+  var manualApi = window.YT.manual;   // 自己排：清单
+  var focusApi = window.YT.focus;     // 专注内核（番茄钟）
+  var feedbackApi = window.YT.feedback;
 
   /* ?fresh=1：给朋友试用时用的一次性入口。
    * 清掉本地数据，回到问卷第一页；清完就把参数从网址里去掉，
@@ -150,6 +153,60 @@
     confirmCb = null;
     overlay.className = 'overlay hidden';
     overlay.innerHTML = '';
+  }
+
+  /* ---------------------------------------------------------------------
+   * 删除后的后悔药
+   *
+   * 删清单条目之前把那几天原样存一份，6 秒内点「撤销」就整体放回去。
+   * 打卡、专注分钟、实际用时、排序全都在里面，不是"再帮你加一条"。
+   * ------------------------------------------------------------------- */
+  var undoBuf = null;
+  var undoBarTimer = null;
+
+  function undoBarEl() { return document.getElementById('undobar'); }
+
+  function hideUndoBar() {
+    var el = undoBarEl();
+    if (el) el.classList.remove('show');
+    if (undoBarTimer) { clearTimeout(undoBarTimer); undoBarTimer = null; }
+  }
+
+  /* 动手之前先把那几天存一份——删完再存存到的是"什么都没有"。 */
+  function snapshotDays(keys) {
+    var snap = {};
+    (keys || []).forEach(function (k) {
+      snap[k] = state.days[k] ? JSON.parse(JSON.stringify(state.days[k])) : null;
+    });
+    return snap;
+  }
+
+  function offerUndo(snap, label) {
+    undoBuf = { snap: snap };
+    var el = undoBarEl();
+    if (!el) return;
+    el.innerHTML = '<span class="ub-t">' + esc(label || '已删除') + '</span>' +
+      '<button class="ub-b" data-act="undo-do">撤销</button>';
+    el.classList.add('show');
+    if (undoBarTimer) clearTimeout(undoBarTimer);
+    undoBarTimer = setTimeout(function () {
+      undoBuf = null;
+      hideUndoBar();
+    }, 6000);
+  }
+
+  function applyUndo() {
+    if (!undoBuf) return false;
+    var snap = undoBuf.snap;
+    Object.keys(snap).forEach(function (k) {
+      if (snap[k]) state.days[k] = snap[k];
+      else delete state.days[k];
+    });
+    undoBuf = null;
+    hideUndoBar();
+    save();
+    reRender();
+    return true;
   }
 
   /* 一次性说明弹窗，只有一个"知道了"。
@@ -432,6 +489,11 @@
   /* 使用模式。老数据里没有这个字段的，按半自动算。 */
   function usageMode() {
     return E.usageModeOf(state.profile);
+  }
+
+  /* 自己排：独立的清单分支。全项目只走 engine 的这一个判断。 */
+  function isManualMode() {
+    return E.isManual(state.profile);
   }
 
   /* 当前主题。老档案里没有 theme 字段，落到默认那一个。
@@ -796,6 +858,179 @@
 
   var switchDraft = null;
 
+  /* ---------------------------------------------------------------------
+   * 切成「自己排」：先问一句任务怎么办
+   *
+   * 保留：旧任务一律当"用户自己写的"处理，系统永不覆盖。
+   * 清空：删掉所有任务记录，清单从零开始（二次确认）。
+   * ------------------------------------------------------------------- */
+
+  function openModeChoice() {
+    var has = manualApi.hasContent(state);
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:420px">' +
+        '<div class="modal-title">切成「自己排」</div>' +
+        '<div class="modal-msg">' +
+          (has
+            ? '系统以后一条内容都不排，清单全部由你自己写。现在这几天的任务怎么处理？'
+            : '系统以后一条内容都不排。你自己列清单、自己打卡、用番茄钟计时。') +
+        '</div>' +
+        (has
+          ? '<div class="menu-list">' +
+              '<button class="menu-item" data-act="mode-keep">保留现有任务当清单' +
+                '<small>旧任务全部算你自己写的，系统永不覆盖</small></button>' +
+              '<button class="menu-item danger" data-act="mode-clear">清空，重新开始' +
+                '<small>删掉所有任务记录，清单从零开始</small></button>' +
+            '</div>'
+          : '') +
+        '<div class="row" style="gap:10px;margin-top:14px">' +
+          '<button class="btn grow" data-act="mode-cancel">取消</button>' +
+          (has ? '' : '<button class="btn grow primary" data-act="mode-keep">开始自己排</button>') +
+        '</div>' +
+      '</div>';
+  }
+
+  function switchToManual(keep) {
+    if (keep) manualApi.keepAsChecklist(state);
+    else manualApi.clearAll(state);
+    state.profile.mode = 'manual';
+    manualApi.settings(state);
+    state.forecast = null;
+    state.cutPlan = null;
+    state.weekMark = {};
+    save();
+    closeModal();
+    go('today');
+    toast(keep ? '已经切成自己排，旧任务都当清单留着了' : '清单清空了，开始自己排');
+  }
+
+  /* ---------------------------------------------------------------------
+   * 完成时确认"实际用了多久"
+   *
+   * 口径是"计时器为王"：默认值优先取这条已经计时过的时长，其次才是预计时长。
+   * 用户自报的时长只是兜底——统计里跟计时器时长分开显示，还带单条上限。
+   * ------------------------------------------------------------------- */
+
+  var ACTUAL_MAX = 480;   // 单条最多 8 小时，防手滑填 99999
+
+  function actualChips(focus, plan) {
+    var base = focus > 0 ? focus : plan;
+    var chips = [];
+    if (base > 0) {
+      [0.5, 1, 1.5].forEach(function (x) {
+        var v = Math.max(5, Math.round(base * x / 5) * 5);
+        if (v <= ACTUAL_MAX && chips.indexOf(v) === -1) chips.push(v);
+      });
+    } else {
+      chips = [15, 30, 60, 90];
+    }
+    return chips.sort(function (a, b) { return a - b; });
+  }
+
+  function openActualDialog(dateKey, taskId) {
+    var t = manualApi.find(state, dateKey, taskId);
+    if (!t) return;
+    state.ui.actualDraft = { dateKey: dateKey, taskId: taskId };
+    renderActualDialog();
+  }
+
+  function renderActualDialog() {
+    var d = state.ui.actualDraft;
+    if (!d) return;
+    var t = manualApi.find(state, d.dateKey, d.taskId);
+    if (!t) { state.ui.actualDraft = null; return; }
+    var focus = Number(t.focusMinutes) || 0;
+    var plan = Number(t.minutes) || 0;
+    var hint = focus > 0 ? ('这条已经计时 ' + focus + ' 分钟。')
+             : plan > 0 ? ('你预计 ' + plan + ' 分钟。')
+             : '填个大概就行。';
+
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:420px">' +
+        '<div class="modal-title">「' + esc(t.title) + '」实际用了多久？</div>' +
+        '<div class="modal-msg">' + esc(hint) + '</div>' +
+        '<div class="chips" style="margin-top:14px">' +
+          actualChips(focus, plan).map(function (v) {
+            return '<button class="chip" data-act="m-actual-pick" data-v="' + v + '">' + v + ' 分钟</button>';
+          }).join('') +
+        '</div>' +
+        '<div class="custom-time" style="margin-top:12px">' +
+          '<span>或自己填</span>' +
+          '<input type="number" min="1" max="' + ACTUAL_MAX + '" inputmode="numeric" id="actual-input" placeholder="分钟">' +
+          '<span>分钟</span>' +
+        '</div>' +
+        '<div class="row" style="gap:10px;margin-top:16px">' +
+          '<button class="btn grow" data-act="m-actual-skip">跳过</button>' +
+          '<button class="btn grow primary" data-act="m-actual-save">就按这个</button>' +
+        '</div>' +
+        '<div class="footnote">最多记 ' + ACTUAL_MAX + ' 分钟（8 小时）。跳过不记自报，实际时长按计时器算。</div>' +
+      '</div>';
+  }
+
+  /* value 为空 / null 表示"跳过"（不记自报）。 */
+  function saveActual(value) {
+    var d = state.ui.actualDraft;
+    if (!d) return closeModal();
+    var t = manualApi.find(state, d.dateKey, d.taskId);
+    if (t) {
+      var n = Number(value);
+      if (value === null || value === undefined || value === '' || !isFinite(n) || n <= 0) {
+        t.actualMinutes = null;
+      } else {
+        t.actualMinutes = Math.min(ACTUAL_MAX, Math.max(1, Math.round(n)));
+      }
+    }
+    state.ui.actualDraft = null;
+    save();
+    closeModal();
+    reRender();
+    if (t && t.actualMinutes) toast('记下了：' + t.actualMinutes + ' 分钟');
+  }
+
+  /* ---------------------------------------------------------------------
+   * 删自定义标签前的选择：连记录一起删 / 只删标签
+   * ------------------------------------------------------------------- */
+
+  function openTagRename(id) {
+    var tag = ((state.manual && state.manual.tags) || []).filter(function (t) { return t.id === id; })[0];
+    if (!tag) return;
+    state.ui.tagRename = id;
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:400px">' +
+        '<div class="modal-title">给「' + esc(tag.name) + '」改个名字</div>' +
+        '<div class="modal-msg">最多 8 个字。改完，用它记过的条目会跟着显示新名字。</div>' +
+        '<input class="input" type="text" id="tag-name-input" maxlength="8" value="' + esc(tag.name) + '" style="margin-top:12px">' +
+        '<div class="row" style="gap:10px;margin-top:16px">' +
+          '<button class="btn grow" data-act="tag-rename-cancel">取消</button>' +
+          '<button class="btn grow primary" data-act="tag-rename-save">改好了</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function openTagDelete(id) {
+    var tag = ((state.manual && state.manual.tags) || []).filter(function (t) { return t.id === id; })[0];
+    if (!tag) return;
+    var use = manualApi.tagUsage(state, id);
+    state.ui.tagDelete = id;
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:420px">' +
+        '<div class="modal-title">删掉「' + esc(tag.name) + '」？</div>' +
+        '<div class="modal-msg">用这个标签记过的有 <b>' + use.items + '</b> 条清单、合计 <b>' +
+          fmtMinutes(use.minutes) + '</b>。要怎么删？</div>' +
+        '<div class="menu-list">' +
+          '<button class="menu-item" data-act="tag-del-only">只删标签，记录变「未指定」' +
+            '<small>清单条目留着，总时长不变，只是不再进这个标签的分布</small></button>' +
+          '<button class="menu-item danger" data-act="tag-del-records">连记录一起删' +
+            '<small>删掉这些清单条目和它们的计时记录，时长一并减少，不可恢复</small></button>' +
+        '</div>' +
+        '<button class="btn block ghost" style="margin-top:12px" data-act="tag-del-cancel">取消</button>' +
+      '</div>';
+  }
+
   function openSwitchExam() {
     var p = state.profile;
     var next = new Date();
@@ -1061,10 +1296,14 @@
 
     var note = '';
     if (restart && archDraft.info) {
-      note = '<div class="arch-note">中间那些天的旧计划已经清掉了，不用补。' +
-        (archDraft.info.level === 'long'
-          ? '今天先按六成的量来，接上比补上重要。'
-          : '今天先按八成的量来，找回手感。') + '</div>';
+      /* 自己排没有"系统排的量"可清、也没得减——只说你完成了什么、从哪接上。 */
+      note = isManualMode()
+        ? '<div class="arch-note">清单是你自己写的，一条都没动。' +
+            '想接着学就从下面挑两件，接上比补上重要。</div>'
+        : '<div class="arch-note">中间那些天的旧计划已经清掉了，不用补。' +
+            (archDraft.info.level === 'long'
+              ? '今天先按六成的量来，接上比补上重要。'
+              : '今天先按八成的量来，找回手感。') + '</div>';
     }
 
     overlay.className = 'overlay';
@@ -1112,6 +1351,33 @@
     var tk = todayKey();
     var picks = archDraft.items.filter(function (it) { return it.on; }).map(function (it) { return it.item; });
     if (!picks.length) return 0;
+
+    /* 自己排：写进去的就是普通清单条目，跟手写的一条没有区别。 */
+    if (isManualMode()) {
+      var made = 0;
+      var mday = state.days[tk];
+      var have = (mday && mday.tasks) || [];
+      picks.forEach(function (r) {
+        var dup = have.some(function (t) {
+          return t.review && t.moduleId === r.moduleId;
+        });
+        if (dup) return;
+        var isCourseReview = r.kind === 'course';
+        var res = manualApi.add(state, tk, {
+          title: r.title,
+          moduleId: r.moduleId,
+          minutes: r.minutes,
+          note: r.detail || '',
+          work: isCourseReview ? { units: r.units || 1 }
+                              : { amount: r.amount || 10 },
+        });
+        if (res && res.task) {
+          res.task.review = true;
+          made++;
+        }
+      });
+      return made;
+    }
 
     if (!state.days[tk]) E.ensureAhead(state, tk, 1);
     var day = state.days[tk];
@@ -1671,6 +1937,16 @@
 
     state.roadmap = E.buildRoadmap(profile, tk);
 
+    /* 自己排：不生成任何任务，也不动用户写的清单。
+     * 只把 roadmap 建出来当倒计时参考。 */
+    if (isManualMode()) {
+      state.forecast = null;
+      state.cutPlan = null;
+      save();
+      if (onDone) onDone();
+      return;
+    }
+
     /* 清掉旧的安排重新排：今天之前的一律保留（那是历史），
      * 今天及以后只保留"用户已经动过"的天，其余全部重排。
      * 只删今天之后是不够的——那样改了参数以后，今天的任务还是旧的那份。 */
@@ -1721,7 +1997,8 @@
   function paintRegenNote() {
     var el = document.querySelector('.regen-note');
     if (!el) return;
-    el.textContent = regenNote ? regenNote.text : '设置改完会自动重排后面的计划';
+    el.textContent = regenNote ? regenNote.text
+      : (isManualMode() ? '清单不会因为你改设置被动过' : '设置改完会自动重排后面的计划');
     el.className = 'regen-note' + (regenNote ? (regenNote.busy ? ' busy' : ' done') : '');
   }
 
@@ -1739,6 +2016,13 @@
     if (!state.profile) return;
     var before = planSnapshot();
     generateAll();
+    /* 自己排没有"系统排的东西"可重排，改成"已经存好了"就够。 */
+    if (isManualMode()) {
+      setRegenNote(regenDoneText || '已经存好了');
+      regenDoneText = null;
+      reRenderKeepPlace();
+      return;
+    }
     setRegenNote(regenDoneText || planDiffShort(before));
     regenDoneText = null;
     reRenderKeepPlace();
@@ -1978,6 +2262,20 @@
 
   function dailyRoll() {
     var tk = todayKey();
+
+    /* 自己排：跨周重排、断更清理、任务顺延、进度预测一律不做。
+     * 系统永不改写用户亲手写的条目。
+     * 但"断了很久回来"这件事对自己排的人一样成立——只是不清理、不减量，
+     * 把学习档案端到他面前就够了：你完成了什么、从哪儿接上。 */
+    if (isManualMode()) {
+      var mri = E.restartInfo(state, tk);
+      if (mri && mri.active && !E.isRest(E.parseKey(tk), state.profile) &&
+          state.ui.restartSeenOn !== tk) {
+        state.ui.restartSeenOn = tk;
+        pendingRestart = mri;
+      }
+      return;
+    }
 
     /* 老数据里"完成一半"的课没有续听任务，先补齐再走顺延。 */
     syncAllHalfCourses();
@@ -2256,7 +2554,7 @@
       body += '<button class="opt ' + (draft.mode === 'semi' ? 'on' : '') + '" data-act="pick-mode" data-v="semi">' +
               '<div class="t">半自动（推荐）</div><div class="d">系统排，但每天可以自己换、跳过、加练。适合大多数人备考。</div></button>';
       body += '<button class="opt ' + (draft.mode === 'manual' ? 'on' : '') + '" data-act="pick-mode" data-v="manual">' +
-              '<div class="t">自己排</div><div class="d">系统只排听课，刷题和复盘都由你自己安排。适合已经知道自己缺什么、有自己的节奏的人。</div></button>';
+              '<div class="t">自己排</div><div class="d">系统一条内容都不排。你自己列清单、自己打卡、用番茄钟计时。适合已经知道自己要做什么、只想找个地方记着的人。</div></button>';
 
     } else if (step === 6) {
       body = '<h2>每个模块你打算听多少节课？</h2>' +
@@ -2316,6 +2614,16 @@
     state.profile = profile;
     state.days = {};
     state.roadmap = null;
+
+    /* 自己排不排内容，也就没有什么要"推算"的——直接进清单页，不放那段动画。 */
+    if (profile.mode === 'manual') {
+      generateAll();
+      state.ui.screen = 'today';
+      save();
+      render();
+      toast('清单已经准备好了');
+      return;
+    }
 
     generateWithOverlay(function () {
       state.ui.screen = 'today';
@@ -2421,8 +2729,18 @@
     return head + out;
   }
 
+  /* 自己排的今日：一整份清单，系统不往里加任何东西。 */
+  function renderTodayManual(tk) {
+    /* 体验模式那条工具条照常挂在最上面，不然自己排下就没法模拟了。 */
+    var demoBar = demoOn() ? window.YT.demo.bar() : '';
+    app.innerHTML = '<div class="screen">' + demoBar + manualApi.todayHtml(state, tk) + '</div>';
+    renderTabbar('today');
+    return true;
+  }
+
   function renderToday() {
     var tk = todayKey();
+    if (isManualMode()) return renderTodayManual(tk);
     if (!state.days[tk]) { E.ensureAhead(state, tk, 14); save(); }
     var day = state.days[tk];
     var profile = state.profile;
@@ -2792,6 +3110,11 @@
 
   function renderPlan() {
     var tk = todayKey();
+    if (isManualMode()) {
+      app.innerHTML = '<div class="screen">' + manualApi.planHtml(state, tk) + '</div>';
+      renderTabbar('plan');
+      return true;
+    }
     var profile = state.profile;
     var rm = state.roadmap;
     if (!rm) { E.ensureAhead(state, tk, 14); rm = state.roadmap; }
@@ -3171,8 +3494,90 @@
    * 统计
    * ------------------------------------------------------------------- */
 
+  /* 自己排的统计：只讲"你做了什么"——完成、专注、时间分布。
+   * 系统排课那套（档位、预测、砍课）在自己排下没有意义，不显示。 */
+  function renderStatsManual(tk) {
+    var st = S.streak(state, tk);
+    var c = S.checklistTotals(state, tk);
+    var f = S.focusTotals(state, tk);
+    var timer = S.timerMinutes(state, tk);
+    var acc = S.estimateAccuracy(state, tk);
+    var scores = state.scores || [];
+    var accText = acc.bias === null ? '—' : ('±' + Math.round(acc.bias * 100) + '%');
+    /* 学习档案在自己排下同样成立（archive 已经认清单条目）。
+     * 它回答的是"我学到哪了"，跟"系统排得对不对"无关。 */
+    var archQ = window.YT.archive.build(state, tk, 'base');
+    var archText = archQ.everStudied
+      ? (archQ.gap === 0 ? '今天学过' : '上次学习是 ' + archQ.gap + ' 天前') +
+        ' · 累计 ' + archQ.questionTotal + ' 题'
+      : '还没有记录，打过一次卡这里就活了';
+
+    app.innerHTML = '<div class="screen">' +
+      '<div class="top">' +
+        '<h1>统计</h1><div class="sub">只算你真的学了的：计时器 + 完成时确认</div></div>' +
+
+      '<div class="section"><div class="card">' +
+        '<div class="row between">' +
+          '<div><div style="font-weight:600">学习档案</div>' +
+          '<div class="tiny muted" style="margin-top:2px">' + esc(archText) + '</div></div>' +
+          '<button class="btn sm" data-act="arch-open">查看</button>' +
+        '</div>' +
+      '</div></div>' +
+
+      '<div class="section"><div class="metrics">' +
+        '<div class="metric"><div class="v">' + st + '</div><div class="k">连续打卡</div></div>' +
+        '<div class="metric"><div class="v">' + c.days + '</div><div class="k">学习天数</div></div>' +
+        '<div class="metric"><div class="v">' + c.doneItems + '</div><div class="k">完成项数</div></div>' +
+      '</div>' +
+      '<div class="footnote">清单共 ' + c.items + ' 项，完成 ' + c.doneItems + ' 项。</div></div>' +
+
+      '<div class="section"><p class="section-title">计时器专注 · 累计</p><div class="card">' +
+        '<div class="metrics">' +
+          '<div class="metric"><div class="v">' + (Math.round(timer / 6) / 10) + '</div><div class="k">专注小时</div></div>' +
+          '<div class="metric"><div class="v">' + f.pomodoros + '</div><div class="k">番茄个数</div></div>' +
+          '<div class="metric"><div class="v">' + f.days + '</div><div class="k">专注天数</div></div>' +
+        '</div>' +
+        '<div class="footnote">番茄钟 / 正计时产生的时长，是最可信的一层；番茄只数走完的那一个。</div>' +
+      '</div></div>' +
+
+      '<div class="section"><p class="section-title">实际用时</p><div class="card">' +
+        '<div class="metrics">' +
+          '<div class="metric"><div class="v">' + (Math.round(c.actualMinutes / 6) / 10) + '</div><div class="k">实际小时</div></div>' +
+          '<div class="metric"><div class="v">' + accText + '</div><div class="k">估时偏差</div></div>' +
+        '</div>' +
+        '<div class="footnote">实际用时是你在完成时确认的（没确认就退回计时器时长）；' +
+          '预计时长只用来排期，不算学习时长。' +
+          (acc.samples ? '（偏差基于 ' + acc.samples + ' 条既有预计、也有实际的条目）' : '') +
+        '</div>' +
+      '</div></div>' +
+
+      subjectDistHtml(tk) +
+      feedbackBlockHtml(tk) +
+
+      (scores.length
+        ? '<div class="section"><div class="card">' +
+            '<div class="row between">' +
+              '<div><div style="font-weight:600">成绩记录</div>' +
+              '<div class="tiny muted" style="margin-top:2px">已记录 ' + scores.length +
+                ' 次。自己心里有数就好，这里不给建议。</div></div>' +
+              '<button class="btn sm primary" data-act="score-open">记录</button>' +
+            '</div>' +
+          '</div></div>'
+        : '') +
+
+      '<div class="section"><p class="section-title">累计</p><div class="card">' +
+        '<div class="row between" style="padding:5px 0"><span class="muted tiny">完成项数</span><b>' + c.doneItems + ' 项</b></div>' +
+        '<div class="row between" style="padding:5px 0"><span class="muted tiny">计时器专注</span><b>' + (timer ? fmtMinutes(timer) : '—') + '</b></div>' +
+        '<div class="row between" style="padding:5px 0"><span class="muted tiny">自报实际</span><b>' + (c.selfMinutes ? fmtMinutes(c.selfMinutes) : '—') + '</b></div>' +
+        '<div class="row between" style="padding:5px 0"><span class="muted tiny">预计合计（只用于排期）</span><b>' + (c.plannedMinutes ? fmtMinutes(c.plannedMinutes) : '—') + '</b></div>' +
+      '</div></div>' +
+      '</div>';
+    renderTabbar('mine');
+  }
+
   function renderStats() {
     var tk = todayKey();
+    if (isManualMode()) return renderStatsManual(tk);
     var o = S.overall(state, tk);
     var st = S.streak(state, tk);
     var timing = S.moduleTiming(state);
@@ -3340,10 +3745,13 @@
         var cr = t.status === 'done' ? 1 : t.status === 'half' ? 0.5 : 0;
         if (!cr) return;
         out.minutes += t.minutes * cr;
-        if (t.kind === 'practice') out.questions += (t.amount || 0) * cr;
-        else if (t.kind === 'essay') out.questions += (t.amounts || 1) * cr;
-        else if (t.kind === 'course') out.lessons += (t.units || 1) * cr;
-        else if (t.kind === 'paperset') out.papers += cr;
+        /* 自己排的清单条目也走这里：带题量/节数的照样计入累计。 */
+        var w = E.taskWork(t);
+        if (!w) return;
+        if (w.type === 'practice') out.questions += (w.amount || 0) * cr;
+        else if (w.type === 'essay') out.questions += (w.count || 1) * cr;
+        else if (w.type === 'course') out.lessons += (w.units || 1) * cr;
+        else if (w.type === 'paperset') out.papers += cr;
       });
     });
     out.questions = Math.round(out.questions);
@@ -3355,13 +3763,17 @@
 
   /* 某一天学了多久（分钟） */
   function dayMinutes(k) {
+    /* 自己排：按"实际用了多久"算（自报 > 计时器），预计时长不参与。 */
+    if (isManualMode()) return S.dayStudyMinutes(state, k);
     var day = state.days[k];
-    if (!day) return 0;
     var m = 0;
-    (day.tasks || []).forEach(function (t) {
+    ((day && day.tasks) || []).forEach(function (t) {
       var cr = t.status === 'done' ? 1 : t.status === 'half' ? 0.5 : 0;
       if (cr) m += t.minutes * cr;
     });
+    /* 番茄钟专注过的也算进"这天学了多久"——那是真花掉的时间。 */
+    var ft = S.focusTotals(state, k);
+    m += (ft.byDay && ft.byDay[k]) || 0;
     return Math.round(m);
   }
 
@@ -3552,9 +3964,42 @@
       '</div>';
   }
 
+  /* 按科目的时间分布：清单工作量 + 番茄钟专注，合并成一个数。 */
+  function subjectDistHtml(tk) {
+    if (!isManualMode()) return '';
+    var rows = S.subjectTime(state, tk);
+    if (!rows.length) return '';
+    var max = rows[0].total || 1;
+    return '<div class="section"><p class="section-title">时间花在哪</p><div class="card">' +
+      rows.map(function (r) {
+        var m = MODULE_BY_ID[r.moduleId];
+        var name = (m && m.short) || r.name || '其他';
+        return '<div class="prog">' +
+          '<div class="prog-name">' + esc(name) + '</div>' +
+          '<div class="prog-bar"><i style="width:' + Math.max(4, Math.round(r.total / max * 100)) + '%"></i></div>' +
+          '<div class="prog-val">' + (Math.round(r.total / 6) / 10) + 'h</div>' +
+        '</div>';
+      }).join('') +
+      '<div class="footnote">按每条任务的实际用时算（没确认实际用时就退回计时器时长）；' +
+      '没指定科目的只进总时长，不出现在这里。</div>' +
+    '</div></div>';
+  }
+
+  /* 事实型正反馈：只列已经发生的事，带数字。 */
+  function feedbackBlockHtml(tk) {
+    if (!isManualMode()) return '';
+    var list = feedbackApi ? feedbackApi.highlights(state, tk) : [];
+    if (!list.length) return '';
+    return '<div class="section"><p class="section-title">你做到的</p><div class="card">' +
+      list.map(function (h) { return '<div class="fb-row">' + esc(h.text) + '</div>'; }).join('') +
+    '</div></div>';
+  }
+
   function renderMine() {
     var tk = todayKey();
     var totals = recordTotals(tk);
+    var mTot = isManualMode() ? S.checklistTotals(state, tk) : null;
+    var mTimer = isManualMode() ? S.timerMinutes(state, tk) : 0;
     var days = S.overall(state, tk).daysStudied;
     var first = firstStudyKey();
     var st = S.streak(state, tk);
@@ -3583,7 +4028,18 @@
         '</div></div>' +
 
       '<div class="section"><div class="card" style="padding:2px 18px">' +
-        menuRow('stats', statsIcon, '数据统计', '成绩 · 档位 · 速度') +
+        /* 自己排：统计已经独立成底部导航的一格，这里不再重复放入口。 */
+        (isManualMode() ? '' : menuRow('stats', statsIcon, '数据统计', '成绩 · 档位 · 速度')) +
+        /* 自己排：统计页录过成绩才显示那块，所以入口放在这里，别把功能做死。 */
+        (isManualMode()
+          ? '<button class="menu-row" data-act="score-open">' +
+              '<svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+              'stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.4V5.2M10 19.4v-8M16 19.4V9M20 19.4V6"/></svg>' +
+              '<span class="mt">成绩记录</span>' +
+              '<span class="mn">' + ((state.scores || []).length ? '已记录 ' + state.scores.length + ' 次' : '记模考正确率') + '</span>' +
+              '<span class="chev">›</span>' +
+            '</button>'
+          : '') +
         menuRow('settings', settingsIcon, '设置', '考试 · 时间 · 各科') +
         (installHintVisible()
           ? '<button class="menu-row" data-act="install-open">' +
@@ -3599,15 +4055,26 @@
       '<div class="section"><div class="card">' + heatmapHtml(tk) + '</div></div>' +
 
       '<div class="section"><div class="metrics">' +
-        '<div class="metric"><div class="v">' + totals.questions + '</div><div class="k">累计做题</div></div>' +
-        '<div class="metric"><div class="v">' + totals.lessons + '</div><div class="k">听课节数</div></div>' +
-        '<div class="metric"><div class="v">' + Math.round(totals.minutes / 60) + '</div><div class="k">学习小时</div></div>' +
+        (isManualMode()
+          ? '<div class="metric"><div class="v">' + (Math.round(mTimer / 6) / 10) + '</div><div class="k">累计专注小时</div></div>' +
+            '<div class="metric"><div class="v">' + (Math.round((mTot ? mTot.selfMinutes : 0) / 6) / 10) + '</div><div class="k">实际小时</div></div>' +
+            '<div class="metric"><div class="v">' + days + '</div><div class="k">学习天数</div></div>'
+          : '<div class="metric"><div class="v">' + totals.questions + '</div><div class="k">累计做题</div></div>' +
+            '<div class="metric"><div class="v">' + totals.lessons + '</div><div class="k">听课节数</div></div>' +
+            '<div class="metric"><div class="v">' + Math.round(totals.minutes / 60) + '</div><div class="k">学习小时</div></div>') +
       '</div>' +
       '<div class="footnote">' +
-        (st > 1 ? '现在连续 ' + st + ' 天。' : '') +
-        (totals.papers ? '累计做过 ' + totals.papers + ' 套卷。' : '') +
-        '听课大约 ' + Math.round(totals.lessons * E.effectiveLesson(state.profile) / 60) + ' 小时。</div>' +
+        (isManualMode()
+          ? (st > 1 ? '现在连续 ' + st + ' 天。' : '') +
+            '学习时长只算计时器专注 + 完成时确认的实际用时；预计时长不参与。'
+          : (st > 1 ? '现在连续 ' + st + ' 天。' : '') +
+            (totals.papers ? '累计做过 ' + totals.papers + ' 套卷。' : '') +
+            '听课大约 ' + Math.round(totals.lessons * E.effectiveLesson(state.profile) / 60) + ' 小时。') +
       '</div>' +
+      '</div>' +
+
+      subjectDistHtml(tk) +
+      feedbackBlockHtml(tk) +
 
       '<div class="section"><p class="section-title">按天记录</p>' +
         '<div class="card">' + recordCalendarHtml(tk) + recordDayHtml() + '</div>' +
@@ -3617,29 +4084,49 @@
   }
 
   /* ---------------------------------------------------------------------
-   * 工具：现在什么都没有
+   * 工具：只渲染注册表
    *
-   * 只放一句话告诉用户这里以后可能会有东西。不解释是什么、
-   * 不说它和计划是什么关系——那些等真做出来再说。
+   * 页面本身不认识番茄钟——它只把 YT.TOOLS 里的工具挨个画出来。
+   * 每个工具自己声明"挂在哪些模式下"（available）；以后要把番茄钟挂到
+   * 半自动的工具栏，只是把它的 available 放宽一行，页面这边一个字不用改。
    * ------------------------------------------------------------------- */
 
+  function toolsEmptyHtml() {
+    return '<div class="section"><div class="card empty-card">' +
+      '<div class="empty-ico">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" ' +
+          'stroke-linecap="round" stroke-linejoin="round">' +
+          '<rect x="4" y="4" width="7" height="7" rx="2.2"/>' +
+          '<rect x="13" y="4" width="7" height="7" rx="2.2"/>' +
+          '<rect x="4" y="13" width="7" height="7" rx="2.2"/>' +
+          '<rect x="13" y="13" width="7" height="7" rx="2.2"/>' +
+        '</svg>' +
+      '</div>' +
+      '<div class="empty-t">更多公考学习工具正在准备中</div>' +
+      '<div class="empty-d">上线后会直接放在这里。</div>' +
+    '</div></div>';
+  }
+
   function renderTools() {
+    var tk = todayKey();
+    var ctx = { state: state, tk: tk, focus: focusApi, manual: manualApi };
+    var tools = (window.YT.TOOLS || []).filter(function (tool) {
+      try { return tool.available ? !!tool.available(ctx) : true; }
+      catch (e) { return false; }
+    });
+    var body = tools.map(function (tool) {
+      try {
+        return '<div class="section"><div class="card tool-card">' +
+          tool.render(ctx) +
+          '</div></div>';
+      } catch (e) {
+        showFatalError('渲染工具 ' + (tool && tool.id), e);
+        return '';
+      }
+    }).join('');
+    if (!body) body = toolsEmptyHtml();
     app.innerHTML = '<div class="screen">' +
-      '<div class="top"><h1>工具</h1></div>' +
-      '<div class="section"><div class="card empty-card">' +
-        '<div class="empty-ico">' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" ' +
-            'stroke-linecap="round" stroke-linejoin="round">' +
-            '<rect x="4" y="4" width="7" height="7" rx="2.2"/>' +
-            '<rect x="13" y="4" width="7" height="7" rx="2.2"/>' +
-            '<rect x="4" y="13" width="7" height="7" rx="2.2"/>' +
-            '<rect x="13" y="13" width="7" height="7" rx="2.2"/>' +
-          '</svg>' +
-        '</div>' +
-        '<div class="empty-t">更多公考学习工具正在准备中</div>' +
-        '<div class="empty-d">上线后会直接放在这里。</div>' +
-      '</div></div>' +
-      '</div>';
+      '<div class="top"><h1>工具</h1></div>' + body + '</div>';
     renderTabbar('tools');
   }
 
@@ -3818,7 +4305,7 @@
           (usageMode() === 'auto'
             ? '全自动：系统排什么做什么，今日页只留打卡。'
             : usageMode() === 'manual'
-              ? '自己排：系统只排听课，刷题和复盘你自己安排。'
+              ? '自己排：系统一条内容都不排。清单、计时、记录全归你自己，系统永不改写你写的条目。'
               : '半自动：系统排，每天可以换、跳过、加练。') +
           '</div>' +
       '</div></div>';
@@ -3835,13 +4322,15 @@
         '<input class="input" type="date" data-act="set-exam" value="' + esc(p.examDate) + '"></div>' +
         '<button class="btn ghost block" style="margin:-2px 0 12px" data-act="switch-open">' +
           '考完了，换下一场 →</button>' +
-        '<div class="field"><label>工作日每天可用</label>' +
+        /* 自己排下系统不排课，这两个数只当"今天排了多久"的目标线用，
+         * 所以换个说法，别让人以为系统还按它排量。 */
+        '<div class="field"><label>' + (isManualMode() ? '工作日想学多久' : '工作日每天可用') + '</label>' +
         '<select class="input" data-act="set-wd">' +
           window.YT.TIME_OPTIONS.map(function (o) {
             return '<option value="' + o.minutes + '"' + (p.weekdayMinutes === o.minutes ? ' selected' : '') + '>' + o.label + '</option>';
           }).join('') +
         '</select></div>' +
-        '<div class="field"><label>周末每天可用</label>' +
+        '<div class="field"><label>' + (isManualMode() ? '周末想学多久' : '周末每天可用') + '</label>' +
         '<select class="input" data-act="set-we">' +
           window.YT.TIME_OPTIONS.map(function (o) {
             return '<option value="' + o.minutes + '"' + (p.weekendMinutes === o.minutes ? ' selected' : '') + '>' + o.label + '</option>';
@@ -3897,6 +4386,12 @@
         advancedRows() +
       '</div></div>';
 
+    /* 自己排专用：清单高级项的开关 + 番茄钟时长。
+     * 这两块只在自己排下出现，别把全自动/半自动的界面搅浑。 */
+    var manualFoldBody = '<div class="section"><div class="card">' + manualAdvancedRows() + '</div></div>';
+    var focusFoldBody = '<div class="section"><div class="card">' + focusSettingRows() + '</div></div>';
+    var tagsFoldBody = '<div class="section"><div class="card">' + manualTagRows() + '</div></div>';
+
     var dataSection = '<div class="section"><div class="card">' +
         '<button class="btn block" data-act="export">导出数据（备份用）</button>' +
         '<div style="height:8px"></div>' +
@@ -3914,26 +4409,107 @@
         '<div class="footnote">计划、打卡记录和统计都会清空。想留个底，先点上面的「导出数据」。</div>' +
       '</div></div>';
 
+    var body;
+    if (isManualMode()) {
+      /* 自己排：只留跟"清单 + 番茄钟"有关的设置。
+       * 阶段、强度、学习顺序这些是给系统排课用的，露出只会让人困惑。
+       * 课节数留着当"可选参考"——万一以后想切回去还有个数。 */
+      body = modeSection + themeSection + examSection +
+        foldBlock('settings:manual', '清单选项', '开了才会出现在「加一条」里', manualFoldBody, false) +
+        foldBlock('settings:tags', '科目标签', '自定义标签', tagsFoldBody, false) +
+        foldBlock('settings:focus', '番茄钟', focusFoldNote(), focusFoldBody, false) +
+        foldBlock('settings:lesson', '听课参考（可选）', lessonFoldNote(), lessonSection + unitsSection, false) +
+        foldBlock('settings:data', '数据', '备份与重置', dataSection, false);
+    } else {
+      body = modeSection + themeSection + examSection +
+        foldBlock('settings:phase', '阶段安排', phaseFoldNote(), phaseSection, false) +
+        foldBlock('settings:lesson', '听课与课节数', lessonFoldNote(), lessonSection + unitsSection, false) +
+        foldBlock('settings:strength', '各模块强度', strengthFoldNote(), strengthSection, false) +
+        foldBlock('settings:order', '学习顺序与申论', orderFoldNote(), orderSection, false) +
+        foldBlock('settings:advanced', '高级参数', '默认已调好', advancedSection, false) +
+        foldBlock('settings:data', '数据', '备份与重置', dataSection, false);
+    }
+
     app.innerHTML = '<div class="screen">' +
       '<div class="top">' + pageBack() +
-        '<h1>设置</h1><div class="sub">改完立刻生效，后面的计划会自动重排</div></div>' +
+        '<h1>设置</h1><div class="sub">' +
+          (isManualMode() ? '改完立刻生效，清单由你自己掌握' : '改完立刻生效，后面的计划会自动重排') +
+        '</div></div>' +
 
-      modeSection + themeSection + examSection +
-
-      foldBlock('settings:phase', '阶段安排', phaseFoldNote(), phaseSection, false) +
-      foldBlock('settings:lesson', '听课与课节数', lessonFoldNote(), lessonSection + unitsSection, false) +
-      foldBlock('settings:strength', '各模块强度', strengthFoldNote(), strengthSection, false) +
-      foldBlock('settings:order', '学习顺序与申论', orderFoldNote(), orderSection, false) +
-      foldBlock('settings:advanced', '高级参数', '默认已调好', advancedSection, false) +
-      foldBlock('settings:data', '数据', '备份与重置', dataSection, false) +
+      body +
 
       '<div class="sticky-cta above-tabs">' +
         '<div class="regen-note' + (regenNote ? (regenNote.busy ? ' busy' : ' done') : '') + '">' +
-          esc(regenNote ? regenNote.text : '设置改完会自动重排后面的计划') +
+          esc(regenNote ? regenNote.text
+            : (isManualMode() ? '清单不会因为你改设置被动过' : '设置改完会自动重排后面的计划')) +
         '</div>' +
       '</div>' +
       '</div>';
     renderTabbar('mine');
+  }
+
+  /* 自己排的「清单选项」：三个高级项的开关，默认全关。
+   * 开了才在"加一条"的表单里出现，不给人添乱。 */
+  function manualAdvancedRows() {
+    var ms = manualApi.settings(state);
+    var adv = ms.advanced;
+    var items = [
+      { k: 'subtask', name: '子任务', note: '一条任务拆成几步，各自勾选，标题旁显示 2/3。' },
+      { k: 'repeat',  name: '重复',   note: '每天要做的事可以设成每天 / 工作日 / 每周，自动展开到后面的日子。' },
+      { k: 'remind',  name: '提醒',   note: '本期只预留了接口，不会真的推送——纯网页的后台提醒不可靠，上线前再接。' },
+    ];
+    return items.map(function (it) {
+      return '<div class="param-row">' +
+        '<div class="param-head"><span class="param-label">' + it.name + '</span>' +
+          '<button class="chip ' + (adv[it.k] ? 'on' : '') + '" data-act="manual-adv" data-v="' + it.k + '">' +
+            (adv[it.k] ? '已开' : '关') + '</button></div>' +
+        '<div class="param-note">' + it.note + '</div>' +
+      '</div>';
+    }).join('') +
+    '<div class="param-row">' +
+      '<div class="param-head"><span class="param-label">完成后询问实际用时</span>' +
+        '<button class="chip ' + (ms.askActual ? 'on' : '') + '" data-act="manual-ask">' +
+          (ms.askActual ? '已开' : '关') + '</button></div>' +
+      '<div class="param-note">点完成时弹一个小窗问「实际用了多久」。关掉就只按计时器时长记，不弹窗。</div>' +
+    '</div>';
+  }
+
+  /* 自定义科目标签：改名 / 删除。预设标签不在这里，也删不掉。 */
+  function manualTagRows() {
+    var list = (state.manual && state.manual.tags) || [];
+    var body = list.length
+      ? list.map(function (t) {
+          return '<div class="tag-row">' +
+            '<span class="tag-n">' + esc(t.name) + '</span>' +
+            '<button class="chip" data-act="tag-rename" data-v="' + esc(t.id) + '">改名</button>' +
+            '<button class="chip" data-act="tag-del" data-v="' + esc(t.id) + '">删除</button>' +
+          '</div>';
+        }).join('')
+      : '<div class="tiny muted">还没有自定义标签。加任务时点标签行末尾的「＋ 新建」就能建一个。</div>';
+    return body +
+      '<div class="footnote">自定义标签和预设标签一样：能记预计时长、子任务、重复，也会进「时间花在哪」的统计。' +
+      '改名会同步到用它记过的条目。</div>';
+  }
+
+  /* 番茄钟时长。跟「工具」页里那份是同一份设置，改哪边都一样。 */
+  function focusSettingRows() {
+    var s = focusApi.settings(state);
+    function row(k, label, unit, min, max) {
+      return '<div class="fs-row"><label>' + label + '</label>' +
+        '<input type="number" min="' + min + '" max="' + max + '" data-act="focus-set" data-k="' + k + '" value="' + s[k] + '">' +
+        '<span>' + unit + '</span></div>';
+    }
+    return '<div class="focus-settings" style="border-top:0">' +
+      row('work', '专注', '分钟', 1, 180) +
+      row('short', '短休', '分钟', 1, 60) +
+      row('long', '长休', '分钟', 1, 60) +
+      row('rounds', '长休间隔', '个番茄', 1, 12) +
+    '</div><div class="param-note">番茄钟和正计时都支持；计时用结束时间戳算，切后台回来也是准的。</div>';
+  }
+
+  function focusFoldNote() {
+    var s = focusApi.settings(state);
+    return '专注 ' + s.work + ' 分 · 短休 ' + s.short + ' 分 · 长休 ' + s.long + ' 分';
   }
 
   /* 高级参数：只影响"排多少"，不影响"排什么"，所以随便调也不会把计划调坏 */
@@ -4024,23 +4600,32 @@
       today: '<circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.2l2.5 2.5 4.7-5.4"/>',
       plan: '<rect x="3.6" y="5" width="16.8" height="15.4" rx="3"/><path d="M3.6 9.8h16.8M8.2 3.4v3.2M15.8 3.4v3.2"/>',
       tools: '<rect x="4" y="4" width="7" height="7" rx="2.2"/><rect x="13" y="4" width="7" height="7" rx="2.2"/><rect x="4" y="13" width="7" height="7" rx="2.2"/><rect x="13" y="13" width="7" height="7" rx="2.2"/>',
+      stats: '<path d="M5.4 19.4v-6.2M12 19.4V6M18.6 19.4v-9.2"/>',
       mine: '<circle cx="12" cy="8.4" r="3.6"/><path d="M5.6 19.6c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6"/>',
     };
     var tabs = [
       { id: 'today', label: '今日' },
       { id: 'plan', label: '计划' },
       { id: 'tools', label: '工具' },
-      { id: 'mine', label: '我的' },
     ];
-    /* 统计和设置是「我的」下面的二级页，底部导航还亮「我的」那一格 */
-    var on = (active === 'stats' || active === 'settings') ? 'mine' : active;
+    /* 自己排：统计独立成一格（5 个 tab）。全自动/半自动保持 4 格，
+     * 统计还是「我的」下面的二级页。 */
+    if (isManualMode()) tabs.push({ id: 'stats', label: '统计' });
+    tabs.push({ id: 'mine', label: '我的' });
+    /* 设置永远是「我的」下面的二级页；非自己排时统计也是。 */
+    var on = active;
+    if (active === 'settings') on = 'mine';
+    else if (active === 'stats' && !isManualMode()) on = 'mine';
     var html = '<div class="tabbar">' + tabs.map(function (t) {
       return '<button class="tab ' + (t.id === on ? 'on' : '') + '" data-act="goto" data-to="' + t.id + '">' +
              '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
              'stroke-linecap="round" stroke-linejoin="round">' + ICON[t.id] + '</svg>' +
              t.label + '</button>';
     }).join('') + '</div>';
-    app.insertAdjacentHTML('beforeend', html);
+    /* 专注计时那条常驻细条：四个 tab 之间切换都看得见，点它就回工具页。 */
+    var fbar = (state.profile && focusApi) ? focusApi.barHtml() : '';
+    try { document.body.classList.toggle('has-focusbar', !!fbar); } catch (e) {}
+    app.insertAdjacentHTML('beforeend', fbar + html);
   }
 
   /* ---------------------------------------------------------------------
@@ -4137,6 +4722,8 @@
       var step = state.ui.onboardStep || 0;
       if (step === 0 && !draft.examDate) return toast('先选个考试日期');
       if (step === ONBOARD_STEPS - 1) return finishOnboarding();
+      /* 自己排是纯清单：不排内容，也就不需要问"每科听多少节课"。 */
+      if (step === 5 && draft.mode === 'manual') return finishOnboarding();
       state.ui.onboardStep = step + 1;
       save();
       window.scrollTo(0, 0);
@@ -4548,13 +5135,25 @@
       return scheduleRegen(0);
     }
     if (act === 'set-mode') {
-      state.profile.mode = el.getAttribute('data-v');
+      var toMode = el.getAttribute('data-v');
+      if (toMode === state.profile.mode) return;
+      /* 切进「自己排」要先问一句：现有任务保留还是清空。 */
+      if (toMode === 'manual') return openModeChoice();
+      state.profile.mode = toMode;
       save();
       /* 换模式等于换一套排法，立刻重排 */
       reRender();
-      var modeName = { auto: '全自动', semi: '半自动', manual: '自己排' }[state.profile.mode] || '';
+      var modeName = { auto: '全自动', semi: '半自动', manual: '自己排' }[toMode] || '';
       return scheduleRegen(0, '已切到' + modeName + '，后面的安排重排好了');
     }
+    if (act === 'mode-keep') return switchToManual(true);
+    if (act === 'mode-clear') {
+      return askConfirm('清空所有任务？',
+        '这些天的任务记录会全部删掉，清单从零开始。专注记录和成绩记录留着。', function () {
+          switchToManual(false);
+        });
+    }
+    if (act === 'mode-cancel') return closeModal();
     if (act === 'phase-reset') {
       state.profile.phasePlan = { custom: false };
       save();
@@ -4639,6 +5238,11 @@
     if (act === 'wipe') {
       return askConfirm('重新开始？',
         '计划、打卡记录和统计都会删掉，然后回到问卷第一页。想留个底请先导出数据。确定吗？', function () {
+        /* 重开之前把还在跑的计时器停掉：不然它会接着往空档案里记。 */
+        if (focusApi && focusApi.isRunning()) focusApi.stop(state);
+        if (focusApi && focusApi.hasPendingRestore && focusApi.hasPendingRestore()) {
+          focusApi.resolveRestore(state, 'drop');
+        }
         state = store.reset();
         draft = null;
         save();
@@ -4767,8 +5371,10 @@
       });
       if (!Object.keys(rates).length) return toast('至少填一个模块');
       state.scores = state.scores || [];
-      state.scores.push({ date: scoreDraft.date, source: scoreDraft.source, rates: rates });
+      var scoreRec = { date: scoreDraft.date, source: scoreDraft.source, rates: rates };
+      state.scores.push(scoreRec);
       if (state.scores.length > 60) state.scores = state.scores.slice(-60);
+      if (feedbackApi) feedbackApi.emit(state, 'progress', { date: scoreRec.date, source: scoreRec.source });
       /* 错误率变了，复盘时长跟着变，后面没动过的天重排一遍 */
       Object.keys(state.days).forEach(function (k) {
         if (k <= todayKey()) return;
@@ -4889,6 +5495,386 @@
     if (act === 'no-review') {
       var nDay = state.days[tk];
       if (nDay) nDay.reviewAsked = 'no';
+      save();
+      return reRender();
+    }
+
+    /* ---- 自己排：清单 ---- */
+    if (act === 'm-add-open') {
+      var mdate = el.getAttribute('data-v') || tk;
+      manualApi.openAdd(state, mdate);
+      state.ui.manDay = mdate;
+      save();
+      return reRender();
+    }
+    if (act === 'm-add-cancel') { manualApi.closeAdd(); return reRender(); }
+    if (act === 'm-f-subject') {
+      var msub = el.getAttribute('data-v') || '';
+      manualApi.setDraft('moduleId', msub);
+      var md0 = manualApi.currentDraft();
+      /* 标题没被手动改过，就跟着标签走：留空 = 直接用标签名。 */
+      if (md0 && md0.fields && !md0.fields.titleTouched) {
+        md0.fields.title = manualApi.subjectLabel(state, msub);
+      }
+      return reRender();
+    }
+    /* 新建自定义标签 */
+    if (act === 'm-tag-new') { manualApi.startNewTag(); return reRender(); }
+    if (act === 'm-tag-cancel') { manualApi.cancelNewTag(); return reRender(); }
+    if (act === 'm-tag-save') {
+      var ntag = manualApi.commitNewTag(state);
+      if (!ntag) return toast('先给标签起个名字');
+      save();
+      reRender();
+      return toast('标签「' + ntag.name + '」建好了');
+    }
+    /* 档位 chip：点已选中的那一档 = 取消（等价于"不填"），点别的 = 切换。 */
+    if (act === 'm-f-minutes') {
+      var mMin = el.getAttribute('data-v');
+      var mDraft = manualApi.currentDraft();
+      var mCur = mDraft && mDraft.fields ? String(mDraft.fields.minutes) : '';
+      manualApi.setMinutes(String(mCur) === String(mMin) ? '' : mMin);
+      return reRender();
+    }
+    /* 重复 chip 同理：再点一次 = 不重复，截止日期那行也跟着收起来。 */
+    if (act === 'm-f-repeat') {
+      var mRep = el.getAttribute('data-v');
+      var rDraft = manualApi.currentDraft();
+      var rCur = rDraft && rDraft.fields ? String(rDraft.fields.repeatFreq) : '';
+      manualApi.setDraft('repeatFreq', String(rCur) === String(mRep) ? '' : mRep);
+      return reRender();
+    }
+    /* 关掉的高级项：这里只把用户送到设置里的那个总开关，开关本身只有一处。 */
+    if (act === 'm-f-adv-open') {
+      state.ui.screen = 'settings';
+      state.ui.folds = state.ui.folds || {};
+      state.ui.folds['settings:manual'] = true;
+      save();
+      render();
+      return;
+    }
+    if (act === 'm-sub-add') { manualApi.addSub(); return reRender(); }
+    if (act === 'm-sub-del') { manualApi.delSub(Number(el.getAttribute('data-i'))); return reRender(); }
+    if (act === 'm-add-save') {
+      var mres = manualApi.commitAdd(state);
+      if (!mres.ok) return toast(mres.msg);
+      save();
+      reRender();
+      /* 展开有 40 条的上限，撞到上限要说清楚，不然用户以为后面的都排好了。 */
+      if (mres.added >= 41) {
+        return toast('加进去了；这一串展开到上限 40 条，用完可以再排一次');
+      }
+      return toast(mres.added > 1 ? ('加进去了，重复展开成 ' + mres.added + ' 条') : '加进去了');
+    }
+
+    /* ---- 自己排：一条清单的「⋯」菜单 ---- */
+    if (act === 'm-menu') {
+      var mmKey = el.getAttribute('data-date'), mmId = el.getAttribute('data-task');
+      manualApi.closeAdd();
+      if (!manualApi.openMenu(state, mmKey, mmId)) return;
+      overlay.className = 'overlay';
+      overlay.innerHTML = manualApi.menuHtml(state, tk);
+      return;
+    }
+    if (act === 'm-menu-close') { manualApi.closeMenu(); return closeModal(); }
+    if (act === 'm-edit' || act === 'm-edit-series') {
+      var meKey = el.getAttribute('data-date'), meId = el.getAttribute('data-task');
+      var meScope = act === 'm-edit-series' ? 'series' : null;
+      manualApi.closeMenu();
+      closeModal();
+      if (!manualApi.openEdit(state, meKey, meId, { scope: meScope })) return toast('这条找不到了');
+      if (meKey !== tk) state.ui.manDay = meKey;
+      save();
+      return reRender();
+    }
+    if (act === 'm-edit-save') {
+      var edRes = manualApi.commitEdit(state, tk);
+      if (!edRes.ok) {
+        /* 这一条属于一个重复串：先问一句"只改这一条，还是这一串以后都改"。 */
+        if (edRes.needScope) {
+          overlay.className = 'overlay';
+          overlay.innerHTML =
+            '<div class="modal" style="max-width:400px">' +
+              '<div class="modal-title">这一条属于一串重复</div>' +
+              '<div class="modal-msg">后面还有 ' + edRes.count + ' 条没打卡。要只改今天看到的这一条，' +
+                '还是把这一串（已打卡的不动）一起改掉？</div>' +
+              '<div class="menu-list" style="margin-top:14px">' +
+                '<button class="menu-item" data-act="m-edit-scope-one">只改这一条</button>' +
+                '<button class="menu-item" data-act="m-edit-scope-series">这一串以后都改</button>' +
+              '</div>' +
+              '<button class="btn block ghost" style="margin-top:12px" data-act="m-edit-scope-cancel">取消</button>' +
+            '</div>';
+          return;
+        }
+        return toast(edRes.msg);
+      }
+      save();
+      reRender();
+      return toast(edRes.touched > 1 ? ('改好了，一串 ' + edRes.touched + ' 条都跟着改了') : '改好了');
+    }
+    if (act === 'm-edit-scope-cancel') { closeModal(); return; }
+    if (act === 'm-edit-scope-one' || act === 'm-edit-scope-series') {
+      manualApi.setDraftScope(act === 'm-edit-scope-series' ? 'series' : 'one');
+      closeModal();
+      var scRes = manualApi.commitEdit(state, tk);
+      if (!scRes.ok) return toast(scRes.msg || '没改成');
+      save();
+      reRender();
+      return toast(scRes.touched > 1 ? ('改好了，一串 ' + scRes.touched + ' 条都跟着改了') : '改好了');
+    }
+    if (act === 'm-copy') {
+      var cpRes = manualApi.duplicate(state, el.getAttribute('data-date'), el.getAttribute('data-task'));
+      manualApi.closeMenu();
+      closeModal();
+      if (!cpRes) return toast('这条找不到了');
+      save();
+      reRender();
+      return toast('复制了一条');
+    }
+    if (act === 'm-move-open') {
+      manualApi.openMovePanel();
+      overlay.className = 'overlay';
+      overlay.innerHTML = manualApi.moveHtml(state, tk);
+      return;
+    }
+    if (act === 'm-move-to' || act === 'm-move-pick') {
+      var mv = manualApi.currentMove();
+      if (!mv) return closeModal();
+      var mvTo = act === 'm-move-to' ? el.getAttribute('data-v')
+                                     : ((document.getElementById('move-date') || {}).value || '');
+      if (!mvTo) return toast('先选一天');
+      if (!manualApi.moveToDay(state, mv.key, mv.id, mvTo)) {
+        manualApi.closeMenu();
+        closeModal();
+        return toast('已经在那一天了');
+      }
+      manualApi.closeMenu();
+      closeModal();
+      save();
+      reRender();
+      return toast('改到 ' + fmtDate(mvTo, false) + ' 了');
+    }
+    if (act === 'm-series-del') {
+      var sdKey = el.getAttribute('data-date'), sdId = el.getAttribute('data-task');
+      var sdTask = manualApi.find(state, sdKey, sdId);
+      if (!sdTask) { manualApi.closeMenu(); return closeModal(); }
+      var sdSid = manualApi.seriesIdOf(sdTask);
+      var sdDoomed = manualApi.futureMembers(state, sdSid, tk).filter(function (m) {
+        return m.task.status === 'todo';
+      });
+      manualApi.closeMenu();
+      return askConfirm('这一串以后都删掉？',
+        '会删掉 ' + sdDoomed.length + ' 条还没打卡的；已经打过卡的一条都不动。',
+        function () {
+          var keys = sdDoomed.map(function (m) { return m.key; });
+          var snap = snapshotDays(keys);
+          manualApi.dropSeriesFuture(state, sdSid, tk);
+          save();
+          closeModal();
+          reRender();
+          offerUndo(snap, '删掉了这一串的 ' + sdDoomed.length + ' 条');
+        });
+    }
+    if (act === 'm-done') {
+      var mdk = el.getAttribute('data-date'), mtk = el.getAttribute('data-task');
+      if (mdk !== tk) return toast('只能在今天打卡');
+      var mTask = manualApi.toggleDone(state, mdk, mtk);
+      if (mTask && mTask.status === 'done' && feedbackApi) {
+        feedbackApi.emit(state, 'checkin', { date: mdk, taskId: mtk, moduleId: mTask.moduleId || null });
+        feedbackApi.emit(state, 'done', { date: mdk, taskId: mtk, moduleId: mTask.moduleId || null });
+        var mDay = state.days[mdk] || {};
+        var mList = mDay.tasks || [];
+        var mAll = mList.length > 0 && mList.every(function (x) { return x.status === 'done'; });
+        if (mAll) {
+          feedbackApi.emit(state, 'goal', { date: mdk });
+          var mSc = S.streak(state, mdk);
+          if (mSc >= 2) feedbackApi.emit(state, 'streak', { date: mdk, days: mSc });
+        }
+      }
+      save();
+      reRender();
+      /* 完成时问一句实际用了多久——但可以在设置里关掉。 */
+      if (mTask && mTask.status === 'done' && manualApi.settings(state).askActual) {
+        return openActualDialog(mdk, mtk);
+      }
+      return;
+    }
+    if (act === 'm-actual-open') {
+      return openActualDialog(el.getAttribute('data-date'), el.getAttribute('data-task'));
+    }
+    if (act === 'm-actual-pick') return saveActual(el.getAttribute('data-v'));
+    if (act === 'm-actual-skip') return saveActual(null);
+    if (act === 'm-actual-save') {
+      var actualEl = document.getElementById('actual-input');
+      return saveActual(actualEl ? actualEl.value : null);
+    }
+    /* 自定义标签：改名 / 删除 */
+    if (act === 'tag-rename') return openTagRename(el.getAttribute('data-v'));
+    if (act === 'tag-rename-cancel') { state.ui.tagRename = null; return closeModal(); }
+    if (act === 'tag-rename-save') {
+      var rnId2 = state.ui.tagRename;
+      var rnEl = document.getElementById('tag-name-input');
+      if (!rnId2) return closeModal();
+      if (!manualApi.renameTag(state, rnId2, rnEl ? rnEl.value : '')) return toast('名字不能为空');
+      state.ui.tagRename = null;
+      save();
+      closeModal();
+      render();
+      return toast('标签已经改名');
+    }
+    if (act === 'tag-del') return openTagDelete(el.getAttribute('data-v'));
+    if (act === 'tag-del-cancel') { state.ui.tagDelete = null; return closeModal(); }
+    if (act === 'tag-del-only' || act === 'tag-del-records') {
+      var delId = state.ui.tagDelete;
+      if (!delId) return closeModal();
+      var use = manualApi.deleteTag(state, delId, act === 'tag-del-records' ? 'records' : 'only');
+      state.ui.tagDelete = null;
+      save();
+      closeModal();
+      render();
+      return toast(act === 'tag-del-records'
+        ? ('标签和它的 ' + use.items + ' 条记录都删掉了')
+        : '标签已经删掉，记录变成「未指定」');
+    }
+    /* 完成后是否询问实际用时 */
+    if (act === 'manual-ask') {
+      var ms = manualApi.settings(state);
+      ms.askActual = !ms.askActual;
+      save();
+      return reRender();
+    }
+    if (act === 'm-sub') {
+      manualApi.toggleSub(state, el.getAttribute('data-date'), el.getAttribute('data-task'), el.getAttribute('data-sub'));
+      save();
+      return reRender();
+    }
+    if (act === 'm-up' || act === 'm-down') {
+      manualApi.move(state, el.getAttribute('data-date'), el.getAttribute('data-task'), act === 'm-up' ? 'up' : 'down');
+      manualApi.closeMenu();
+      closeModal();
+      save();
+      return reRender();
+    }
+    if (act === 'm-del') {
+      var ddk2 = el.getAttribute('data-date'), dtk = el.getAttribute('data-task');
+      var dTask = manualApi.find(state, ddk2, dtk);
+      if (!dTask) { manualApi.closeMenu(); return closeModal(); }
+      manualApi.closeMenu();
+      return askConfirm('删掉这一项？', '「' + dTask.title + '」', function () {
+        var delTitle = dTask.title;
+        var delSnap = snapshotDays([ddk2]);
+        manualApi.remove(state, ddk2, dtk);
+        save();
+        closeModal();
+        reRender();
+        /* 删错了能马上捞回来——这条是每天都会用到的动作，值得一颗后悔药。 */
+        offerUndo(delSnap, '「' + delTitle + '」已删除');
+      });
+    }
+    if (act === 'undo-do') return applyUndo();
+    /* ---- 上次没收尾的专注 ---- */
+    if (act === 'focus-restore-record' || act === 'focus-restore-keep' || act === 'focus-restore-drop') {
+      var frChoice = act === 'focus-restore-record' ? 'record'
+                   : act === 'focus-restore-keep' ? 'keep' : 'drop';
+      focusApi.resolveRestore(state, frChoice);
+      closeModal();
+      save();
+      reRender();
+      return toast(frChoice === 'record' ? '记下了' : frChoice === 'keep' ? '接着跑' : '丢掉了');
+    }
+    if (act === 'm-cal') { state.ui.manDay = el.getAttribute('data-v'); save(); return reRender(); }
+    if (act === 'm-plan-view') {
+      state.ui.manPlanView = el.getAttribute('data-v') === 'week' ? 'week' : 'month';
+      manualApi.closeAdd();
+      save();
+      return reRender();
+    }
+    /* ---- 自己排：批量排 ---- */
+    if (act === 'm-batch-open') {
+      manualApi.closeAdd();
+      manualApi.openBatch(state);
+      overlay.className = 'overlay';
+      overlay.innerHTML = manualApi.batchHtml(state, tk);
+      return;
+    }
+    if (act === 'm-batch-close') { manualApi.closeBatch(); return closeModal(); }
+    if (act === 'm-batch-tag') {
+      manualApi.setBatchField('tagId', el.getAttribute('data-v'));
+      overlay.innerHTML = manualApi.batchHtml(state, tk);
+      return;
+    }
+    if (act === 'm-batch-wd') {
+      manualApi.toggleBatchDay(Number(el.getAttribute('data-v')));
+      overlay.innerHTML = manualApi.batchHtml(state, tk);
+      return;
+    }
+    if (act === 'm-batch-unit') {
+      manualApi.setBatchField('unit', el.getAttribute('data-v'));
+      overlay.innerHTML = manualApi.batchHtml(state, tk);
+      return;
+    }
+    if (act === 'm-batch-apply') {
+      var bres = manualApi.applyBatchNow(state, tk);
+      closeModal();
+      if (!bres) return toast('先选一个科目');
+      save();
+      reRender();
+      return toast(bres.over
+        ? ('排了 ' + bres.made + ' 条，其中 ' + bres.over + ' 天超过了当天目标')
+        : ('排了 ' + bres.made + ' 条'));
+    }
+    if (act === 'm-month') {
+      state.ui.manMonth = manualApi.shiftMonth(manualApi.monthKey(state, tk), Number(el.getAttribute('data-v')));
+      state.ui.manDay = null;
+      save();
+      return reRender();
+    }
+    if (act === 'm-focus-open') return go('tools');
+    if (act === 'm-focus') {
+      var fdk = el.getAttribute('data-date'), ftk = el.getAttribute('data-task');
+      if (fdk !== tk) return toast('只能在今天开始专注');
+      var fTask = manualApi.find(state, fdk, ftk);
+      if (!fTask) return toast('这条任务找不到了');
+      /* 只把任务挂上并跳到工具页的待开始界面，让用户自己确认时长再按开始。 */
+      state.ui.focusTask = ftk;
+      state.ui.focusMode = 'pomodoro';
+      save();
+      go('tools');
+      return toast('已挂到「' + fTask.title + '」，在工具页确认后开始');
+    }
+
+    /* ---- 番茄钟（工具） ---- */
+    if (act === 'focus-mode') { state.ui.focusMode = el.getAttribute('data-v'); save(); return reRender(); }
+    if (act === 'focus-fold') { state.ui.focusFold = !state.ui.focusFold; save(); return reRender(); }
+    if (act === 'focus-start') {
+      var fmode = (state.ui.focusMode === 'countup') ? 'countup' : 'pomodoro';
+      var fTid = state.ui.focusTask || null;
+      var fday = state.days[tk];
+      var fSel = (fTid && fday) ? (fday.tasks || []).filter(function (x) { return x.id === fTid; })[0] : null;
+      focusApi.start(state, {
+        mode: fmode,
+        taskId: fSel ? fSel.id : null,
+        dateKey: fSel ? tk : null,
+        moduleId: fSel ? (fSel.moduleId || null) : null,
+        label: fSel ? fSel.title : '',
+      });
+      save();
+      return reRender();
+    }
+    if (act === 'focus-pause') { focusApi.pause(); save(); return reRender(); }
+    if (act === 'focus-resume') { focusApi.resume(); save(); return reRender(); }
+    if (act === 'focus-stop') {
+      var fmins = focusApi.stop(state);
+      save();
+      reRender();
+      return toast(fmins >= 1 ? ('这段专注 ' + fmins + ' 分钟，记下了') : '这次太短了，不记');
+    }
+    if (act === 'focus-skip') { focusApi.skip(state); save(); return reRender(); }
+
+    /* 设置页：清单高级项开关 */
+    if (act === 'manual-adv') {
+      var advk = el.getAttribute('data-v');
+      manualApi.setAdvanced(state, advk, !manualApi.settings(state).advanced[advk]);
       save();
       return reRender();
     }
@@ -5124,6 +6110,50 @@
       if (mn2) mn2.textContent = Math.round(qper * qsize * qv2);
       return;
     }
+    /* 自己排：表单里的文字/数字，实时存进草稿，重画时不会丢 */
+    if (act === 'm-f') {
+      var mfk = el.getAttribute('data-k');
+      /* 标题一旦手改过就锁住，不再被科目标签自动覆盖 */
+      if (mfk === 'title') manualApi.setTitle(el.value);
+      else manualApi.setDraft(mfk, el.value);
+      /* 自己填预计时长时，就地同步档位的选中态（不重绘，免得丢焦点/光标）。 */
+      if (mfk === 'minutes') {
+        var mins = document.querySelectorAll('[data-act="m-f-minutes"]');
+        for (var mi = 0; mi < mins.length; mi++) {
+          var same = String(mins[mi].getAttribute('data-v')) === String(el.value);
+          if (same) mins[mi].classList.add('on');
+          else mins[mi].classList.remove('on');
+        }
+      }
+      return;
+    }
+    if (act === 'm-f-sub') {
+      manualApi.setSub(Number(el.getAttribute('data-i')), el.value);
+      return;
+    }
+    if (act === 'm-tag-input') {
+      manualApi.setNewTag(el.value);
+      return;
+    }
+    /* 批量排里那两个数字：改一下就更新下面的预览，不整页重画（会丢焦点）。 */
+    if (act === 'm-batch-num') {
+      var bnum = el.value === '' ? '' : Number(el.value);
+      manualApi.setBatchField(el.getAttribute('data-k'), bnum);
+      var bPrev = document.getElementById('batch-preview');
+      if (bPrev) {
+        var tmpB = document.createElement('div');
+        tmpB.innerHTML = manualApi.batchHtml(state, tk);
+        var freshB = tmpB.querySelector('#batch-preview');
+        if (freshB) bPrev.innerHTML = freshB.innerHTML;
+      }
+      return;
+    }
+    /* 番茄钟时长（设置页和工具页共用） */
+    if (act === 'focus-set') {
+      focusApi.setSetting(state, el.getAttribute('data-k'), el.value);
+      save();
+      return;
+    }
     if (act === 'score-rate') {
       if (!scoreDraft) return;
       var sm = el.getAttribute('data-m');
@@ -5212,6 +6242,11 @@
       batchDraft[bk] = Number(el.value) || 1;
       return renderBatch();          // 重画一次，好让"会排到哪天"跟着变
     }
+    /* 工具页里选"挂到哪条任务" */
+    if (act === 'focus-task') {
+      state.ui.focusTask = el.value || null;
+      save();
+    }
     /* 自己填的实际用时：输入完按回车或者点到别处就提交 */
     if (act === 'actual-custom') {
       var v = Number(el.value);
@@ -5244,7 +6279,36 @@
       dailyRoll();
       save();
     }
+    /* 上次没结束的专注：能接着走就接着走，超时太久就问一句。
+     * 手机被系统清掉是常态，不捞回来的话一次 50 分钟的番茄会无声消失。 */
+    if (focusApi && focusApi.restore) {
+      try {
+        var fr = focusApi.restore(state);
+        if (fr && fr.kind === 'ask') restoreAsk = fr;
+      } catch (e) { console.warn('恢复专注计时失败', e); }
+    }
     render();
+    if (restoreAsk) { showRestoreAsk(restoreAsk); restoreAsk = null; }
+  }
+
+  var restoreAsk = null;
+
+  /* 计时停在很久以前：不自作主张，问一句。 */
+  function showRestoreAsk(info) {
+    overlay.className = 'overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="max-width:400px">' +
+        '<div class="modal-title">上次的专注没收尾</div>' +
+        '<div class="modal-msg">' +
+          (info.label ? '「' + esc(info.label) + '」' : '那一次专注') +
+          '是一个 ' + info.minutes + ' 分钟的番茄，早就到点了。要怎么处理？' +
+        '</div>' +
+        '<div class="menu-list" style="margin-top:14px">' +
+          '<button class="menu-item" data-act="focus-restore-record">记下这一段，然后结束<small>按整个番茄记进那天的专注</small></button>' +
+          '<button class="menu-item" data-act="focus-restore-keep">接着跑<small>把剩下的时间跑完</small></button>' +
+          '<button class="menu-item" data-act="focus-restore-drop">不要了<small>这段不计入任何统计</small></button>' +
+        '</div>' +
+      '</div>';
   }
 
   /* 手机从后台切回来时页面不会重新加载，跨天也不会自己重算。
@@ -5253,9 +6317,11 @@
   var lastRollKey = null;
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState !== 'visible') return;
+    /* 回到前台先把计时刷新一遍——后台被节流的这段时间，剩余时间照样准。 */
+    if (focusApi && focusApi.isRunning()) focusApi.tick(state);
     if (!state.profile) return;
     var tk = todayKey();
-    if (tk === lastRollKey) return;
+    if (tk === lastRollKey) { if (focusApi) focusApi.paint(); return; }
     lastRollKey = tk;
     dailyRoll();
     save();
@@ -5281,6 +6347,16 @@
     toast('已经添加到桌面');
     render();
   });
+
+  /* 专注内核只借这几个能力，不直接碰 state / 存储 / 渲染。 */
+  if (focusApi) {
+    focusApi.attach({
+      getState: function () { return state; },
+      save: save,
+      render: render,
+      toast: toast,
+    });
+  }
 
   try {
     boot();

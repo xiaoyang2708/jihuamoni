@@ -76,6 +76,18 @@ window.YT = window.YT || {};
           gBy.slw = (gBy.slw || 0) + (t.amounts || 1) * cr;
         } else if (t.kind === 'paperset') {
           papers += cr;
+        } else if (t.kind === 'task') {
+          /* 自己排的清单条目：带题量/节数的照样进学习档案。 */
+          var w = E.taskWork(t);
+          if (w && w.type === 'practice') {
+            qBy[w.moduleId] = (qBy[w.moduleId] || 0) + (w.amount || 0) * cr;
+            gBy[w.moduleId] = (gBy[w.moduleId] || 0) + (w.sets || 0) * cr;
+          } else if (w && w.type === 'essay') {
+            qBy.slw = (qBy.slw || 0) + (w.count || 1) * cr;
+            gBy.slw = (gBy.slw || 0) + (w.count || 1) * cr;
+          } else if (w && w.type === 'paperset') {
+            papers += cr;
+          }
         }
       });
     });

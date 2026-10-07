@@ -47,6 +47,9 @@ SOURCES = [
     "js/engine.js",
     "js/stats.js",
     "js/archive.js",
+    "js/feedback.js",
+    "js/focus.js",
+    "js/manual.js",
     "js/demo.js",
     "manifest.webmanifest",
 ]

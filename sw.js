@@ -5,7 +5,7 @@
  * 这么选是因为这个项目改得勤，缓存优先很容易出现"我明明改了怎么还是旧的"。
  * ========================================================================= */
 
-var CACHE = 'beikao-v7';
+var CACHE = 'beikao-v11';
 
 var ASSETS = [
   './',
@@ -17,6 +17,9 @@ var ASSETS = [
   './js/stats.js',
   './js/archive.js',
   './js/store.js',
+  './js/feedback.js',
+  './js/focus.js',
+  './js/manual.js',
   './js/demo.js',
   './js/app.js',
   './icons/icon-180.png',

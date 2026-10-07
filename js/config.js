@@ -79,6 +79,44 @@ YT.unitMinutesFor = function (module, stage, profile) {
 YT.MODULE_BY_ID = {};
 YT.MODULES.forEach(function (m) { YT.MODULE_BY_ID[m.id] = m; });
 
+/* =========================================================================
+ * 科目标签（「自己排」用）
+ *
+ * 标签是"科目"这一维的全部：预设 + 用户自定义。它刻意跟 MODULE_BY_ID 解耦——
+ * 判断推理要合并成一条、自定义标签又不在系统模块表里，都不该受影响。
+ *
+ *   资料 / 言语 / 判断推理 / 政治 / 数量 / 常识 / 申论
+ *
+ * tagIdOf：把历史上的子标签归一到现在的 id（判推逻辑/图形/定义类比 → 判断推理），
+ *          这样老条目在统计里也合成一行。
+ * tagNameOf：预设标签的显示名；自定义标签去 state.manual.tags 里找。
+ * ========================================================================= */
+YT.TAGS = [
+  { id: 'zlfx', name: '资料' },
+  { id: 'yy',   name: '言语' },
+  { id: 'pd',   name: '判断推理' },
+  { id: 'zzll', name: '政治' },
+  { id: 'sl',   name: '数量' },
+  { id: 'cs',   name: '常识' },
+  { id: 'slw',  name: '申论' },
+];
+
+YT.TAG_MERGE = { pdlj: 'pd', pdtx: 'pd', pddl: 'pd' };
+
+YT.tagIdOf = function (id) {
+  if (!id) return '';
+  return YT.TAG_MERGE[id] || id;
+};
+
+YT.TAG_BY_ID = {};
+YT.TAGS.forEach(function (t) { YT.TAG_BY_ID[t.id] = t; });
+
+/* 只认预设标签；自定义标签返回 null（名字存在条目自己身上）。 */
+YT.tagNameOf = function (id) {
+  var t = YT.TAG_BY_ID[YT.tagIdOf(id)];
+  return t ? t.name : null;
+};
+
 /* 申论的两个特殊题型的固定时长（分钟） */
 YT.ESSAY = {
   smallMinutes: 40,   // 小题 1 道
@@ -265,3 +303,30 @@ YT.THEME_BY_ID = {};
 YT.THEMES.forEach(function (t) { YT.THEME_BY_ID[t.id] = t; });
 
 YT.WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+
+/* =========================================================================
+ * 工具注册表
+ *
+ * 「工具」这一格不写死任何东西，只负责把注册表里的工具挨个画出来。
+ * 番茄钟只是第一个住户：以后想把它挂到半自动的工具栏、或者加个别的工具，
+ * 都是往这里注册一条，不用改挂载点，也不用重写逻辑。
+ *
+ *   YT.registerTool({
+ *     id: 'pomodoro',
+ *     name: '番茄钟',
+ *     icon: '<svg ...>',
+ *     available: function (ctx) { return true; },        // 挂在哪些模式下（可选，默认都挂）
+ *     render: function (ctx) { return '<html>'; },   // ctx = {state, tk, focus}
+ *   })
+ * ========================================================================= */
+YT.TOOLS = [];
+YT.registerTool = function (tool) {
+  if (!tool || !tool.id) return null;
+  /* 同一个 id 重复注册就覆盖，避免热重载或重复引入时画两遍 */
+  YT.TOOLS = YT.TOOLS.filter(function (t) { return t.id !== tool.id; });
+  YT.TOOLS.push(tool);
+  return tool;
+};
+YT.toolById = function (id) {
+  return YT.TOOLS.filter(function (t) { return t.id === id; })[0] || null;
+};

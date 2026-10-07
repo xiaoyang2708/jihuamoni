@@ -13,6 +13,7 @@
 <body>
   <div id="app"></div>
   <div id="toast" class="toast"></div>
+  <div id="undobar" class="undo-bar" role="status" aria-live="polite"></div>
   <div id="overlay" class="overlay hidden"></div>
 
   <script src="../js/config.js"></script>
@@ -20,6 +21,9 @@
   <script src="../js/stats.js"></script>
   <script src="../js/archive.js"></script>
   <script src="../js/store.js"></script>
+  <script src="../js/feedback.js"></script>
+  <script src="../js/focus.js"></script>
+  <script src="../js/manual.js"></script>
 
   <script>
     /* =====================================================================
@@ -57,7 +61,7 @@
 
       /* 问卷那一步要的是"还没生成计划"的状态 */
       var CASE0 = new URLSearchParams(location.search).get('case');
-      if (CASE0 === 'onboard') {
+      if (CASE0 === 'onboard' || CASE0 === 'onboardmanual') {
         window.localStorage.setItem('yang-toolbox/v1', JSON.stringify({
           version: 1,
           userId: 'local-user',
@@ -71,12 +75,122 @@
         }));
         return;
       }
+
+      /* 自己排的用例：档案直接是 manual，days 空着，清单全靠用例自己加。
+       * manualmode 的用例要测"从半自动切过来"，所以留 semi。 */
+      if (CASE0 === 'manual' || CASE0 === 'manualrest') profile.mode = 'manual';
+
+      /* 自己排 + 体验模式：先塞一条今天的清单，好让"模拟完成今天"有东西可点 */
+      var seedDays = {};
+      var seedManualTags = [];
+      var seedFocusLive = null;      // 番茄钟"上次没结束"的存档
+      var seedAdvanced = { subtask: false, repeat: false, remind: false };
+      function mkSeedTask(id, title, mid, unit, amount, minutes, order, extra) {
+        var m = window.YT.MODULE_BY_ID[mid];
+        var work = null;
+        if (mid && amount) {
+          if (unit === '组') work = { sets: amount };
+          else if (unit === '节') work = { units: amount };
+          else work = { amount: amount };
+        }
+        var t = {
+          id: id, kind: 'task', title: title, userAdded: true,
+          moduleId: mid || null, moduleName: m ? m.name : '', work: work,
+          minutes: minutes, note: '', subtasks: [], repeat: null, remind: null,
+          order: order, status: 'todo', actualMinutes: null, focusMinutes: 0,
+        };
+        if (extra) Object.keys(extra).forEach(function (k) { t[k] = extra[k]; });
+        return t;
+      }
+      if (CASE0 === 'manualdemo') {
+        profile.mode = 'manual';
+        seedDays[today] = {
+          date: today, isRest: false, stage: null, mood: null,
+          tasks: [mkSeedTask('seed-1', '种子任务', 'zlfx', '组', 1, 25, 1)],
+        };
+      }
+      /* 番茄钟恢复：一条是"刚走完不久"（该自动接着走），一条是"停在很久以前"（该问一句） */
+      if (CASE0 === 'manualresume' || CASE0 === 'manualresumestale') {
+        profile.mode = 'manual';
+        var nowMs = Date.now();
+        var endsAt = CASE0 === 'manualresume' ? nowMs + 12 * 60 * 1000 : nowMs - 9 * 60 * 60 * 1000;
+        seedManualTags = [{ id: 'u-shot', name: '民法' }];
+        seedDays[today] = {
+          date: today, isRest: false, stage: null, mood: null,
+          tasks: [mkSeedTask('s2', '言语理解 专项刷题', 'yy', '题', 30, 45, 1)],
+        };
+        seedFocusLive = {
+          mode: 'pomodoro', phase: 'work', running: true,
+          startedAt: new Date(endsAt - 25 * 60 * 1000).toISOString(),
+          phaseStartAt: new Date(endsAt - 25 * 60 * 1000).toISOString(),
+          endsAt: endsAt, remainMs: null, elapsedMs: 0, phaseMs: 25 * 60 * 1000,
+          longBreak: false, workMin: 25, shortMin: 5, longMin: 15,
+          rounds: 4, round: 1, taskId: 's2', dateKey: today, moduleId: 'yy',
+          label: '言语理解 专项刷题',
+        };
+      }
+      /* 新功能驱动用例：编辑 / 改期 / 复制 / 撤销 / 批量排 / 计划页两档 */
+      /* manualseries 用同一份数据，但只截图不跑驱动（方便看菜单、浮条、表单） */
+      if (CASE0 === 'manualnew' || CASE0 === 'manualseries') {
+        profile.mode = 'manual';
+        profile.weekdayMinutes = 90;      // 目标压低一点，好验证"今天排超了"
+        profile.restDays = [0];           // 周日休息：批量排要跳过它
+        seedAdvanced = { subtask: true, repeat: true, remind: false };
+        seedManualTags = [{ id: 'u-shot', name: '民法' }];
+        seedDays[today] = {
+          date: today, isRest: false, stage: null, mood: null,
+          tasks: [
+            mkSeedTask('s1', '资料分析 第 3 组', 'zlfx', '组', 1, 30, 1, { status: 'done', focusMinutes: 28 }),
+            mkSeedTask('s2', '言语理解 专项刷题', 'yy', '题', 30, 45, 2),
+          ],
+        };
+        /* 一条已经展开好的"每天重复"，用来验证系列 */
+        var seriesRoot = mkSeedTask('r1', '民法 · 每天背', 'u-shot', '节', 1, 20, 3);
+        seriesRoot.seriesId = 's-r1';
+        seriesRoot.repeat = { freq: 'daily', until: '' };
+        seedDays[today].tasks.push(seriesRoot);
+        for (var ri = 1; ri <= 3; ri++) {
+          var rk = window.YT.engine.toKey(window.YT.engine.addDays(new Date(), ri));
+          var rc = mkSeedTask('r1-' + ri, '民法 · 每天背', 'u-shot', '节', 1, 20, 1);
+          rc.seriesId = 's-r1';
+          rc.repeatOf = 'r1';
+          rc.seriesFreq = 'daily';
+          seedDays[rk] = { date: rk, isRest: false, stage: null, mood: null, tasks: [rc] };
+        }
+      }
+      if (CASE0 === 'manualshot') {
+        profile.mode = 'manual';
+        seedManualTags = [{ id: 'u-shot', name: '民法' }];
+        seedDays[today] = {
+          date: today, isRest: false, stage: null, mood: null,
+          tasks: [
+            mkSeedTask('s1', '资料分析 第 3 组', 'zlfx', '组', 1, 30, 1, { status: 'done', focusMinutes: 28 }),
+            mkSeedTask('s2', '言语理解 专项刷题', 'yy', '题', 30, 45, 2),
+            mkSeedTask('s3', '整理错题本', null, '', 0, 25, 3, {
+              subtasks: [{ id: 'ss1', title: '重做昨天错的 5 道', done: true },
+                         { id: 'ss2', title: '记下错因', done: false },
+                         { id: 'ss3', title: '归到对应知识点', done: false }],
+            }),
+            mkSeedTask('s6', '民法总则 · 第 2 讲', 'u-shot', '节', 1, 40, 4,
+              { status: 'done', actualMinutes: 35, moduleName: '民法' }),
+          ],
+        };
+        var d2 = window.YT.engine.toKey(window.YT.engine.addDays(new Date(), 2));
+        var d3 = window.YT.engine.toKey(window.YT.engine.addDays(new Date(), 5));
+        seedDays[d2] = { date: d2, isRest: false, stage: null, mood: null,
+          tasks: [mkSeedTask('s4', '申论 小题 1 道', 'slw', '道', 1, 40, 1)] };
+        seedDays[d3] = { date: d3, isRest: false, stage: null, mood: null,
+          tasks: [mkSeedTask('s5', '模考一套', null, '', 0, 120, 1)] };
+      }
+
       window.localStorage.setItem('yang-toolbox/v1', JSON.stringify({
         version: 1,
         userId: 'local-user',
         profile: profile,
         roadmap: E.buildRoadmap(profile, today),
-        days: {},
+        days: seedDays,
+        focus: { settings: { work: 25, short: 5, long: 15, rounds: 4 }, sessions: [], live: seedFocusLive },
+        manual: { settings: { advanced: seedAdvanced, askActual: true }, tags: seedManualTags },
         rounds: [],
         weeklyLog: [],
         weekMark: {},
@@ -527,6 +641,981 @@
         });
       }
 
+      /* ---------------- 自己排（清单 + 番茄钟） ---------------- */
+      if (CASE === 'manual') {
+        var mTk = window.YT.engine.toKey(new Date());
+        var mFocusTaskId = null;   // 刚才挂上计时的那一条
+        var mFirst = null;
+        var mCustomTagId = null;
+
+        step('今日页是清单', function () {
+          var txt = $('#app').textContent;
+          if (txt.indexOf('清单') >= 0) ok('今日页换成了清单');
+          else fail('今日页没有清单：' + txt.slice(0, 80));
+          if ($('[data-act="m-add-open"]')) ok('有「加一条」按钮');
+          else fail('没有「加一条」按钮');
+        });
+
+        step('预计时长档位能再点取消，手填会取消档位', function () {
+          click('[data-act="m-add-open"]');
+          click('[data-act="m-f-minutes"][data-v="60"]');
+          if ($('[data-act="m-f"][data-k="minutes"]').value === '60') ok('点 60 档：预计时长 = 60');
+          else fail('选档位没生效');
+          click('[data-act="m-f-minutes"][data-v="60"]');
+          if ($('[data-act="m-f"][data-k="minutes"]').value === '') ok('再点一次 60：取消，输入框清空');
+          else fail('再点一次没取消：' + $('[data-act="m-f"][data-k="minutes"]').value);
+          click('[data-act="m-f-minutes"][data-v="60"]');
+          var mInp = $('[data-act="m-f"][data-k="minutes"]');
+          mInp.value = '45';
+          mInp.dispatchEvent(new Event('input', { bubbles: true }));
+          if (!$('[data-act="m-f-minutes"][data-v="60"]').classList.contains('on')) ok('手填 45：60 档位取消选中');
+          else fail('手填之后档位还亮着');
+          mInp.value = '60';
+          mInp.dispatchEvent(new Event('input', { bubbles: true }));
+          if ($('[data-act="m-f-minutes"][data-v="60"]').classList.contains('on')) ok('手填 60：档位跟着亮');
+          else fail('手填和档位没同步');
+          click('[data-act="m-add-cancel"]');
+        });
+
+        step('加一条清单（标签 + 预计时长）', function () {
+          click('[data-act="m-add-open"]');
+          if (!$('[data-act="m-add-save"]')) return fail('加一条的表单没出来');
+          if (!$('[data-act="m-f"][data-k="workAmount"]') && !$('[data-act="m-f-unit"]')) {
+            ok('工作量已经去掉（没有工作量输入和 题/组/节 按钮）');
+          } else {
+            fail('工作量还在表单里');
+          }
+          if (!$('[data-act="m-f-sub"]') && !$('[data-act="m-f-repeat"]') && $('.mf-more')) {
+            ok('高级项默认关：没有子任务 / 重复控件，只有一行去设置的入口');
+          } else {
+            fail('高级项默认关的表现不对');
+          }
+          if ($('[data-act="m-f-subject"][data-v="pd"]') && !document.querySelector('[data-act="m-f-subject"][data-v="pdlj"]')) {
+            ok('判推三块已经合并成「判断推理」');
+          } else {
+            fail('标签没有合并成判断推理');
+          }
+          /* 选了标签、标题留空 → 默认就用标签名 */
+          click('[data-act="m-f-subject"][data-v="pd"]');
+          var auto = $('[data-act="m-f"][data-k="title"]');
+          if (auto && auto.value === '判断推理') ok('选标签后标题默认 = 标签名（' + auto.value + '）');
+          else fail('标题没默认成标签名：' + (auto ? auto.value : '(没有标题框)'));
+          /* 用户手改标题 → 之后不再被标签覆盖 */
+          auto.value = '资料分析第 3 组';
+          auto.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="m-f-subject"][data-v="yy"]');
+          if ($('[data-act="m-f"][data-k="title"]').value === '资料分析第 3 组') {
+            ok('手改过标题就不再被标签覆盖');
+          } else {
+            fail('手改过的标题被标签覆盖了');
+          }
+          click('[data-act="m-f-subject"][data-v="zlfx"]');
+          click('[data-act="m-f-minutes"][data-v="60"]');
+          if ($('[data-act="m-f"][data-k="minutes"]').value === '60') ok('预计时长有档位快选');
+          else fail('预计时长档位没生效');
+          click('[data-act="m-add-save"]');
+          var day = stored().days[mTk];
+          var task = day && (day.tasks || [])[0];
+          if (task && task.title === '资料分析第 3 组' && task.userAdded === true && task.kind === 'task' && task.minutes === 60) {
+            ok('清单项：title / userAdded / kind / 预计时长 都对');
+          } else {
+            fail('清单项字段不对：' + JSON.stringify(task && { title: task.title, minutes: task.minutes }));
+          }
+          if (!task.work) ok('不再写工作量字段');
+          else fail('还写了 work');
+          mFirst = task;
+        });
+
+        step('新建自定义标签并选中', function () {
+          click('[data-act="m-add-open"]');
+          click('[data-act="m-tag-new"]');
+          var inp = $('[data-act="m-tag-input"]');
+          if (!inp) return fail('点了「＋新建」没有出现输入框');
+          inp.value = '民法';
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="m-tag-save"]');
+          var titleEl = $('[data-act="m-f"][data-k="title"]');
+          if (titleEl && titleEl.value === '民法') ok('新标签建好并自动填了标题');
+          else fail('新建标签后标题没跟上：' + (titleEl ? titleEl.value : '(没有)'));
+          click('[data-act="m-f-minutes"][data-v="30"]');
+          click('[data-act="m-add-save"]');
+          var st = stored();
+          var tag = (st.manual.tags || []).filter(function (t) { return t.name === '民法'; })[0];
+          var task = null;
+          Object.keys(st.days).forEach(function (k) {
+            (st.days[k].tasks || []).forEach(function (x) { if (x.title === '民法') task = x; });
+          });
+          if (tag && task && task.moduleId === tag.id) {
+            ok('自定义标签存进 manual.tags，并被条目引用');
+            mCustomTagId = tag.id;
+          } else {
+            fail('自定义标签没存对：' + JSON.stringify({ tag: tag, mid: task && task.moduleId }));
+          }
+        });
+
+        step('不指定科目必须自己写标题', function () {
+          var before = (stored().days[mTk].tasks || []).length;
+          click('[data-act="m-add-open"]');
+          click('[data-act="m-f-subject"][data-v=""]');
+          var t = $('[data-act="m-f"][data-k="title"]');
+          if (t && t.value === '') ok('切到「不指定」后标题是空的');
+          else fail('「不指定」时标题不为空：' + (t ? t.value : '(没有)'));
+          click('[data-act="m-add-save"]');
+          var after = (stored().days[mTk].tasks || []).length;
+          if (after === before) ok('不指定 + 标题空 → 加不进去（有提示）');
+          else fail('不指定又没标题，居然加进去了');
+          click('[data-act="m-add-cancel"]');
+        });
+
+        step('关掉的高级项：一行入口直达设置开关', function () {
+          click('[data-act="m-add-open"]');
+          if (!$('.mf-more')) return fail('高级项关着却没出现入口');
+          click('.mf-more');
+          var live = window.__ytDebug();
+          if (live.ui.screen === 'settings' && live.ui.folds && live.ui.folds['settings:manual'] === true) {
+            ok('点一下就跳到设置，并展开「清单选项」');
+          } else {
+            fail('没有跳到设置 / 没展开清单选项：' + JSON.stringify({ screen: live.ui.screen, folds: live.ui.folds }));
+          }
+          click('[data-act="goto"][data-to="today"]');
+          if ($('[data-act="m-add-save"]')) ok('回到今日页，草稿还在，表单没丢');
+          else info('回到今日页后表单没保留（可接受）');
+          click('[data-act="m-add-cancel"]');
+        });
+
+        step('打卡 → 弹出实际用时，记下', function () {
+          var st0 = stored();
+          var task = (st0.days[mTk].tasks || []).filter(function (x) { return x.title === '资料分析第 3 组'; })[0];
+          if (!task) return fail('找不到刚加的那条');
+          click('[data-act="m-done"][data-task="' + task.id + '"]');
+          var mt = document.querySelector('.modal-title');
+          if (mt && mt.textContent.indexOf('实际用了多久') >= 0) ok('完成时弹出「实际用了多久」');
+          else fail('完成没有弹实际用时：' + (mt ? mt.textContent : '(没有弹窗)'));
+          if ($('[data-act="m-actual-pick"]')) ok('弹窗里有档位可点');
+          else return fail('弹窗里没有档位');
+          click('[data-act="m-actual-pick"]');
+          var st = stored();
+          var t2 = (st.days[mTk].tasks || []).filter(function (x) { return x.id === task.id; })[0];
+          if (t2 && t2.status === 'done') ok('两态打卡：点一下就是完成');
+          else fail('打卡没生效');
+          if (t2 && t2.actualMinutes > 0) ok('档位点一下就把实际用时记下了（' + t2.actualMinutes + ' 分）');
+          else fail('实际用时没记下：' + JSON.stringify(t2 && t2.actualMinutes));
+          if ((st.feedback.events || []).length) ok('打卡发了反馈事件');
+          else fail('打卡没发反馈事件');
+          var c = window.YT.stats.checklistTotals(st, mTk);
+          if (c.items >= 2 && c.doneItems >= 1 && c.actualMinutes > 0) {
+            ok('统计口径：预计 ' + c.plannedMinutes + ' 分 / 实际 ' + c.actualMinutes + ' 分');
+          } else {
+            fail('统计口径不对：' + JSON.stringify({ items: c.items, done: c.doneItems, actual: c.actualMinutes }));
+          }
+        });
+
+        step('重复规则展开（先在设置里开）', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          click('[data-act="fold-toggle"][data-k="settings:manual"]');
+          click('[data-act="manual-adv"][data-v="repeat"]');
+          click('[data-act="goto"][data-to="today"]');
+          click('[data-act="m-add-open"]');
+          if (!$('[data-act="m-f-repeat"]')) return fail('设置里开了重复，表单里还是没出现');
+          var t = $('[data-act="m-f"][data-k="title"]');
+          t.value = '每天背单词';
+          t.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="m-f-repeat"][data-v="daily"]');
+          click('[data-act="m-add-save"]');
+          var st = stored();
+          var daysWith = Object.keys(st.days).filter(function (k) {
+            return (st.days[k].tasks || []).some(function (x) { return x.title === '每天背单词'; });
+          });
+          if (daysWith.length > 5) ok('重复展开到了 ' + daysWith.length + ' 天');
+          else fail('重复没有展开：只有 ' + daysWith.length + ' 天');
+          /* 一次最多展开 40 条（60 天里），撞到上限要说清楚 */
+          var toastTxt = ($('#toast') || {}).textContent || '';
+          if (daysWith.length >= 41 && toastTxt.indexOf('上限') >= 0) ok('撞到展开上限时提示了一句：' + toastTxt);
+          else if (daysWith.length >= 41) fail('展开到上限却没提示：' + toastTxt);
+          /* 这一串要能被认成一个系列 */
+          var rootT = null;
+          Object.keys(st.days).forEach(function (k) {
+            (st.days[k].tasks || []).forEach(function (x) { if (x.title === '每天背单词' && x.seriesId) rootT = x; });
+          });
+          if (rootT && window.YT.manual.seriesMembers(window.__ytDebug(), rootT.seriesId).length === daysWith.length) {
+            ok('整串认成同一个系列（' + daysWith.length + ' 条）');
+          } else {
+            fail('展开出来的条目没有认成一个系列');
+          }
+        });
+
+        step('重复档位能再点一次取消', function () {
+          click('[data-act="m-add-open"]');
+          click('[data-act="m-f-repeat"][data-v="daily"]');
+          if ($('[data-act="m-f"][data-k="repeatUntil"]')) ok('选了每天：出现截止日期');
+          else fail('选重复后没有截止日期行');
+          click('[data-act="m-f-repeat"][data-v="daily"]');
+          if (!$('[data-act="m-f"][data-k="repeatUntil"]')) ok('再点一次：取消重复，截止日期收起');
+          else fail('再点一次没取消重复');
+          click('[data-act="m-add-cancel"]');
+        });
+
+        step('子任务用加减控件', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          click('[data-act="manual-adv"][data-v="subtask"]');
+          click('[data-act="goto"][data-to="today"]');
+          click('[data-act="m-add-open"]');
+          var t = $('[data-act="m-f"][data-k="title"]');
+          t.value = '整理错题';
+          t.dispatchEvent(new Event('input', { bubbles: true }));
+          if (!$('[data-act="m-f-sub"]')) return fail('开了子任务，表单里没有子任务行');
+          click('[data-act="m-sub-add"]');
+          click('[data-act="m-sub-add"]');
+          if (document.querySelectorAll('[data-act="m-f-sub"]').length === 3) ok('「＋ 添加子任务」能加行');
+          else fail('加减控件行数不对：' + document.querySelectorAll('[data-act="m-f-sub"]').length);
+          click('[data-act="m-sub-del"][data-i="2"]');
+          if (document.querySelectorAll('[data-act="m-f-sub"]').length === 2) ok('「×」能删掉一行');
+          else fail('删行没生效');
+          click('[data-act="m-sub-add"]');
+          var vals = ['重做错题', '记下错因', '归类'];
+          Array.prototype.forEach.call(document.querySelectorAll('[data-act="m-f-sub"]'), function (el, i) {
+            el.value = vals[i];
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          });
+          click('[data-act="m-add-save"]');
+          var st = stored();
+          var task = null;
+          Object.keys(st.days).forEach(function (k) {
+            (st.days[k].tasks || []).forEach(function (x) { if (x.title === '整理错题') task = x; });
+          });
+          if (task && task.subtasks && task.subtasks.length === 3) ok('子任务按行存了 3 条');
+          else return fail('子任务没存对：' + JSON.stringify(task && task.subtasks));
+          click('[data-act="m-sub"][data-task="' + task.id + '"][data-sub="' + task.subtasks[0].id + '"]');
+          var st2 = stored();
+          var task2 = null;
+          Object.keys(st2.days).forEach(function (k) {
+            (st2.days[k].tasks || []).forEach(function (x) { if (x.id === task.id) task2 = x; });
+          });
+          if (task2 && task2.subtasks[0].done) ok('子任务能单独勾选，父项显示 ' + window.YT.manual.subtaskStat(task2).done + '/' + window.YT.manual.subtaskStat(task2).total);
+          else fail('子任务勾不上');
+        });
+
+        step('上下移动保存顺序', function () {
+          click('[data-act="goto"][data-to="today"]');
+          var list = (stored().days[mTk].tasks || []).slice();
+          if (list.length < 2) return fail('今天的条目不够两条');
+          var firstId = list[0].id, secondId = list[1].id;
+          /* 上移下移现在收在「⋯」菜单里，卡片上只留一个入口 */
+          click('[data-act="m-menu"][data-task="' + firstId + '"]');
+          if (!$('[data-act="m-down"][data-task="' + firstId + '"]')) {
+            return fail('⋯ 菜单里没有上移下移');
+          }
+          click('[data-act="m-down"][data-task="' + firstId + '"]');
+          var after = (stored().days[mTk].tasks || []).slice().sort(function (a, b) { return a.order - b.order; });
+          if (after[0].id === secondId && after[1].id === firstId) ok('下移一条之后顺序存成 order');
+          else fail('顺序没换过来：' + JSON.stringify(after.slice(0, 3).map(function (t) { return t.title; })));
+        });
+
+        step('月历选天 + 那天加任务', function () {
+          click('[data-act="goto"][data-to="plan"]');
+          if (!$('.cal-grid')) return fail('计划页没有月历');
+          var cells = document.querySelectorAll('[data-act="m-cal"]');
+          if (cells.length < 20) return fail('月历格子太少：' + cells.length);
+          var target = cells[cells.length - 1].getAttribute('data-v');
+          click('[data-act="m-cal"][data-v="' + target + '"]');
+          if (stored().ui.manDay === target) ok('点到哪天就选中哪天（' + target + '）');
+          else fail('选天没生效');
+          click('[data-act="m-add-open"][data-v="' + target + '"]');
+          if ($('[data-act="m-add-save"]')) ok('能在那天直接加任务');
+          else fail('选中那天加不了任务');
+          click('[data-act="m-add-cancel"]');
+        });
+
+        step('非今天的条目不能打卡、不能开始专注', function () {
+          click('[data-act="goto"][data-to="plan"]');
+          var cells = document.querySelectorAll('[data-act="m-cal"]');
+          var target = null;
+          for (var i = cells.length - 1; i >= 0; i--) {
+            var v = cells[i].getAttribute('data-v');
+            if (v > mTk) { target = v; break; }
+          }
+          if (!target) return fail('月历里找不到未来的日子');
+          click('[data-act="m-cal"][data-v="' + target + '"]');
+          var detail = document.querySelector('.m-day');
+          if (!detail) return fail('选中未来那天没有展开详情');
+          if (!detail.querySelector('[data-act="m-focus"]')) ok('未来那天没有「开始专注」');
+          else fail('未来那天还能开始专注');
+          if (!detail.querySelector('[data-act="m-done"]') && detail.querySelector('.tick.locked')) {
+            ok('未来那天的打卡点是静态的，点不了');
+          } else {
+            fail('未来那天还能打卡');
+          }
+          if (detail.querySelector('[data-act="m-up"]') && detail.querySelector('[data-act="m-del"]')) {
+            ok('未来那天仍可上下移动 / 删除（提前排期用）');
+          } else {
+            /* 现在这些都收在卡片右上角的「⋯」里 */
+            var moreBtn = detail.querySelector('[data-act="m-menu"]');
+            if (!moreBtn) return fail('未来那天的排期操作被拿掉了');
+            moreBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            var ov = $('#overlay');
+            var hasMove = ov && ov.querySelector('[data-act="m-move-open"]');
+            var hasDel = ov && ov.querySelector('[data-act="m-del"]');
+            if (hasMove && hasDel) ok('未来那天的改期 / 删除都在「⋯」菜单里');
+            else fail('未来那天的「⋯」菜单里缺改期或删除');
+            click('[data-act="m-menu-close"]');
+          }
+        });
+
+        step('「开始专注」先进待开始界面，不自动开跑', function () {
+          click('[data-act="goto"][data-to="today"]');
+          /* 已经打过卡的条目不再挂「开始专注」——做完了就别再喊你开始 */
+          var doneTask = (stored().days[mTk].tasks || []).filter(function (x) { return x.status === 'done'; })[0];
+          if (doneTask && !$('[data-act="m-focus"][data-task="' + doneTask.id + '"]')) ok('已完成的条目不再显示「开始专注」');
+          else fail('已完成的条目还挂着「开始专注」');
+          var task = (stored().days[mTk].tasks || []).filter(function (x) { return x.status !== 'done'; })[0];
+          if (!task) return fail('没有未完成的条目可以测专注');
+          mFocusTaskId = task.id;
+          click('[data-act="m-focus"][data-task="' + task.id + '"]');
+          if (!$('.focus-live') && !$('.focus-bar')) ok('点「开始专注」没有立刻开跑');
+          else fail('点「开始专注」直接进计时了');
+          if ($('[data-act="focus-start"]')) ok('落在工具页的待开始界面');
+          else return fail('没有落到工具页');
+          var sel = $('[data-act="focus-task"]');
+          if (sel && sel.value === task.id) ok('任务已经预先挂上（' + task.title + '）');
+          else fail('任务没预选：' + (sel ? sel.value : '(没有选择框)'));
+        });
+
+        step('番茄钟参数默认折叠；正计时没有参数', function () {
+          if ($('.focus-fold') && !$('[data-act="focus-set"]')) ok('参数默认收起，只留一行摘要');
+          else fail('参数默认展开了');
+          click('[data-act="focus-fold"]');
+          if ($('[data-act="focus-set"]')) ok('点一下能展开参数');
+          else fail('展开不了参数');
+          click('[data-act="focus-mode"][data-v="countup"]');
+          if (!$('[data-act="focus-set"]') && !$('.focus-fold') && $('.focus-note')) ok('正计时没有任何参数调整');
+          else fail('正计时还有参数调整');
+          click('[data-act="focus-mode"][data-v="pomodoro"]');
+        });
+
+        step('按开始才真正开跑，且跨页常驻', function () {
+          click('[data-act="focus-start"]');
+          if ($('.focus-live') && $('[data-act="focus-stop"]')) ok('按开始才进入计时');
+          else return fail('开始没生效');
+          if ($('.focus-bar')) ok('出现常驻细条');
+          else fail('没有常驻细条');
+          click('[data-act="goto"][data-to="plan"]');
+          if ($('.focus-bar')) ok('切到计划页，常驻条还在');
+          else fail('切页后常驻条没了');
+          click('[data-act="goto"][data-to="tools"]');
+        });
+
+        step('番茄钟到点记一条并算到任务头上', function () {
+          var r = window.YT.focus.runtime();
+          if (!r) return fail('没有运行中的计时器');
+          r.endsAt = Date.now() - 1;   // 快进到结束
+          window.YT.focus.tick(window.__ytDebug());
+          var st = stored();
+          var sess = (st.focus.sessions || [])[0];
+          if (sess) ok('到点写了专注记录');
+          else return fail('到点没记记录');
+          if (sess.taskId && sess.mode === 'pomodoro' && sess.minutes > 0 && sess.startedAt && sess.endedAt && sess.moduleId) {
+            ok('记录字段齐全：startedAt / endedAt / minutes / mode / taskId / moduleId');
+          } else {
+            fail('记录字段不对：' + JSON.stringify(sess));
+          }
+          var task = (st.days[mTk].tasks || []).filter(function (x) { return x.id === mFocusTaskId; })[0];
+          if (task.focusMinutes >= 1) ok('计时器时长写进了 focusMinutes（' + task.focusMinutes + ' 分）');
+          else fail('计时器时长没记上');
+          if (task.actualMinutes === null || task.actualMinutes === undefined) {
+            ok('这条是没打自报用时的，计时器只写自己那一层（计时 ' + task.focusMinutes + ' 分）');
+          } else {
+            fail('没打过自报用时的条目，实际用时被写了东西：' + task.actualMinutes);
+          }
+          /* 自报用时（打卡时填的）仍然优先，不会被计时器覆盖 */
+          var selfTask = (st.days[mTk].tasks || []).filter(function (x) { return x.actualMinutes === 30; })[0];
+          if (selfTask && window.YT.stats.effectiveMinutes(selfTask) === 30) {
+            ok('自报实际用时仍是优先口径（自报 30 分）');
+          } else {
+            fail('自报实际被计时器盖掉了');
+          }
+          click('[data-act="focus-skip"]');
+        });
+
+        step('自由专注（正计时）', function () {
+          if ($('[data-act="focus-stop"]')) click('[data-act="focus-stop"]');
+          click('[data-act="goto"][data-to="tools"]');
+          click('[data-act="focus-mode"][data-v="countup"]');
+          var sel = $('[data-act="focus-task"]');
+          if (!sel) return fail('工具页没有挂任务的选项');
+          sel.value = '';
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          click('[data-act="focus-start"]');
+          if (!$('.focus-bar')) return fail('正计时没开始');
+          var r = window.YT.focus.runtime();
+          r.phaseStartAt = Date.now() - 61000;   // 假装已经走了 61 秒
+          var before = (stored().focus.sessions || []).length;
+          click('[data-act="focus-stop"]');
+          var list = stored().focus.sessions || [];
+          var sess = list[list.length - 1];
+          if (list.length === before + 1 && sess.mode === 'countup' && sess.minutes >= 1) {
+            ok('正计时结束记了一条：' + sess.minutes + ' 分钟');
+          } else {
+            fail('正计时没记对：' + JSON.stringify(sess));
+          }
+          if (!$('.focus-bar')) ok('结束后常驻条消失');
+          else fail('结束后常驻条还在');
+        });
+
+        step('自定义标签能改名，老条目跟着变', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          click('[data-act="fold-toggle"][data-k="settings:tags"]');
+          var ren = document.querySelector('[data-act="tag-rename"][data-v="' + mCustomTagId + '"]');
+          if (!ren) return fail('设置里找不到自定义标签');
+          ren.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          var inp = document.getElementById('tag-name-input');
+          if (!inp) return fail('改名没有弹输入框');
+          inp.value = '民法总则';
+          click('[data-act="tag-rename-save"]');
+          var st = stored();
+          var tag = (st.manual.tags || []).filter(function (t) { return t.id === mCustomTagId; })[0];
+          var named = [];
+          Object.keys(st.days).forEach(function (k) {
+            (st.days[k].tasks || []).forEach(function (x) { if (x.moduleId === mCustomTagId) named.push(x.moduleName); });
+          });
+          if (tag && tag.name === '民法总则' && named.length && named.every(function (n) { return n === '民法总则'; })) {
+            ok('改名后标签和用它记过的条目一起变');
+          } else {
+            fail('改名没同步：' + JSON.stringify({ tag: tag, named: named }));
+          }
+        });
+
+        step('删标签前让用户选范围（只删标签）', function () {
+          click('[data-act="tag-del"][data-v="' + mCustomTagId + '"]');
+          var ov = $('#overlay');
+          if (ov && ov.textContent.indexOf('只删标签') >= 0 && ov.textContent.indexOf('连记录一起删') >= 0) {
+            ok('删标签前列出两种范围');
+          } else {
+            return fail('删标签没有范围选择');
+          }
+          click('[data-act="tag-del-only"]');
+          var st = stored();
+          var stillTask = null;
+          Object.keys(st.days).forEach(function (k) {
+            (st.days[k].tasks || []).forEach(function (x) { if (x.title === '民法') stillTask = x; });
+          });
+          var tagGone = !(st.manual.tags || []).some(function (t) { return t.id === mCustomTagId; });
+          if (tagGone && stillTask && stillTask.moduleId === null) ok('「只删标签」：条目留着，变成未指定');
+          else fail('只删标签的结果不对：' + JSON.stringify({ tagGone: tagGone, mid: stillTask && stillTask.moduleId }));
+        });
+
+        step('自报用时超过 8 小时会被夹到 480', function () {
+          click('[data-act="goto"][data-to="today"]');
+          var task = (stored().days[mTk].tasks || []).filter(function (x) { return x.title === '资料分析第 3 组'; })[0];
+          click('[data-act="m-actual-open"][data-task="' + task.id + '"]');
+          var inp = document.getElementById('actual-input');
+          if (!inp) return fail('改实际用时的弹窗没打开');
+          inp.value = '99999';
+          click('[data-act="m-actual-save"]');
+          var t2 = (stored().days[mTk].tasks || []).filter(function (x) { return x.id === task.id; })[0];
+          if (t2 && t2.actualMinutes === 480) ok('自报上限 480 分钟，挡住了 99999');
+          else fail('上限没生效：' + JSON.stringify(t2 && t2.actualMinutes));
+        });
+
+        step('关掉「完成后询问」就不再弹窗', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          click('[data-act="fold-toggle"][data-k="settings:manual"]');
+          click('[data-act="manual-ask"]');
+          if (!window.__ytDebug().manual.settings.askActual) ok('开关关掉了');
+          else return fail('开关没关掉');
+          click('[data-act="goto"][data-to="today"]');
+          var task = (stored().days[mTk].tasks || []).filter(function (x) { return x.title === '每天背单词'; })[0];
+          if (!task) return fail('找不到可打卡的条目');
+          click('[data-act="m-done"][data-task="' + task.id + '"]');
+          var mt = document.querySelector('.modal-title');
+          if (!mt || mt.textContent.indexOf('实际用了多久') === -1) ok('关掉开关后打卡不再弹窗');
+          else fail('关掉开关还是弹了');
+        });
+
+        step('「连记录一起删」把标签和条目都清掉', function () {
+          click('[data-act="goto"][data-to="today"]');
+          click('[data-act="m-add-open"]');
+          click('[data-act="m-tag-new"]');
+          var inp = $('[data-act="m-tag-input"]');
+          if (!inp) return fail('新建标签输入框没出来');
+          inp.value = '临时标签';
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="m-tag-save"]');
+          click('[data-act="m-f-minutes"][data-v="15"]');
+          click('[data-act="m-add-save"]');
+          var tag = (stored().manual.tags || []).filter(function (t) { return t.name === '临时标签'; })[0];
+          if (!tag) return fail('临时标签没建出来');
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          click('[data-act="tag-del"][data-v="' + tag.id + '"]');
+          click('[data-act="tag-del-records"]');
+          var st2 = stored();
+          var tagGone = !(st2.manual.tags || []).some(function (t) { return t.id === tag.id; });
+          var taskLeft = false;
+          Object.keys(st2.days).forEach(function (k) {
+            (st2.days[k].tasks || []).forEach(function (x) { if (x.moduleId === tag.id) taskLeft = true; });
+          });
+          if (tagGone && !taskLeft) ok('「连记录一起删」：标签和用它记的条目一起没了');
+          else fail('硬删没清干净：' + JSON.stringify({ tagGone: tagGone, taskLeft: taskLeft }));
+        });
+
+        step('我的 / 统计换成"计时器 + 实际用时"口径', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          if ($('#app').textContent.indexOf('专注小时') >= 0 && $('#app').textContent.indexOf('实际小时') >= 0) {
+            ok('我的页显示 计时器专注 / 自报实际');
+          } else {
+            fail('我的页指标不对');
+          }
+          click('[data-act="goto"][data-to="stats"]');
+          var txt = $('#app').textContent;
+          if (txt.indexOf('计时器专注') >= 0 && txt.indexOf('实际用时') >= 0 && txt.indexOf('估时偏差') >= 0) {
+            ok('统计页是「计时器 + 实际用时」两层口径');
+          } else {
+            fail('统计页口径不对：' + txt.slice(0, 120));
+          }
+          /* 学习档案现在是自己排下的常驻入口（它讲的是"我学到哪了"，
+           * 跟"系统排得对不对"无关）；档位和做题速度仍然是系统排课的东西，不出现。 */
+          if (txt.indexOf('各科在第几档') === -1 && txt.indexOf('做题速度') === -1 &&
+              txt.indexOf('学习档案') >= 0 && $('[data-act="arch-open"]')) {
+            ok('统计页去掉了档位 / 做题速度，并接上了学习档案入口');
+          } else {
+            fail('统计页的区块不对：' + txt.slice(0, 120));
+          }
+          if (txt.indexOf('成绩记录') === -1) ok('没录过成绩就不显示成绩记录');
+          else fail('没录成绩却显示了成绩记录');
+          var stt = window.YT.stats.subjectTime(window.__ytDebug(), mTk);
+          if (stt.every(function (x) { return x.moduleId !== '_other' && x.moduleId !== '_free'; }) && stt.length) {
+            ok('按标签分布里没有未指定 / 自由专注');
+          } else {
+            fail('按标签分布不对：' + JSON.stringify(stt.map(function (x) { return x.moduleId; })));
+          }
+        });
+
+        step('录过成绩才显示成绩记录，且不给建议', function () {
+          if ($('#app').textContent.indexOf('成绩记录') === -1) ok('统计页：还没录成绩就不显示成绩记录');
+          else fail('统计页没录成绩就显示了成绩记录');
+          click('[data-act="goto"][data-to="mine"]');
+          if ($('[data-act="score-open"]')) ok('我的页有成绩记录入口（不然没录过就没法录）');
+          else return fail('我的页没有成绩记录入口');
+          click('[data-act="score-open"]');
+          var r = $('[data-act="score-rate"][data-m="zlfx"]');
+          if (!r) return fail('成绩弹窗没打开');
+          r.value = '60';
+          r.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="score-save"]');
+          click('[data-act="goto"][data-to="stats"]');
+          var txt = $('#app').textContent;
+          if (txt.indexOf('成绩记录') >= 0) ok('录过成绩之后成绩记录才出现');
+          else fail('录了成绩还是没显示成绩记录');
+          if (txt.indexOf('按你的成绩看') === -1 && txt.indexOf('多排点') === -1) ok('自己排不给按成绩的建议');
+          else fail('还是给了按成绩的建议');
+        });
+
+        step('统计是自己排的第 5 个 tab', function () {
+          click('[data-act="goto"][data-to="today"]');
+          var tabCount = document.querySelectorAll('.tabbar .tab').length;
+          if (tabCount === 5) ok('自己排下底部有 5 个 tab');
+          else fail('tab 数量不对：' + tabCount);
+          if ($('.tabbar [data-to="stats"]')) ok('统计是自己一格');
+          else fail('没有统计 tab');
+          click('[data-act="goto"][data-to="stats"]');
+          if ($('#app').textContent.indexOf('统计') >= 0 && !$('.page-back')) ok('统计页直达，没有返回键');
+          else fail('统计页还带返回键');
+          click('[data-act="goto"][data-to="mine"]');
+          if (!document.querySelector('.menu-row[data-to="stats"]')) ok('我的页不再重复放统计入口');
+          else fail('我的页还有数据统计行');
+          if ($('[data-act="score-open"]')) ok('我的页仍保留成绩记录入口');
+          else fail('成绩记录入口没了');
+        });
+      }
+
+      /* 切成自己排：保留 */
+      if (CASE === 'manualmode') {
+        step('切成自己排会先问一句', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          click('[data-act="set-mode"][data-v="manual"]');
+          var ov = $('#overlay');
+          if (ov && ov.textContent.indexOf('保留现有任务当清单') >= 0) ok('弹出保留 / 清空的选择');
+          else return fail('切换没有问一句：' + (ov ? ov.textContent.slice(0, 60) : '(没有弹窗)'));
+        });
+
+        step('选保留：旧任务都当清单', function () {
+          click('[data-act="mode-keep"]');
+          var st = stored();
+          if (st.profile.mode === 'manual') ok('已经切成自己排');
+          else fail('模式没切过去');
+          var allUser = true;
+          Object.keys(st.days).forEach(function (k) {
+            (st.days[k].tasks || []).forEach(function (t) { if (!t.userAdded) allUser = false; });
+          });
+          if (allUser) ok('旧任务全部按 userAdded 处理了');
+          else fail('还有系统任务没转成用户条目');
+          var txt = $('#app').textContent;
+          if (txt.indexOf('清单') >= 0) ok('落在清单页');
+          else fail('没落在清单页');
+        });
+      }
+
+      /* 切成自己排：清空 + 引擎不再排内容 */
+      if (CASE === 'manualclear') {
+        step('切成自己排 → 清空', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          click('[data-act="set-mode"][data-v="manual"]');
+          click('[data-act="mode-clear"]');
+          if (!$('[data-act="confirm-yes"]')) return fail('清空没有二次确认');
+          click('[data-act="confirm-yes"]');
+          var st = stored();
+          if (st.profile.mode === 'manual') ok('已经切成自己排');
+          else fail('模式没切过去');
+          var anyTask = Object.keys(st.days).some(function (k) { return (st.days[k].tasks || []).length; });
+          if (!anyTask) ok('任务记录已经清空');
+          else fail('还有任务没清掉');
+        });
+
+        step('自己排下引擎不再排内容', function () {
+          var live = window.__ytDebug();
+          var E = window.YT.engine;
+          var tk = E.toKey(new Date());
+          var built = E.buildTasks(new Date(), tk, live, live.roadmap, null);
+          if (built.length === 0) ok('buildTasks 返回空数组');
+          else fail('buildTasks 还在排内容：' + built.length);
+          E.ensureAhead(live, tk, 14);
+          var anyTask = Object.keys(live.days).some(function (k) { return (live.days[k].tasks || []).length; });
+          if (!anyTask) ok('ensureAhead 一条都不生成');
+          else fail('ensureAhead 还在塞任务');
+          if (live.forecast === null) ok('不生成进度预测');
+          else info('forecast=' + JSON.stringify(live.forecast).slice(0, 40));
+        });
+      }
+
+      /* 自己排：休息日只是视觉标记，不阻止加任务 */
+      if (CASE === 'manualrest') {
+        step('休息日在月历上有标记', function () {
+          click('[data-act="goto"][data-to="mine"]');
+          click('[data-act="goto"][data-to="settings"]');
+          var wd = new Date().getDay();
+          var pick = (wd === 3) ? 4 : 3;   // 挑一个不是今天的星期几
+          var chip = document.querySelector('[data-act="set-rest"][data-v="' + pick + '"]');
+          if (!chip) return fail('找不到休息日选项');
+          chip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          click('[data-act="goto"][data-to="plan"]');
+          var rests = document.querySelectorAll('.cal-cell.rest');
+          if (rests.length >= 3) ok('月历上休息日有视觉标记（' + rests.length + ' 天）');
+          else fail('月历没标休息日：' + rests.length);
+        });
+
+        step('休息日也能加任务', function () {
+          var cell = document.querySelector('.cal-cell.rest');
+          if (!cell) return fail('没有可点的休息日');
+          var key = cell.getAttribute('data-v');
+          cell.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          click('[data-act="m-add-open"][data-v="' + key + '"]');
+          var t = $('[data-act="m-f"][data-k="title"]');
+          if (!t) return fail('休息日打不开加任务表单');
+          t.value = '休息日随手记';
+          t.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="m-add-save"]');
+          var day = stored().days[key];
+          if (day && day.isRest === false && (day.tasks || []).some(function (x) { return x.title === '休息日随手记'; })) {
+            ok('休息日加了任务就变成学习日了（' + key + '）');
+          } else {
+            fail('休息日加任务没生效：' + JSON.stringify(day && { isRest: day.isRest, n: (day.tasks || []).length }));
+          }
+        });
+      }
+
+      /* 自己排下的体验模式：模拟完成 / 下一天 / 断更都不能被这个分支弄坏 */
+      if (CASE === 'manualdemo') {
+        var mdtk = window.YT.engine.toKey(new Date());
+
+        step('自己排下体验工具条也在', function () {
+          if ($('.demo-bar')) ok('体验工具条出现了');
+          else fail('自己排下体验工具条没出现');
+          if ($('#app').textContent.indexOf('种子任务') >= 0) ok('清单任务渲染了');
+          else fail('清单任务没渲染');
+        });
+
+        step('模拟完成今天', function () {
+          click('[data-act="demo-fill"]');
+          var day = stored().days[mdtk];
+          var done = day ? (day.tasks || []).filter(function (t) { return t.status === 'done'; }).length : 0;
+          if (done > 0) ok('模拟完成生效：' + done + ' 项');
+          else fail('模拟完成没生效');
+        });
+
+        step('下一天', function () {
+          click('[data-act="demo-next"]');
+          if (stored().simDate) ok('下一天生效：' + stored().simDate);
+          else fail('下一天没生效');
+        });
+
+        step('断更模拟不被破坏', function () {
+          openMore();
+          if (!$('[data-act="demo-skip"][data-v="5"]')) return fail('更多面板里的"停 5 天"没找到');
+          click('[data-act="demo-skip"][data-v="5"]');
+          if (stored().simDate) ok('断更模拟跳到 ' + stored().simDate);
+          else fail('断更模拟没生效');
+          var ov = $('#overlay');
+          if (ov) { ov.className = 'overlay hidden'; ov.innerHTML = ''; }
+        });
+      }
+
+      /* 问卷第 5 步选"自己排"→ 跳过第 6 步（各模块课节数） */
+      /* ---------------- 自己排：编辑 / 系列 / 改期 / 复制 / 撤销 / 批量排 / 计划页 ---------------- */
+      if (CASE === 'manualnew') {
+        var nt = window.YT.engine.toKey(new Date());
+        var nTomorrow = window.YT.engine.toKey(window.YT.engine.addDays(new Date(), 1));
+        var liveState = function () { return window.__ytDebug(); };
+        var dayTasks = function (k) { return ((stored().days[k] || {}).tasks) || []; };
+        var byId = function (id) {
+          var hit = null;
+          Object.keys(stored().days).forEach(function (k) {
+            (stored().days[k].tasks || []).forEach(function (t) { if (t.id === id) hit = t; });
+          });
+          return hit;
+        };
+        var futureKeys = function () {
+          return Object.keys(stored().days).filter(function (k) { return k > nt; });
+        };
+
+        step('今日：今天排了多久 · 目标', function () {
+          var el = document.querySelector('.today-total');
+          if (el && el.textContent.indexOf('今天排了') >= 0 && el.textContent.indexOf('目标') >= 0) {
+            ok('今日页有总量和目标：' + el.textContent.trim());
+          } else fail('没有"今天排了 / 目标"那一行');
+          if (el && el.classList.contains('over')) ok('排超目标时只换个颜色，不报警');
+          else fail('排超目标没有标识');
+        });
+
+        step('今日：一条都没填预计时长，整行不出现', function () {
+          var live = liveState();
+          var backup = {};
+          (live.days[nt].tasks || []).forEach(function (t) { backup[t.id] = t.minutes; t.minutes = 0; });
+          click('[data-act="goto"][data-to="plan"]');
+          click('[data-act="goto"][data-to="today"]');
+          var blank = !!document.querySelector('.today-total');
+          (live.days[nt].tasks || []).forEach(function (t) { t.minutes = backup[t.id]; });
+          click('[data-act="goto"][data-to="plan"]');
+          click('[data-act="goto"][data-to="today"]');
+          if (!blank) ok('没有预计时长时，那一行整个不出现');
+          else fail('没人填预计时长，还在显示"今天排了"');
+          if (document.querySelector('.today-total')) ok('填回预计时长后又出现');
+          else fail('恢复预计时长后没出现');
+        });
+
+        step('编辑：只改该改的，打卡 / 专注 / 排序不动', function () {
+          var before = byId('s1');
+          var snap = { id: before.id, status: before.status, f: before.focusMinutes, order: before.order };
+          click('[data-act="m-menu"][data-task="s1"]');
+          if (!$('[data-act="m-edit"]')) return fail('⋯ 菜单里没有「编辑这一条」');
+          click('[data-act="m-edit"]');
+          if (!$('[data-act="m-edit-save"]')) return fail('没有打开编辑表单');
+          var input = $('[data-act="m-f"][data-k="title"]');
+          input.value = '资料分析 第 4 组';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          var mins = $('[data-act="m-f"][data-k="minutes"]');
+          mins.value = '55';
+          mins.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="m-edit-save"]');
+          var after = byId('s1');
+          if (after && after.title === '资料分析 第 4 组' && after.minutes === 55) ok('标题和预计时长改掉了');
+          else fail('改没生效：' + JSON.stringify({ t: after && after.title, m: after && after.minutes }));
+          if (after && after.id === snap.id && after.status === snap.status &&
+              after.focusMinutes === snap.f && after.order === snap.order) {
+            ok('id / 打卡 / 专注分钟 / 排序一个都没动');
+          } else fail('编辑动到了不该动的字段');
+        });
+
+        step('系列：保存时先问「只改这一条 / 这一串都改」', function () {
+          click('[data-act="m-menu"][data-task="r1"]');
+          click('[data-act="m-edit"]');
+          var input = $('[data-act="m-f"][data-k="title"]');
+          if (!input) return fail('没打开编辑表单');
+          input.value = '民法 · 背 2 讲';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="m-edit-save"]');
+          if ($('[data-act="m-edit-scope-series"]')) ok('提示「这一条属于一串重复」，先问一句');
+          else return fail('改系列成员没问范围');
+          click('[data-act="m-edit-scope-one"]');
+          var root = byId('r1');
+          var copy = dayTasks(nTomorrow)[0];
+          if (root.title === '民法 · 背 2 讲' && copy.title === '民法 · 每天背') ok('只改了这一条，副本一个字没动');
+          else fail('只改一条没生效：' + root.title + ' / ' + copy.title);
+        });
+
+        step('系列：走「改这一串」会同步到还没打卡的', function () {
+          click('[data-act="m-menu"][data-task="r1"]');
+          if (!$('[data-act="m-edit-series"]')) return fail('菜单里没有「改这一串」');
+          click('[data-act="m-edit-series"]');
+          var input = $('[data-act="m-f"][data-k="title"]');
+          input.value = '民法 · 每天 1 讲';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          click('[data-act="m-edit-save"]');
+          var titles = futureKeys().map(function (k) { return dayTasks(k)[0].title; });
+          if (titles.length && titles.every(function (t) { return t === '民法 · 每天 1 讲'; })) {
+            ok('一串 ' + titles.length + ' 条都改了');
+          } else fail('没有整串同步：' + JSON.stringify(titles));
+        });
+
+        step('系列：以后都删掉 + 撤销', function () {
+          var before = futureKeys().length;
+          click('[data-act="m-menu"][data-task="r1"]');
+          click('[data-act="m-series-del"]');
+          if (!$('[data-act="confirm-yes"]')) return fail('删一串没有确认框');
+          click('[data-act="confirm-yes"]');
+          if (futureKeys().length === 0) ok('今天以后的 ' + before + ' 天全删了');
+          else fail('还剩 ' + futureKeys().length + ' 天没删');
+          var ub = $('#undobar');
+          if (ub && ub.classList.contains('show')) ok('底部浮出「已删除 · 撤销」');
+          else fail('没有撤销条');
+          click('[data-act="undo-do"]');
+          if (futureKeys().length === before) ok('撤销把删掉的都原样放回来了');
+          else fail('撤销没生效：' + futureKeys().length + ' / ' + before);
+        });
+
+        step('改到别的日子', function () {
+          click('[data-act="m-menu"][data-task="s2"]');
+          click('[data-act="m-move-open"]');
+          if (!$('[data-act="m-move-to"]')) return fail('没有打开的改期面板');
+          click('[data-act="m-move-to"][data-v="' + nTomorrow + '"]');
+          var moved = dayTasks(nTomorrow).filter(function (t) { return t.id === 's2'; })[0];
+          if (moved) ok('条目挪到了明天');
+          else fail('没挪过去');
+          if (dayTasks(nt).every(function (t) { return t.id !== 's2'; })) ok('今天这边不再有它');
+          else fail('今天还留着一条');
+          if (dayTasks(nt).every(function (t, i) { return t.order === i + 1; })) ok('今天的编号重新排连续了');
+          else fail('编号没重排');
+        });
+
+        step('复制一条', function () {
+          var n0 = dayTasks(nt).length;
+          click('[data-act="m-menu"][data-task="s1"]');
+          click('[data-act="m-copy"]');
+          var list = dayTasks(nt);
+          if (list.length === n0 + 1) ok('同一天多出一条');
+          else fail('复制没生效');
+          var dup = list.filter(function (t) { return t.title === '资料分析 第 4 组'; });
+          if (dup.length === 2 && dup[1].status === 'todo' && dup[1].id !== dup[0].id && !dup[1].seriesId) {
+            ok('复制件是干净的待办，且不带系列号');
+          } else fail('复制件不对：' + JSON.stringify(dup[1]));
+        });
+
+        step('批量排：写进去的是普通清单条目', function () {
+          click('[data-act="goto"][data-to="plan"]');
+          click('[data-act="m-batch-open"]');
+          if (!$('#batch-preview')) return fail('批量排弹窗没打开');
+          click('[data-act="m-batch-tag"][data-v="zlfx"]');
+          click('[data-act="m-batch-wd"][data-v="6"]');   // 加上周六
+          click('[data-act="m-batch-wd"][data-v="0"]');   // 加上周日（休息日，应该跳过）
+          var prev = $('#batch-preview').textContent;
+          if (prev.indexOf('会排') >= 0 && prev.indexOf('条') >= 0) ok('预览会说清排几条：' + prev.trim().slice(0, 40));
+          else fail('预览没说明排多少：' + prev);
+          var before = Object.keys(stored().days).length;
+          click('[data-act="m-batch-apply"]');
+          var after = Object.keys(stored().days).length;
+          if (after >= before) ok('批量排把日子写进去了（' + before + ' → ' + after + ' 天有内容）');
+          else fail('批量排没写进去');
+          var rest = Object.keys(stored().days).filter(function (k) {
+            var d = window.YT.engine.parseKey(k);
+            return (d.getDay() === 0) && (stored().days[k].tasks || []).some(function (t) { return t.title === '资料'; });
+          });
+          if (!rest.length) ok('休息日没有被排进去');
+          else fail('休息日也排了：' + JSON.stringify(rest));
+        });
+
+        step('计划页：本周列表 + 往后翻月', function () {
+          click('[data-act="m-plan-view"][data-v="week"]');
+          var heads = document.querySelectorAll('.m-wd-head');
+          if (heads.length === 7) ok('本周列表是 7 天');
+          else fail('本周列表天数不对：' + heads.length);
+          click('[data-act="m-plan-view"][data-v="month"]');
+          var next = $('[data-act="m-month"][data-v="1"]');
+          if (next && !next.disabled) ok('日历可以往后翻月了');
+          else fail('下个月还是翻不动');
+          click('[data-act="m-month"][data-v="1"]');
+          var label = document.querySelector('.cal-grid');
+          if (label) ok('翻到下个月正常渲染：' + (document.querySelector('.section-title') ? '' : '') + stored().ui.manMonth);
+          else fail('翻月之后日历没渲染');
+        });
+
+        step('学习档案入口（统计页）', function () {
+          click('[data-act="goto"][data-to="stats"]');
+          if (!$('[data-act="arch-open"]')) return fail('统计页没有学习档案入口');
+          click('[data-act="arch-open"]');
+          var ov = $('#overlay');
+          if (ov && ov.textContent.indexOf('听课') >= 0) ok('点开能看到学习档案');
+          else fail('学习档案没打开');
+          click('[data-act="arch-close"]');
+        });
+      }
+
+      /* 番茄钟：刷新/被系统杀掉之后能捞回来 */
+      if (CASE === 'manualresume') {
+        step('刚走完不久的番茄会自动接着走', function () {
+          if ($('.focus-bar')) ok('重开后常驻条还在（自动恢复）');
+          else fail('重开之后计时丢了');
+          var r = window.YT.focus.runtime();
+          if (r && r.label === '言语理解 专项刷题' && r.running) ok('接着跑的还是原来那一条：' + r.label);
+          else fail('恢复出来的计时器不对：' + JSON.stringify(r && { l: r.label, run: r.running }));
+        });
+      }
+      if (CASE === 'manualresumestale') {
+        /* to=ask 只为了截图：不注册任何步骤，驱动就不会动这一屏 */
+        if (new URLSearchParams(location.search).get('to') !== 'ask') {
+        step('停在很久以前：问一句再决定', function () {
+          var ov = $('#overlay');
+          if (ov && ov.querySelector('[data-act="focus-restore-record"]')) ok('弹出「上次的专注没收尾」让用户选');
+          else return fail('没有问用户，直接自己做主了');
+          click('[data-act="focus-restore-record"]');
+          var st = stored();
+          var s0 = (st.focus.sessions || [])[0];
+          if (s0 && s0.minutes === 25 && s0.mode === 'pomodoro') ok('选了"记下这一段"就按整个番茄记了 25 分钟');
+          else fail('没记上：' + JSON.stringify(s0));
+          if (st.focus.live === null) ok('存档清掉了，重开不会再问');
+          else fail('存档还留着');
+        });
+        }
+      }
+
+      if (CASE === 'onboardmanual') {
+        step('选考试日期 → 下一步', function () {
+          click('[data-act="exam-preset"][data-months="4"]');
+          click('[data-act="ob-next"]');
+        });
+        step('走到第 5 步（使用模式）', function () {
+          for (var i = 0; i < 4; i++) click('[data-act="ob-next"]');
+          var h2 = document.querySelector('.onboard h2');
+          if (h2 && h2.textContent.indexOf('你想怎么用它') >= 0) ok('走到第 5 步：' + h2.textContent);
+          else fail('没走到模式那一步：' + (h2 ? h2.textContent : '(没有 h2)'));
+        });
+        step('选自己排 → 不进推算动画，直接进清单', function () {
+          click('[data-act="pick-mode"][data-v="manual"]');
+          click('[data-act="ob-next"]');
+          var ov = $('#overlay');
+          if (ov && ov.className.indexOf('hidden') >= 0) ok('没有出现「正在推算…」的等待层');
+          else fail('自己排下还是弹了推算动画：' + (ov ? ov.className : '(没有 overlay)'));
+          if ($('.today-head') && $('#app').textContent.indexOf('清单') >= 0) ok('直接进了清单页');
+          else fail('没有直接进清单页');
+        }, 300);
+        step('检查结果', function () {
+          var st = stored();
+          if (st.profile && st.profile.mode === 'manual') ok('档案写成自己排');
+          else fail('模式不对：' + (st.profile && st.profile.mode));
+          if ($('.today-head') && $('#app').textContent.indexOf('清单') >= 0) ok('直接落在自己排的清单页');
+          else fail('没有落在清单页');
+          if (!document.querySelector('.onboard') && !document.querySelector('[data-act="set-units"]')) {
+            ok('跳过了第 6 步（课节数）');
+          } else {
+            fail('没跳过课节数那一步');
+          }
+        });
+      }
+
       if (CASE === 'fresh') {
         setTimeout(function () {
           var txt = ($('#app') || document.body).textContent;
@@ -799,6 +1888,29 @@
             fail('计划页没有「调整阶段」入口');
           }
 
+          /* 半自动的导航一行不改：还是 4 个 tab，统计挂在「我的」下面。 */
+          var semiTabs = document.querySelectorAll('.tabbar .tab').length;
+          if (semiTabs === 4) ok('半自动还是 4 个 tab');
+          else fail('半自动 tab 数量变了：' + semiTabs);
+          if (!$('.tabbar [data-to="stats"]')) ok('半自动没有独立的统计 tab');
+          else fail('半自动多了统计 tab');
+          click('[data-act="goto"][data-to="mine"]');
+          if (document.querySelector('.menu-row[data-to="stats"]')) ok('半自动的「我的」里保留数据统计入口');
+          else fail('半自动「我的」没有数据统计入口');
+          click('[data-act="goto"][data-to="stats"]');
+          if ($('.page-back')) ok('半自动的统计页保留「← 我的」返回键');
+          else fail('半自动统计页的返回键没了');
+
+          /* 半自动/全自动的工具页本轮一行不改：还是那句"正在准备中"，
+           * 番茄钟只挂在「自己排」那一格。 */
+          click('[data-act="goto"][data-to="tools"]');
+          var toolsTxt = ($('#app') || document.body).textContent || '';
+          if (toolsTxt.indexOf('更多公考学习工具正在准备中') >= 0 && toolsTxt.indexOf('番茄钟') === -1) {
+            ok('半自动的工具页保持原样，没有番茄钟');
+          } else {
+            fail('半自动的工具页被改了：' + toolsTxt.slice(0, 60));
+          }
+
           var errs = window.__errs || [];
           if (errs.length) { bad += errs.length; out.push('FAIL  ' + errs.length + ' 处运行时报错'); errs.forEach(function (e) { out.push('      ' + e); }); }
           else ok('全程没有 JS 报错');
@@ -807,6 +1919,105 @@
           out.push(bad ? ('结果：' + bad + ' 处不对') : '结果：全部通过');
           document.body.innerHTML = '<pre id="result">' + out.join('\n') + '</pre>';
         }, 600);
+      } else if (CASE === 'manualshot' || CASE === 'manualseries') {
+        /* 只为了截图：自己排的今日 / 工具 / 番茄钟 / 计划 / 加一条 */
+        setTimeout(function () {
+          var mt = new URLSearchParams(location.search).get('to');
+          if (mt === 'tools') { click('[data-act="goto"][data-to="tools"]'); return; }
+          if (mt === 'toolsexpand') {
+            click('[data-act="goto"][data-to="tools"]');
+            click('[data-act="focus-fold"]');
+            return;
+          }
+          if (mt === 'plan') { click('[data-act="goto"][data-to="plan"]'); return; }
+          if (mt === 'planweek') {
+            click('[data-act="goto"][data-to="plan"]');
+            click('[data-act="m-plan-view"][data-v="week"]');
+            return;
+          }
+          if (mt === 'batch') {
+            click('[data-act="goto"][data-to="plan"]');
+            click('[data-act="m-batch-open"]');
+            return;
+          }
+          if (mt === 'planday') {
+            click('[data-act="goto"][data-to="plan"]');
+            var cells = document.querySelectorAll('[data-act="m-cal"]');
+            var pick = null, tk0 = window.YT.engine.toKey(new Date());
+            for (var ci = cells.length - 1; ci >= 0; ci--) {
+              if (cells[ci].getAttribute('data-v') > tk0 &&
+                  (cells[ci].textContent || '').indexOf('项') >= 0) {
+                pick = cells[ci].getAttribute('data-v'); break;
+              }
+            }
+            if (pick) click('[data-act="m-cal"][data-v="' + pick + '"]');
+            return;
+          }
+          if (mt === 'settings') {
+            click('[data-act="goto"][data-to="mine"]');
+            click('[data-act="goto"][data-to="settings"]');
+            return;
+          }
+          if (mt === 'actual') {
+            click('[data-act="m-done"][data-task="s2"]');
+            return;
+          }
+          if (mt === 'stats') {
+            click('[data-act="goto"][data-to="mine"]');
+            click('[data-act="goto"][data-to="stats"]');
+            return;
+          }
+          if (mt === 'tagset') {
+            click('[data-act="goto"][data-to="mine"]');
+            click('[data-act="goto"][data-to="settings"]');
+            click('[data-act="fold-toggle"][data-k="settings:tags"]');
+            return;
+          }
+          if (mt === 'add') { click('[data-act="m-add-open"]'); return; }
+          if (mt === 'menu') { click('[data-act="m-menu"][data-task="s2"]'); return; }
+          if (mt === 'menu-done') { click('[data-act="m-menu"][data-task="s1"]'); return; }
+          if (mt === 'seriesmenu') { click('[data-act="m-menu"][data-task="r1"]'); return; }
+          if (mt === 'undobar') {
+            click('[data-act="m-menu"][data-task="s2"]');
+            click('[data-act="m-del"]');
+            click('[data-act="confirm-yes"]');
+            return;
+          }
+          if (mt === 'statsarch') { click('[data-act="goto"][data-to="stats"]'); return; }
+          if (mt === 'week') {
+            click('[data-act="goto"][data-to="plan"]');
+            click('[data-act="m-plan-view"][data-v="week"]');
+            return;
+          }
+          if (mt === 'move') {
+            click('[data-act="m-menu"][data-task="s2"]');
+            click('[data-act="m-move-open"]');
+            return;
+          }
+          if (mt === 'edit') {
+            click('[data-act="m-menu"][data-task="s2"]');
+            click('[data-act="m-edit"]');
+            return;
+          }
+          if (mt === 'addadv') {
+            click('[data-act="goto"][data-to="mine"]');
+            click('[data-act="goto"][data-to="settings"]');
+            click('[data-act="fold-toggle"][data-k="settings:manual"]');
+            click('[data-act="manual-adv"][data-v="subtask"]');
+            click('[data-act="manual-adv"][data-v="repeat"]');
+            click('[data-act="manual-adv"][data-v="remind"]');
+            click('[data-act="goto"][data-to="today"]');
+            click('[data-act="m-add-open"]');
+            return;
+          }
+          if (mt === 'focus') {
+            click('[data-act="goto"][data-to="tools"]');
+            var sel = $('[data-act="focus-task"]');
+            if (sel) { sel.value = 's2'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+            click('[data-act="focus-start"]');
+            return;
+          }
+        }, 300);
       } else if (CASE === 'shot') {
         /* 只为了截图：摆一个"走了一周、今天模拟完成"的样子，不动 DOM */
         setTimeout(function () {

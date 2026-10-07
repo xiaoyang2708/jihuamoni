@@ -20,6 +20,21 @@ window.YT = window.YT || {};
       rounds: [],        // 已经考完并封存的历史轮次
       weeklyLog: [],
       adjustLog: [],     // 计划调整记录：跨周、断更、阶段变化、结构性改动
+      /* 番茄钟（工具）+ 清单的轻量设置。挂在 state 上，
+       * 跟 profile 分开——这样换考试、换模式都不会把专注记录带走。 */
+      focus: {
+        settings: { work: 25, short: 5, long: 15, rounds: 4 },
+        sessions: [],
+      },
+      /* 自己排：清单的界面开关（高级项默认全关）。 */
+      manual: {
+        /* advanced：加任务表单里的可选块（子任务/重复/提醒），默认全关。
+         * askActual：完成时是否弹窗问"实际用了多久"，默认开。 */
+        settings: { advanced: { subtask: false, repeat: false, remind: false }, askActual: true },
+        tags: [],   // 用户自定义的科目标签 [{id,name}]
+      },
+      /* 反馈事件流。本轮只渲染成文案和数据，将来接轻游戏化直接消费它。 */
+      feedback: { events: [] },
       ui: { screen: 'today', onboardStep: 0 },
       createdAt: new Date().toISOString(),
     };

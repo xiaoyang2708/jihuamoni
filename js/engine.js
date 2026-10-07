@@ -362,16 +362,80 @@ window.YT = window.YT || {};
    * 没刷够时，计划页和今日页要据此提醒用户砍课或取舍。
    * ------------------------------------------------------------------- */
 
+  /* 一条任务"实际是什么"。
+   *
+   * 系统排的任务直接看 kind；自己排的清单条目一律是 kind:'task'，
+   * 真正的类型藏在 work 里（几组题 / 几节课）。统计、档案、课程进度
+   * 全走这一个函数，就不用在每个消费者里各写一遍判断——那样迟早漏一处。
+   * 返回 null 表示这条跟统计无关（比如纯备忘的清单项）。 */
+  function taskWork(t) {
+    if (!t) return null;
+    if (t.kind === 'practice') {
+      return { type: 'practice', moduleId: t.moduleId, name: t.moduleName,
+               amount: t.amount || 0, sets: t.sets || t.amounts || 0, units: 0 };
+    }
+    if (t.kind === 'course') {
+      return { type: 'course', moduleId: t.moduleId, name: t.moduleName,
+               amount: 0, sets: 0, units: t.units || t.amounts || 0 };
+    }
+    if (t.kind === 'essay') {
+      return { type: 'essay', moduleId: 'slw', name: t.moduleName || '申论',
+               amount: 0, sets: 0, units: 0, count: t.amounts || 1 };
+    }
+    if (t.kind === 'paperset') {
+      return { type: 'paperset', moduleId: t.moduleId, name: t.moduleName,
+               amount: 0, sets: 0, units: 0, count: 1 };
+    }
+    if (t.kind === 'review') {
+      return { type: 'review', moduleId: 'review', name: t.moduleName || '复盘',
+               amount: 0, sets: 0, units: 0 };
+    }
+    if (t.kind !== 'task') {
+      return { type: 'other', moduleId: t.moduleId || null, name: t.moduleName || '',
+               amount: 0, sets: 0, units: 0 };
+    }
+    /* —— 自己排的清单条目 —— */
+    var mid = t.moduleId || null;
+    var w = t.work || {};
+    var sets = Number(w.sets) || 0;
+    var units = Number(w.units) || 0;
+    var amt = Number(w.amount) || 0;
+    if (!mid || (sets <= 0 && units <= 0 && amt <= 0)) {
+      return { type: 'task', moduleId: null, name: '', amount: 0, sets: 0, units: 0 };
+    }
+    if (mid === 'slw') {
+      /* 申论：听课时就是"节"，练题时是"道/篇" */
+      if (units > 0) {
+        return { type: 'course', moduleId: 'slw', name: t.moduleName || '申论',
+                 amount: 0, sets: 0, units: units };
+      }
+      return { type: 'essay', moduleId: 'slw', name: t.moduleName || '申论',
+               amount: 0, sets: 0, units: 0, count: amt || sets || 1 };
+    }
+    if (units > 0) {
+      return { type: 'course', moduleId: mid, name: t.moduleName || '',
+               amount: 0, sets: 0, units: units };
+    }
+    var m = YT.MODULE_BY_ID[mid];
+    var setSize = (m && m.setSize) || 20;
+    if (sets > 0) {
+      return { type: 'practice', moduleId: mid, name: t.moduleName || '',
+               amount: sets * setSize, sets: sets, units: 0 };
+    }
+    return { type: 'practice', moduleId: mid, name: t.moduleName || '',
+             amount: amt, sets: amt / setSize, units: 0 };
+  }
+
   /* 每个模块累计做完了多少组（半完成的算半组） */
   function moduleSets(state) {
     var out = {};
     Object.keys(state.days || {}).forEach(function (k) {
       (state.days[k].tasks || []).forEach(function (t) {
-        if (t.kind !== 'practice' || t.status === 'todo') return;
+        if (t.status === 'todo') return;
+        var w = taskWork(t);
+        if (!w || w.type !== 'practice') return;
         var cr = t.status === 'done' ? 1 : 0.5;
-        /* 引擎排的刷题用 sets 记组数，自己加的/主攻的写成 amounts——
-         * 两个都认，免得同一种任务因为来源不同被算丢。 */
-        out[t.moduleId] = (out[t.moduleId] || 0) + (t.sets || t.amounts || 0) * cr;
+        out[w.moduleId] = (out[w.moduleId] || 0) + (w.sets || 0) * cr;
       });
     });
     return out;
@@ -555,10 +619,13 @@ window.YT = window.YT || {};
     Object.keys(state.days || {}).forEach(function (k) {
       if (beforeKey && k >= beforeKey) return;
       (state.days[k].tasks || []).forEach(function (t) {
-        if (t.kind !== 'course') return;
-        if (prog[t.moduleId] === undefined) return;
-        if (t.status === 'done') prog[t.moduleId] += (t.units || 1);
-        else if (t.status === 'half') prog[t.moduleId] += (t.units || 1) / 2;
+        /* 自己排的清单里"听 X 节"也算进课程进度：用户亲手记的课，
+         * 学习档案里就该看到它。 */
+        var w = taskWork(t);
+        if (!w || w.type !== 'course') return;
+        if (prog[w.moduleId] === undefined) return;
+        if (t.status === 'done') prog[w.moduleId] += (w.units || 1);
+        else if (t.status === 'half') prog[w.moduleId] += (w.units || 1) / 2;
       });
     });
     /* 上一轮听过的不重来：换考试时把进度带过来，和这一轮听的累加。
@@ -593,6 +660,12 @@ window.YT = window.YT || {};
   function usageModeOf(profile) {
     var m = profile && profile.mode;
     return (m === 'auto' || m === 'manual') ? m : 'semi';
+  }
+
+  /* 是不是"自己排"。全项目只在这里判断一次，别在别处再散落一遍
+   * profile.mode === 'manual' —— 那种写法迟早会漏掉一处。 */
+  function isManual(profile) {
+    return usageModeOf(profile) === 'manual';
   }
 
   function currentCourseModule(profile, progress) {
@@ -755,6 +828,9 @@ window.YT = window.YT || {};
    * 加量的日子任何一类都不能变少。这样才不会出现
    * "选了太难了刷题反而变多"那种反向信号。 */
   function buildTasks(date, dateKey, state, roadmap, opts) {
+    /* 自己排：系统一条内容都不排。清单全部由用户自己写、自己打卡。
+     * 这一句就是整个模式的根——engine 层再也不会往 days 里塞东西。 */
+    if (isManual(state.profile)) return [];
     var moodF = (opts && opts.moodFactor) || 1;
     var shared = { progress: opts && opts.progress, factor: opts && opts.factor, stage: opts && opts.stage };
     if (moodF === 1) {
@@ -900,16 +976,6 @@ window.YT = window.YT || {};
 
     /* ---- 剩下的时间：刷题 与 复盘 ---- */
     var remaining = Math.max(0, total - spent);
-
-    /* 自己排模式：系统只排"有顺序、没法自己安排"的听课，
-     * 刷题、申论、复盘全交给用户自己加。
-     * （复盘系统会在今日页算一个建议时长摆着，加不加他决定。）
-     * 阶段推进照旧，用户加的题也算数。 */
-    if (usageModeOf(profile) === 'manual') {
-      /* 只留"听哪节课"。申论那条线里的小题/大作文也是练题，一并去掉——
-       * 这个模式的意思就是：课我给你排好，其余你说了算。 */
-      return tasks.filter(function (t) { return t.kind === 'course'; });
-    }
 
     /* 冲刺期：周末按模考日排，工作日按模块专练排 */
     if (stageKey === 'sprint') {
@@ -1069,6 +1135,8 @@ window.YT = window.YT || {};
   function ensureAhead(state, todayKey, ahead, seed) {
     var profile = state.profile;
     var roadmap = state.roadmap;
+    /* 自己排：不预排、不生成任务。清单是用户自己写的，系统不插手。 */
+    if (isManual(profile)) return state;
     if (!roadmap) return state;
     roadmap.startKey = roadmap.startKey || todayKey;
 
@@ -1142,6 +1210,8 @@ window.YT = window.YT || {};
 
   function forecast(state, todayKey) {
     var profile = state.profile;
+    /* 自己排：不做进度预测（预测是给自动/半自动排课用的）。 */
+    if (isManual(profile)) return null;
     if (!profile || !profile.examDate || !state.roadmap) return null;
 
     var probe = {
@@ -1401,6 +1471,8 @@ window.YT = window.YT || {};
    * 再把今天重排一遍（按重启系数）。
    * 不清的话，那些天会全部算成"没完成"，用户一打开就是一屁股债。 */
   function applyRestart(state, todayKey) {
+    /* 自己排：没有"系统排的量"可清，也就没有断更重启这回事。 */
+    if (isManual(state.profile)) return null;
     var info = restartInfo(state, todayKey);
     if (!info.active) return null;
 
@@ -1492,6 +1564,10 @@ window.YT = window.YT || {};
   /* 跨进新的一周时，把本周"还没动过"的日子清掉，
    * 让它们按上一周的实际表现重新排。已经打过卡的部分一律保留。 */
   function rollWeek(state, todayKey) {
+    /* 自己排：不按上周完成率重排——清单是用户写的，系统永不改写。 */
+    if (isManual(state.profile)) {
+      return { changed: false, ws: null, weekKey: null, rule: null, factor: 1 };
+    }
     var wk = weekKeyOf(todayKey);
     state.weekMark = state.weekMark || {};
     if (state.weekMark[wk]) return { changed: false, ws: null, weekKey: null, rule: null };
@@ -1516,6 +1592,8 @@ window.YT = window.YT || {};
   /* 把某个学习日没做完的任务顺延到后面的学习日，超过容量的直接砍掉 */
   function carryOver(state, fromKey, uptoStudyDays) {
     var profile = state.profile;
+    /* 自己排：任务不顺延。没做完就是没做完，明天想接着做自己去清单里写。 */
+    if (isManual(profile)) return [];
     var day = state.days[fromKey];
     if (!day || day.isRest) return [];
 
@@ -1593,6 +1671,8 @@ window.YT = window.YT || {};
     currentCourseModule: currentCourseModule,
     moduleOrder: moduleOrder,
     usageModeOf: usageModeOf,
+    isManual: isManual,
+    taskWork: taskWork,
     targetUnits: targetUnits,
     effectiveLesson: effectiveLesson,
     studyableModules: studyableModules,

@@ -11,7 +11,7 @@ const sandbox = { console, Date, Math, JSON, isFinite };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
-['js/config.js', 'js/engine.js', 'js/stats.js', 'js/archive.js'].forEach(f => {
+['js/config.js', 'js/engine.js', 'js/stats.js', 'js/archive.js', 'js/feedback.js'].forEach(f => {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
 });
 
@@ -515,6 +515,153 @@ console.log('\n【14】档位是导航，不是关卡');
     E.stageOf(rmCustom.stages[0].endKey, rmCustom) + '/' +
     E.stageOf(rmCustom.stages[2].startKey, rmCustom));
 })();
+
+/* ======================= 15. 自己排：清单条目字段与统计口径 ======================= */
+console.log('\n【15】自己排：清单条目的字段与统计口径');
+{
+  const tk = '2026-09-20';
+  const manualProfile = Object.assign({}, profile, { mode: 'manual' });
+  const s = { profile: manualProfile, roadmap: null, days: {}, scores: [], focus: { settings: {}, sessions: [] } };
+  s.roadmap = E.buildRoadmap(manualProfile, tk);
+
+  check('isManual 认得自己排', E.isManual(manualProfile) === true, E.usageModeOf(manualProfile));
+  check('buildTasks 在自己排下返回空数组',
+    E.buildTasks(new Date(2026, 8, 20), tk, s, s.roadmap, null).length === 0, '');
+  E.ensureAhead(s, tk, 14);
+  check('ensureAhead 一条都不生成', Object.keys(s.days).length === 0, Object.keys(s.days).length);
+
+  /* 造两条清单：一条带工作量，一条只有标题 */
+  s.days[tk] = { date: tk, isRest: false, stage: null, mood: null, tasks: [
+    { id: 'm1', kind: 'task', title: '资料 第 3 组', userAdded: true, moduleId: 'zlfx', moduleName: '资料分析',
+      work: { sets: 3 }, minutes: 60, status: 'done', actualMinutes: 55, focusMinutes: 55,
+      subtasks: [], order: 1 },
+    { id: 'm2', kind: 'task', title: '整理错题', userAdded: true, moduleId: null, moduleName: '',
+      work: null, minutes: 20, status: 'todo', subtasks: [], order: 2 },
+  ] };
+
+  const all = Object.keys(s.days).reduce((a, k) => a.concat(s.days[k].tasks || []), []);
+  check('清单项都有标题', all.every(t => !!t.title), '');
+  check('清单项都标了 userAdded', s.days[tk].tasks.every(t => t.userAdded === true), '');
+
+  const w = E.taskWork(s.days[tk].tasks[0]);
+  check('带工作量的清单项能折成题量', w && w.type === 'practice' && w.amount === 60 && w.sets === 3, JSON.stringify(w));
+
+  const sets = E.moduleSets(s);
+  check('清单里刷的组数进了专项统计', Math.round((sets.zlfx || 0) * 10) / 10 === 3, JSON.stringify(sets));
+
+  const arch = A.build(s, tk, 'base');
+  check('学习档案的累计题量含清单条目', arch.questionTotal === 60, arch.questionTotal);
+
+  const o = YT.stats.overall(s, tk);
+  /* 全部按"实际学了多久"算：预计 80 是计划口径，实际 done 用有效时长（55）。 */
+  check('自己排：计划用预计、实际用有效时长', o.planned === 80 && o.done === 55,
+    JSON.stringify({ planned: o.planned, done: o.done }));
+
+  const c = YT.stats.checklistTotals(s, tk);
+  check('清单口径：2 项、完成 1 项', c.items === 2 && c.doneItems === 1,
+    JSON.stringify({ items: c.items, done: c.doneItems }));
+  check('预计时长单列，不参与学习时长',
+    c.plannedMinutes === 80 && c.actualMinutes === 55 && c.selfMinutes === 55,
+    JSON.stringify({ planned: c.plannedMinutes, actual: c.actualMinutes, self: c.selfMinutes }));
+  check('兼容字段 minutes = 有效时长', c.minutes === 55, c.minutes);
+
+  const zl = YT.stats.moduleTiming(s).filter(x => x.moduleId === 'zlfx')[0];
+  check('清单里的实际用时进了做题速度', zl.samples === 1, JSON.stringify(zl));
+
+  /* 不指定科目的时长：不进按科目分布，但计入总时长 */
+  s.focus.sessions = [
+    { startedAt: tk + 'T09:00:00.000Z', endedAt: tk + 'T09:30:00.000Z',
+      minutes: 30, mode: 'countup', completed: true },                       // 自由专注（没挂科目）
+    { startedAt: tk + 'T10:00:00.000Z', endedAt: tk + 'T10:25:00.000Z',
+      minutes: 25, mode: 'pomodoro', completed: true, moduleId: 'zlfx', taskId: 'm1' },
+  ];
+  const stt = YT.stats.subjectTime(s, tk);
+  check('按科目分布里没有「未指定 / 自由专注」',
+    stt.every(x => x.moduleId !== '_other' && x.moduleId !== '_free'),
+    JSON.stringify(stt.map(x => x.moduleId)));
+  check('按科目分布只含已归科目的时长',
+    stt.length === 1 && stt[0].moduleId === 'zlfx' && stt[0].total === 80,
+    JSON.stringify(stt));
+  check('未指定科目的条目有效时长为 0（只有预计），仍计完成项',
+    YT.stats.checklistTotals(s, tk).actualMinutes === 55, YT.stats.checklistTotals(s, tk).actualMinutes);
+  check('自由专注仍计入专注总时长',
+    YT.stats.focusTotals(s, tk).minutes === 55, YT.stats.focusTotals(s, tk).minutes);
+  check('计时器总时长 = 所有 session（含自由专注）',
+    YT.stats.timerMinutes(s, tk) === 55, YT.stats.timerMinutes(s, tk));
+  check('番茄个数只数走完的番茄',
+    YT.stats.focusTotals(s, tk).pomodoros === 1, YT.stats.focusTotals(s, tk).pomodoros);
+
+  /* ---- 有效时长的优先级：自报 > 计时器 > 0；预计永远不算 ---- */
+  check('有效时长：自报优先于计时器',
+    YT.stats.effectiveMinutes({ minutes: 99999, actualMinutes: 40, focusMinutes: 25 }) === 40, '');
+  check('有效时长：没自报就退回计时器',
+    YT.stats.effectiveMinutes({ minutes: 99999, actualMinutes: null, focusMinutes: 25 }) === 25, '');
+  check('有效时长：都没有就是 0（预计不顶替）',
+    YT.stats.effectiveMinutes({ minutes: 99999 }) === 0, '');
+
+  /* ---- 标签归并 + 自定义标签 ---- */
+  check('判推三块归一到「判断推理」',
+    YT.tagIdOf('pdlj') === 'pd' && YT.tagIdOf('pdtx') === 'pd' &&
+    YT.tagIdOf('pddl') === 'pd' && YT.tagNameOf('pdlj') === '判断推理',
+    [YT.tagIdOf('pdlj'), YT.tagNameOf('pdlj')].join('/'));
+  check('预设标签列表里有判断推理、没有判推逻辑',
+    YT.TAGS.some(t => t.name === '判断推理') && !YT.TAGS.some(t => t.name === '判推逻辑'),
+    YT.TAGS.map(t => t.name).join(','));
+
+  const s2 = { profile: manualProfile, days: {}, scores: [], focus: { settings: {}, sessions: [] } };
+  s2.days[tk] = { date: tk, isRest: false, stage: null, mood: null, tasks: [
+    { id: 'c1', kind: 'task', title: '民法总则', userAdded: true, moduleId: 'u-1', moduleName: '民法',
+      minutes: 60, actualMinutes: 45, focusMinutes: 0, status: 'done', subtasks: [], order: 1 },
+    { id: 'c2', kind: 'task', title: '判断推理刷题', userAdded: true, moduleId: 'pdlj', moduleName: '判推逻辑',
+      minutes: 40, actualMinutes: 30, focusMinutes: 0, status: 'done', subtasks: [], order: 2 },
+  ] };
+  const st2 = YT.stats.subjectTime(s2, tk);
+  const custom = st2.filter(x => x.moduleId === 'u-1')[0];
+  const merged = st2.filter(x => x.moduleId === 'pd')[0];
+  check('自定义标签进了按标签分布', !!custom && custom.name === '民法' && custom.total === 45,
+    JSON.stringify(custom));
+  check('老条目的判推子标签合成一行「判断推理」', !!merged && merged.total === 30, JSON.stringify(merged));
+
+  /* ---- 按天口径：有效时长 + 没挂任务的自由专注 ---- */
+  s.focus.sessions = [
+    { startedAt: tk + 'T09:00:00.000Z', endedAt: tk + 'T09:30:00.000Z',
+      minutes: 30, mode: 'countup', completed: true },                       // 自由专注
+    { startedAt: tk + 'T10:00:00.000Z', endedAt: tk + 'T10:25:00.000Z',
+      minutes: 25, mode: 'pomodoro', completed: true, moduleId: 'zlfx', taskId: 'm1' },  // 挂任务
+  ];
+  /* m1 有效 55（自报），m2 有效 0；自由专注 30；挂任务的那 25 已经算在 m1 里不重复。 */
+  check('按天学习时长 = 条目的有效时长 + 自由专注',
+    YT.stats.dayStudyMinutes(s, tk) === 85, YT.stats.dayStudyMinutes(s, tk));
+
+  /* ---- 正反馈只喂难灌水的指标 ---- */
+  const s4 = { profile: manualProfile, days: {}, scores: [], focus: { settings: {}, sessions: [] } };
+  s4.days[tk] = { date: tk, isRest: false, stage: null, mood: null, tasks: [
+    { id: 't1', kind: 'task', title: '民法', userAdded: true, moduleId: 'u-1', moduleName: '民法',
+      minutes: 120, actualMinutes: 120, focusMinutes: 0, status: 'done', subtasks: [], order: 1 },
+    { id: 't2', kind: 'task', title: '资料', userAdded: true, moduleId: 'zlfx', moduleName: '资料',
+      minutes: 60, actualMinutes: 60, focusMinutes: 0, status: 'done', subtasks: [], order: 2 },
+  ] };
+  const fb = YT.feedback.highlights(s4, tk);
+  const share = fb.filter(h => h.kind === 'share')[0];
+  check('正反馈里有"时间占比"（按标签）',
+    !!share && share.text.indexOf('民法') >= 0 && share.text.indexOf('67%') >= 0,
+    JSON.stringify(fb.map(h => h.kind)));
+
+  const s3 = { profile: manualProfile, days: {}, scores: [], focus: { settings: {}, sessions: [] } };
+  /* 前三条偏差大、后三条偏差小 → 应该报"估时越来越准" */
+  const biases = [0.5, 0.55, 0.6, 0.1, 0.08, 0.05];
+  biases.forEach((b, i) => {
+    const k = '2026-09-0' + (i + 1);
+    const plan = 100, act = Math.round(plan * (1 + b));
+    s3.days[k] = { date: k, isRest: false, stage: null, mood: null, tasks: [
+      { id: 'b' + i, kind: 'task', title: 'x' + i, userAdded: true, moduleId: 'zlfx', moduleName: '资料',
+        minutes: plan, actualMinutes: act, focusMinutes: 0, status: 'done', subtasks: [], order: 1 },
+    ] };
+  });
+  const fb3 = YT.feedback.highlights(s3, '2026-09-06');
+  check('正反馈里有"估时越来越准"',
+    fb3.some(h => h.kind === 'accuracy'), JSON.stringify(fb3.map(h => h.kind)));
+}
 
 console.log('\n' + (fail ? '有 ' + fail + ' 条没过 ❌' : '全部通过 ✅'));
 process.exit(fail ? 1 : 0);
